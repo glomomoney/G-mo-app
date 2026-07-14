@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-midnight: #070514;
+  --color-brand-deep: #0e0a2b;
+  --color-brand-card: #1a1447;
+  --color-brand-input: #261f61;
+  --color-brand-gold: #e2c18d;
+  --color-brand-gold-glow: #f4dfbe;
+  --color-brand-text: #f3efff;
+  --color-brand-text-muted: #a39bc9;
+}
+
+/* Custom glow animations and text utilities */
+.text-glow-gold {
+  text-shadow: 0 0 10px rgba(226, 193, 141, 0.5), 0 0 2px rgba(226, 193, 141, 0.8);
+}
+
+.shadow-gold-glow {
+  box-shadow: 0 0 15px rgba(226, 193, 141, 0.25);
+}
+
+.shadow-gold-glow-lg {
+  box-shadow: 0 0 25px rgba(226, 193, 141, 0.4);
+}
+
+.bg-gold-metallic {
+  background: linear-gradient(135deg, #fff4d0 0%, #e2c18d 30%, #b8924e 70%, #614613 100%);
+}
+
+.bg-gold-metallic-hover {
+  background: linear-gradient(135deg, #ffffff 0%, #ecd0a6 30%, #cfa65e 70%, #7d5a1b 100%);
+}
+
+.bg-brand-gradient {
+  background: linear-gradient(180deg, #0e0a2b 0%, #070514 100%);
+}
+
+.border-gold-gradient {
+  border-image: linear-gradient(135deg, #e2c18d, #1a1447) 1;
+}
+
+/* Custom Leaflet dark popups for Heatmap demand zones */
+.custom-heatmap-popup .leaflet-popup-content-wrapper {
+  background: #0e0a2b !important;
+  color: #f3efff !important;
+  border: 1px solid rgba(226, 193, 141, 0.35) !important;
+  border-radius: 14px !important;
+  padding: 2px !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7) !important;
+}
+
+.custom-heatmap-popup .leaflet-popup-tip {
+  background: #0e0a2b !important;
+  border: 1px solid rgba(226, 193, 141, 0.35) !important;
+}
+

@@ -1,0 +1,21 @@
+{
+  "short_name": "Wanda",
+  "name": "Wanda Taxi Booking",
+  "icons": [
+    {
+      "src": "/wanda_logo.jpg",
+      "type": "image/jpeg",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/wanda_logo.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#070514",
+  "theme_color": "#e2c18d",
+  "display": "standalone",
+  "orientation": "portrait"
+}

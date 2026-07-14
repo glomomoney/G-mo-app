@@ -1,0 +1,6 @@
+{
+  "name": "Wanda",
+  "description": "Tu wanda, on te transporte. A high-fidelity ride-hailing PWA featuring dual passenger/driver modes, mobile money payment integrations, real-time map simulation, and a golden metallic dark violet theme.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

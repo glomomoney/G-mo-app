@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Wanda - Tu wanda, on te transporte</title>
+    
+    <!-- PWA Settings -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#ffd343" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="/wanda_logo.jpg" />
+    
+    <!-- Leaflet CSS for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    
+    <style>
+      /* Smooth touch scroll and map overflow fixes */
+      html, body, #root {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow-x: hidden;
+        background-color: #070514;
+        font-family: 'Outfit', sans-serif;
+      }
+      /* Custom Leaflet overrides to match vibrant light aesthetic */
+      .leaflet-container {
+        font-family: 'Outfit', sans-serif;
+        background: #F1F5F9 !important;
+      }
+      .leaflet-bar {
+        border: none !important;
+        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1) !important;
+        border-radius: 12px !important;
+        overflow: hidden;
+      }
+      .leaflet-bar a {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border-bottom: 1px solid #F1F5F9 !important;
+      }
+      .leaflet-bar a:hover {
+        background-color: #F8FAFC !important;
+        color: #F59E0B !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Always register the lightweight pass-through service worker to enable PWA installation on any link
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('Service Worker registered successfully!', reg.scope))
+            .catch(err => console.warn('Service Worker registration failed:', err));
+        });
+      }
+    </script>
+  </body>
+</html>
+
