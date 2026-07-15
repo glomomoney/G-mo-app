@@ -45,6 +45,7 @@ import {
 
 // Subcomponents
 import TaxiMap from './components/TaxiMap';
+import MiniatureMap from './components/MiniatureMap';
 import PaymentGateway from './components/PaymentGateway';
 import InstallPrompt from './components/InstallPrompt';
 import LandingPage from './components/LandingPage';
@@ -281,6 +282,8 @@ export default function App() {
   const [rideStatus, setRideStatus] = useState<RideStatus>('idle');
   const [activeDriver, setActiveDriver] = useState<Driver | null>(null);
   const [driverLoc, setDriverLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [etaMinutes, setEtaMinutes] = useState<number>(3);
+  const [etaStatusText, setEtaStatusText] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet'); // defaults to wallet as requested!
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [transactionId, setTransactionId] = useState<string | null>(null);
@@ -1237,6 +1240,11 @@ export default function App() {
         status: 'heading_to_pickup'
       });
       setDriverLoc({ lat: startLat, lng: startLng });
+      
+      const baseEta = RIDE_CLASSES.find(c => c.id === selectedClassId)?.eta || 3;
+      setEtaMinutes(baseEta);
+      setEtaStatusText(slangMode ? "🕒 Trajet fluide en cours" : "🕒 Smooth transit on schedule");
+      
       setRideStatus('driver_found');
 
       // Greet passenger
@@ -1277,6 +1285,51 @@ export default function App() {
         const nextLng = activeDriver.lng + (targetLng - activeDriver.lng) * ratio;
 
         setDriverLoc({ lat: nextLat, lng: nextLng });
+
+        // Simulate traffic updates and dynamic ETA
+        const baseEta = RIDE_CLASSES.find(c => c.id === selectedClassId)?.eta || 3;
+        let simulatedEta = baseEta;
+        let trafficText = '';
+
+        if (currentStep === 1) {
+          simulatedEta = Math.max(2, baseEta);
+          trafficText = slangMode 
+            ? "⚠️ Embouteillage léger détecté (+1 min)" 
+            : "⚠️ Light traffic delay (+1 min)";
+        } else if (currentStep === 2) {
+          simulatedEta = Math.max(2, baseEta - 1);
+          trafficText = slangMode 
+            ? "🟢 Le djo a pris un raccourci, ça roule !" 
+            : "🟢 Driver found a shortcut, traffic cleared!";
+        } else if (currentStep === 3) {
+          simulatedEta = Math.max(1, Math.round(baseEta * 0.5));
+          trafficText = slangMode 
+            ? "⚡ Feu vert, le chauffeur accélère" 
+            : "⚡ Green light, smooth ride";
+        } else if (currentStep === 4) {
+          simulatedEta = 1;
+          trafficText = slangMode 
+            ? "📍 Presque là, le djo approche du repère" 
+            : "📍 Almost there, driver is approaching the pickup location";
+        } else if (currentStep === 5) {
+          simulatedEta = 0.5; // less than 1 min
+          trafficText = slangMode 
+            ? "🚕 Le djo tourne l'angle de la rue !" 
+            : "🚕 Driver is turning the corner!";
+        } else if (currentStep >= steps) {
+          simulatedEta = 0;
+          trafficText = slangMode 
+            ? "🎉 Chauffeur arrivé !" 
+            : "🎉 Driver has arrived!";
+        } else {
+          simulatedEta = baseEta;
+          trafficText = slangMode 
+            ? "🕒 Trajet fluide en cours" 
+            : "🕒 Smooth transit on schedule";
+        }
+
+        setEtaMinutes(simulatedEta);
+        setEtaStatusText(trafficText);
 
         if (currentStep >= steps) {
           clearInterval(intervalId);
@@ -2374,6 +2427,16 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Miniature Map view for active ride tracking */}
+                        <MiniatureMap
+                          pickup={pickup}
+                          destination={destination}
+                          driverLoc={driverLoc}
+                          rideStatus={rideStatus}
+                          driverType={selectedClassId}
+                          slangMode={slangMode}
+                        />
+
                         {/* AC / waiting stats */}
                         <div className="bg-brand-input border border-brand-card/80 p-3 rounded-xl space-y-2 text-xs">
                           <div className="space-y-1">
@@ -2382,11 +2445,59 @@ export default function App() {
                               {rideStatus === 'arriving' && (slangMode ? "Le chauffeur t'attend au point de ramassage :" : "Driver is parked outside!")}
                               {rideStatus === 'in_progress' && (slangMode ? "Destination de dépôt :" : "Dropoff Destination:")}
                             </p>
-                            <p className="font-black text-white flex items-center gap-1.5">
-                              {rideStatus === 'driver_found' && <><Clock size={12} className="text-brand-gold" /> 3 mins away</>}
-                              {rideStatus === 'arriving' && <><CheckCircle size={12} className="text-emerald-400 animate-bounce" /> {pickup?.name}</>}
-                              {rideStatus === 'in_progress' && <><Navigation size={12} className="text-brand-gold rotate-45" /> {destination?.name}</>}
-                            </p>
+                            
+                            {rideStatus === 'driver_found' ? (
+                              <div className="space-y-1.5 w-full">
+                                <div className="flex items-center justify-between">
+                                  <motion.div 
+                                    key={etaMinutes} 
+                                    initial={{ scale: 0.8, opacity: 0 }}
+                                    animate={{ 
+                                      scale: [0.9, 1.05, 1],
+                                      opacity: 1,
+                                    }}
+                                    transition={{ duration: 0.5, ease: "easeOut" }}
+                                    className="font-black text-white flex items-center gap-1.5 text-xs"
+                                  >
+                                    <Clock size={12} className="text-brand-gold animate-pulse" /> 
+                                    <span className="text-brand-gold font-mono font-black text-sm">
+                                      {etaMinutes === 0.5 ? (slangMode ? "< 1 min" : "< 1 min") : `${etaMinutes} min${etaMinutes > 1 ? 's' : ''}`}
+                                    </span>
+                                    <span className="text-white text-[10px] font-semibold">
+                                      {slangMode ? "restant" : "remaining"}
+                                    </span>
+                                  </motion.div>
+
+                                  {/* Pulsing indicator light */}
+                                  <span className="flex h-2 w-2 relative">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-gold opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-gold"></span>
+                                  </span>
+                                </div>
+
+                                {/* Traffic Update Message */}
+                                <AnimatePresence mode="wait">
+                                  {etaStatusText && (
+                                    <motion.div
+                                      key={etaStatusText}
+                                      initial={{ opacity: 0, x: -10 }}
+                                      animate={{ opacity: 1, x: 0 }}
+                                      exit={{ opacity: 0, x: 10 }}
+                                      transition={{ duration: 0.3 }}
+                                      className="text-[10px] font-bold text-brand-text-muted bg-brand-card/50 border border-brand-input px-2.5 py-1 rounded-lg flex items-center gap-1.5 mt-1"
+                                    >
+                                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-gold animate-pulse shrink-0" />
+                                      <span className="truncate">{etaStatusText}</span>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            ) : (
+                              <p className="font-black text-white flex items-center gap-1.5">
+                                {rideStatus === 'arriving' && <><CheckCircle size={12} className="text-emerald-400 animate-bounce" /> {pickup?.name}</>}
+                                {rideStatus === 'in_progress' && <><Navigation size={12} className="text-brand-gold rotate-45" /> {destination?.name}</>}
+                              </p>
+                            )}
                           </div>
 
                           {rideStatus === 'arriving' && (
@@ -2409,6 +2520,198 @@ export default function App() {
                             </div>
                           )}
                         </div>
+
+                        {/* Detailed Ride Summary when trip is in progress */}
+                        {rideStatus === 'in_progress' && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.4 }}
+                            className="bg-brand-card/30 border border-brand-gold/15 rounded-2xl p-3.5 space-y-3 mt-2 shadow-lg"
+                            id="passenger-ride-summary-card"
+                          >
+                            {/* Section Title */}
+                            <div className="flex items-center justify-between border-b border-brand-input pb-2">
+                              <h5 className="text-[10px] font-black uppercase tracking-wider text-brand-gold flex items-center gap-1.5">
+                                <ShieldCheck size={11} className="text-brand-gold animate-pulse" />
+                                {slangMode ? "Résumé de la course" : "Ride Summary Details"}
+                              </h5>
+                              <span className="text-[9px] bg-brand-gold/10 text-brand-gold border border-brand-gold/20 px-2 py-0.5 rounded-full font-bold">
+                                {slangMode ? "En route" : "On Trip"}
+                              </span>
+                            </div>
+
+                            {/* Dynamic Ride details Grid */}
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              {/* Estimated Fare & Payment Method */}
+                              <div className="bg-brand-input/60 border border-brand-input p-2.5 rounded-xl flex flex-col justify-between space-y-1">
+                                <span className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider flex items-center gap-1">
+                                  <DollarSign size={10} className="text-brand-gold" />
+                                  {slangMode ? "Tarif estimé" : "Estimated Fare"}
+                                </span>
+                                <div className="space-y-0.5">
+                                  <p className="font-mono font-black text-brand-gold text-sm">
+                                    {activeFareToCharge.toLocaleString('fr-FR')} FCFA
+                                  </p>
+                                  <span className="text-[9px] text-white font-extrabold flex items-center gap-1">
+                                    <CreditCard size={9} className="text-brand-text-muted" />
+                                    {paymentMethod === 'wallet' ? (slangMode ? "Wanda Wallet (-10%)" : "Wanda Wallet (-10%)") :
+                                     paymentMethod === 'momo_mtn' ? "MTN Mobile Money" :
+                                     paymentMethod === 'orange_money' ? "Orange Money" : (slangMode ? "Payement Cash" : "Cash Payment")}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Ride Class details */}
+                              {(() => {
+                                const rc = RIDE_CLASSES.find(c => c.id === selectedClassId) || RIDE_CLASSES[2];
+                                return (
+                                  <div className="bg-brand-input/60 border border-brand-input p-2.5 rounded-xl flex flex-col justify-between space-y-1">
+                                    <span className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider flex items-center gap-1">
+                                      <Compass size={10} className="text-brand-gold" />
+                                      {slangMode ? "Catégorie" : "Service Class"}
+                                    </span>
+                                    <div className="space-y-0.5">
+                                      <p className="font-black text-white text-[11px] truncate flex items-center gap-1">
+                                        {rc.id === 'okada' ? <Bike size={11} className="text-brand-gold shrink-0" /> : <Car size={11} className="text-brand-gold shrink-0" />}
+                                        {rc.name}
+                                      </p>
+                                      <p className="text-[9px] text-brand-text-muted leading-tight truncate" title={rc.description}>
+                                        {rc.description}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+
+                            {/* Vehicle and Driver details footer */}
+                            <div className="bg-brand-midnight/40 border border-brand-input/50 rounded-xl p-2.5 space-y-1.5 text-[10px]">
+                              <div className="flex justify-between items-center text-brand-text-muted font-bold uppercase tracking-wider text-[9px]">
+                                <span>{slangMode ? "Infos du véhicule" : "Vehicle Specs"}</span>
+                                <span className="text-brand-gold font-mono">{activeDriver.vehiclePlate}</span>
+                              </div>
+                              <div className="flex flex-col gap-1 text-white">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold">{activeDriver.vehicleModel}</span>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-brand-input" />
+                                  <span className="text-brand-text-muted font-semibold flex items-center gap-1">
+                                    {slangMode ? `Couleur: ${activeDriver.vehicleColor || "Jaune"}` : `Color: ${activeDriver.vehicleColor || "Yellow"}`}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center text-[9px] text-brand-text-muted mt-0.5 border-t border-brand-input/20 pt-1.5">
+                                  <span>{slangMode ? "Chauffeur assigné :" : "Assigned Driver:"} <strong className="text-white font-extrabold">{activeDriver.name}</strong></span>
+                                  <span className="flex items-center text-brand-gold font-bold">
+                                    <Star size={9} className="fill-brand-gold text-brand-gold mr-0.5 shrink-0" />
+                                    {activeDriver.rating}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+
+                        {/* Real-time Journey Progress Bar */}
+                        {(() => {
+                          if (!pickup || !driverLoc) return null;
+                          
+                          let label = '';
+                          let remainingKm = 0;
+                          let progress = 0;
+                          let fromName = '';
+                          let toName = '';
+                          
+                          if (rideStatus === 'driver_found') {
+                            const initialLat = activeDriver.lat;
+                            const initialLng = activeDriver.lng;
+                            const total = getDistanceKm(initialLat, initialLng, pickup.lat, pickup.lng);
+                            const remaining = getDistanceKm(driverLoc.lat, driverLoc.lng, pickup.lat, pickup.lng);
+                            progress = total > 0 ? Math.max(0, Math.min(99, Math.round((1 - remaining / total) * 100))) : 0;
+                            remainingKm = remaining;
+                            label = slangMode ? "Ramassage du djo" : "Heading to Pickup";
+                            fromName = slangMode ? "Chauffeur départ" : "Driver Start";
+                            toName = pickup.name;
+                          } else if (rideStatus === 'arriving') {
+                            progress = 100;
+                            remainingKm = 0;
+                            label = slangMode ? "Le djo est là !" : "Driver Arrived";
+                            fromName = slangMode ? "Chauffeur départ" : "Driver Start";
+                            toName = pickup.name;
+                          } else if (rideStatus === 'in_progress' && destination) {
+                            const total = getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng);
+                            const remaining = getDistanceKm(driverLoc.lat, driverLoc.lng, destination.lat, destination.lng);
+                            progress = total > 0 ? Math.max(0, Math.min(100, Math.round((1 - remaining / total) * 100))) : 0;
+                            remainingKm = remaining;
+                            label = slangMode ? "Course en cours" : "Journey Progress";
+                            fromName = pickup.name;
+                            toName = destination.name;
+                          } else {
+                            return null;
+                          }
+
+                          return (
+                            <div className="bg-brand-input border border-brand-card/80 p-3.5 rounded-xl space-y-2.5 mt-2" id="passenger-trip-progress">
+                              <div className="flex justify-between items-center text-[10px]">
+                                <span className="text-brand-text-muted font-black uppercase tracking-wider flex items-center gap-1">
+                                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-gold animate-ping" />
+                                  {label}
+                                </span>
+                                <span className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/20 px-2 py-0.5 rounded-md text-[10px] shadow-sm">
+                                  {remainingKm.toFixed(1)} km {slangMode ? "restant" : "remaining"}
+                                </span>
+                              </div>
+
+                              {/* Progress bar track */}
+                              <div className="relative w-full h-3 bg-brand-card border border-brand-input rounded-full overflow-visible my-3">
+                                {/* Glowing ambient trail underneath */}
+                                <div className="absolute inset-0 bg-brand-gold/5 rounded-full blur-[1px]"></div>
+                                
+                                {/* Progress track background shimmer line */}
+                                <div className="absolute inset-0 opacity-20 bg-gradient-to-r from-transparent via-white to-transparent animate-[shimmer_2s_infinite]"></div>
+
+                                {/* Animated active progress fill */}
+                                <motion.div
+                                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-brand-gold/80 via-brand-gold to-yellow-400 rounded-full shadow-[0_0_8px_rgba(234,179,8,0.4)]"
+                                  initial={{ width: '0%' }}
+                                  animate={{ width: `${progress}%` }}
+                                  transition={{ type: "spring", stiffness: 70, damping: 14 }}
+                                />
+
+                                {/* Moving taxi icon riding the bar */}
+                                <motion.div
+                                  className="absolute -top-1.5 -ml-3 w-6 h-6 bg-brand-gold text-brand-midnight border-2 border-brand-midnight rounded-full flex items-center justify-center shadow-lg cursor-pointer"
+                                  animate={{ 
+                                    left: `${progress}%`,
+                                    scale: [1, 1.08, 1]
+                                  }}
+                                  transition={{ 
+                                    left: { type: "spring", stiffness: 70, damping: 14 },
+                                    scale: { repeat: Infinity, duration: 2, ease: "easeInOut" }
+                                  }}
+                                  title={slangMode ? "Position du djo" : "Driver Position"}
+                                >
+                                  {/* Small compact taxi svg icon */}
+                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                    <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-4h14v4zM7.5 14c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm9 0c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/>
+                                  </svg>
+                                </motion.div>
+                              </div>
+
+                              {/* Progress Track labels */}
+                              <div className="flex justify-between text-[9px] text-brand-text-muted font-bold font-mono gap-4">
+                                <span className="truncate max-w-[130px] hover:text-white transition-colors" title={fromName}>
+                                  📍 {fromName}
+                                </span>
+                                <span className="font-extrabold text-brand-gold bg-brand-midnight/60 px-1.5 py-0.5 rounded border border-brand-input/30 shadow-inner shrink-0">
+                                  {progress}%
+                                </span>
+                                <span className="truncate max-w-[130px] text-right hover:text-white transition-colors" title={toName}>
+                                  🏁 {toName}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Live Chat drawer */}
