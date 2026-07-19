@@ -55,7 +55,8 @@ import {
   Zap,
   Eye,
   Lock,
-  Unlock
+  Unlock,
+  Grid
 } from 'lucide-react';
 
 // Subcomponents
@@ -663,6 +664,15 @@ export default function App() {
   const [historySortOrder, setHistorySortOrder] = useState<'recent' | 'oldest'>('recent');
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [isMapTilted, setIsMapTilted] = useState<boolean | 'flat' | 'isometric' | 'tilted'>(false);
+  const [mapZoom, setMapZoom] = useState<number>(12);
+  const [showMapGrid, setShowMapGrid] = useState<boolean>(() => {
+    const saved = localStorage.getItem('wanda_show_map_grid');
+    return saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('wanda_show_map_grid', showMapGrid.toString());
+  }, [showMapGrid]);
   const [isAutoPitchEnabled, setIsAutoPitchEnabled] = useState(false);
   const [isZoomLocked, setIsZoomLocked] = useState(false);
 
@@ -691,6 +701,28 @@ export default function App() {
       setIsMapTilted(false);
     }
   }, [isAutoPitchEnabled, rideStatus, driverLoc, pickup, destination]);
+
+  // Automatically project/tilt map when driver is about to pick up passenger
+  useEffect(() => {
+    if (role === 'driver') {
+      if (rideStatus === 'driver_found' && driverLoc && pickup) {
+        const remaining = getDistanceKm(driverLoc.lat, driverLoc.lng, pickup.lat, pickup.lng);
+        if (remaining <= 0.8) {
+          setIsMapTilted('tilted');
+        }
+      } else if (rideStatus === 'arriving') {
+        setIsMapTilted('tilted');
+      }
+    }
+  }, [role, rideStatus, driverLoc, pickup]);
+
+  // When active driver starts ride (in_progress), dominate interface with map and navigation
+  useEffect(() => {
+    if (role === 'driver' && rideStatus === 'in_progress') {
+      setIsMapFullscreen(true);
+      setIsMapTilted('tilted');
+    }
+  }, [role, rideStatus]);
 
   // Compass states and effects
   const [compassHeading, setCompassHeading] = useState(0);
@@ -2469,6 +2501,7 @@ export default function App() {
             slangMode={slangMode}
             isTilted={isMapTilted}
             isZoomLocked={isZoomLocked}
+            showMapGrid={showMapGrid}
           />
         </div>
       </div>
@@ -2710,9 +2743,11 @@ export default function App() {
         {/* Left Side Control Panel */}
         <aside 
           className={`bg-brand-deep border-r border-brand-card/80 flex flex-col shrink-0 z-10 overflow-y-auto text-white ${
-            rideStatus !== 'idle' && rideStatus !== 'searching'
-              ? 'w-full md:w-96 h-[40vh] md:h-full border-t md:border-t-0 border-brand-card/80'
-              : 'w-full md:w-96 h-full'
+            isMapFullscreen || (role === 'driver' && rideStatus === 'in_progress')
+              ? 'hidden md:hidden w-0 h-0 border-0'
+              : rideStatus !== 'idle' && rideStatus !== 'searching'
+                ? 'w-full md:w-96 h-[40vh] md:h-full border-t md:border-t-0 border-brand-card/80'
+                : 'w-full md:w-96 h-full'
           }`} 
           id="sidebar-controls"
         >
@@ -4326,7 +4361,7 @@ export default function App() {
         {/* Right Side Map Viewport */}
         <section 
           className={`relative transition-all duration-300 ${
-            isMapFullscreen
+            isMapFullscreen || (role === 'driver' && rideStatus === 'in_progress')
               ? 'fixed inset-0 z-[9999] w-screen h-screen'
               : rideStatus !== 'idle' && rideStatus !== 'searching'
                 ? 'flex-1 h-[60vh] md:h-full w-full'
@@ -4342,6 +4377,23 @@ export default function App() {
             id="map-fullscreen-toggle"
           >
             {isMapFullscreen ? <Minimize2 size={16} className="group-hover:scale-110 transition-transform" /> : <Maximize2 size={16} className="group-hover:scale-110 transition-transform" />}
+          </button>
+
+          {/* Tactical Coordinate Grid Toggle Button */}
+          <button
+            onClick={() => setShowMapGrid(prev => !prev)}
+            className={`absolute top-[114px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] border rounded-lg shadow-md transition-all duration-200 active:scale-95 cursor-pointer group ${
+              showMapGrid
+                ? 'bg-brand-gold/15 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.35)]'
+                : 'bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
+            }`}
+            title={showMapGrid 
+              ? (slangMode ? "Masquer la grille tactique" : "Hide Tactical Grid") 
+              : (slangMode ? "Afficher la grille tactique" : "Show Tactical Grid")
+            }
+            id="map-grid-toggle"
+          >
+            <Grid size={16} className={`transition-transform duration-300 ${showMapGrid ? 'rotate-90 text-brand-gold' : 'group-hover:scale-110'}`} />
           </button>
 
           {/* Floating Map Pitch Control Button */}
@@ -4853,6 +4905,8 @@ export default function App() {
             etaMinutes={etaMinutes}
             isTilted={isMapTilted}
             isZoomLocked={isZoomLocked}
+            onZoomChange={setMapZoom}
+            showMapGrid={showMapGrid}
           />
 
           {/* Floating Dynamic Distance Ruler */}
@@ -4959,36 +5013,21 @@ export default function App() {
 
           {/* Smooth Journey Progress Bar Animation */}
           {rideStatus === 'in_progress' && (
-            <div className="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 bg-brand-midnight/95 backdrop-blur border border-brand-card/80 p-4 rounded-2xl shadow-2xl z-[1000] text-white">
-              <div className="space-y-3">
+            <div className="absolute bottom-3 left-3 right-3 md:left-auto md:right-4 md:w-80 bg-brand-midnight/95 backdrop-blur border border-brand-card/80 p-3 rounded-xl shadow-xl z-[1000] text-white">
+              <div className="space-y-2">
                 {/* Header info */}
                 <div className="flex items-center justify-between text-xs font-bold">
-                  <span className="text-brand-gold uppercase tracking-wider text-[10px] flex items-center gap-1.5 animate-pulse">
-                    <span className="w-2 h-2 rounded-full bg-brand-gold"></span>
+                  <span className="text-brand-gold uppercase tracking-wider text-[9px] flex items-center gap-1.5 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-gold"></span>
                     {slangMode ? "Course en cours..." : "Active Ride Status"}
                   </span>
-                  <span className="font-mono text-brand-gold font-extrabold text-[13px]">
+                  <span className="font-mono text-brand-gold font-extrabold text-xs">
                     {getTripProgressPercentage()}%
                   </span>
                 </div>
 
-                {/* From / To locations snippet */}
-                <div className="flex items-center justify-between gap-4 text-[10px] font-semibold text-brand-text-muted">
-                  <span className="truncate max-w-[120px] text-left">
-                    {pickup?.name || (slangMode ? "Départ" : "Pickup")}
-                  </span>
-                  <div className="flex-1 border-t border-dashed border-brand-card/60 relative">
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-brand-midnight px-1 text-[9px] text-brand-gold font-bold">
-                      {slangMode ? "En route" : "Transit"}
-                    </div>
-                  </div>
-                  <span className="truncate max-w-[120px] text-right">
-                    {destination?.name || (slangMode ? "Dépôt" : "Dropoff")}
-                  </span>
-                </div>
-
                 {/* Progress track & Bar */}
-                <div className="relative h-2 bg-brand-input/60 rounded-full overflow-visible border border-brand-card/40">
+                <div className="relative h-1.5 bg-brand-input/60 rounded-full overflow-visible border border-brand-card/40">
                   {/* Moving animated line */}
                   <motion.div
                     className="absolute top-0 left-0 h-full bg-gradient-to-r from-brand-gold/60 to-brand-gold rounded-full shadow-[0_0_8px_rgba(255,211,67,0.5)]"
@@ -4998,23 +5037,14 @@ export default function App() {
 
                   {/* Little car icon that floats with the percentage progress! */}
                   <motion.div
-                    className="absolute -top-1.5 -ml-2.5 z-10 text-brand-midnight"
+                    className="absolute -top-1.5 -ml-2 z-10 text-brand-midnight"
                     animate={{ left: `${getTripProgressPercentage()}%` }}
                     transition={{ duration: 1.5, ease: "easeOut" }}
                   >
-                    <div className="w-5 h-5 rounded-full bg-brand-gold border border-white flex items-center justify-center shadow-md">
-                      <Car size={10} className="text-brand-midnight animate-bounce" />
+                    <div className="w-4.5 h-4.5 rounded-full bg-brand-gold border border-white flex items-center justify-center shadow-md">
+                      <Car size={9} className="text-brand-midnight animate-bounce" />
                     </div>
                   </motion.div>
-                </div>
-
-                {/* Additional descriptive meta indicator */}
-                <div className="flex items-center justify-between text-[9px] text-brand-text-muted pt-0.5 font-medium leading-none">
-                  <span>{slangMode ? "Regardez le chauffeur avancer en direct" : "Watch driver advance live"}</span>
-                  <span className="flex items-center gap-1 text-emerald-400 font-bold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                    {slangMode ? "Calculé par GPS" : "GPS Computed"}
-                  </span>
                 </div>
               </div>
             </div>
@@ -5031,6 +5061,31 @@ export default function App() {
               </p>
             </div>
           )}
+
+          {/* Map Zoom Level Scale Indicator */}
+          <div 
+            className="absolute bottom-3 left-3 z-[1000] bg-brand-midnight/90 backdrop-blur-md border border-brand-input/50 hover:border-brand-gold/60 rounded-xl px-2.5 py-1.5 flex items-center gap-2 shadow-lg transition-all duration-300 pointer-events-auto select-none"
+            id="map-zoom-scale-indicator"
+          >
+            <div className="flex flex-col">
+              <span className="text-[7.5px] font-black text-brand-gold uppercase tracking-widest leading-none font-sans">
+                {slangMode ? "ÉCHELLE ZOOM" : "ZOOM LEVEL"}
+              </span>
+              <span className="text-[9.5px] font-bold text-white leading-none mt-1 font-sans">
+                {(() => {
+                  if (mapZoom <= 11) return slangMode ? "Vue Globale" : "Wide View";
+                  if (mapZoom >= 12 && mapZoom <= 13) return slangMode ? "Secteur" : "District View";
+                  if (mapZoom >= 14 && mapZoom <= 15) return slangMode ? "Quartier" : "Neighborhood";
+                  return slangMode ? "Détail Rue" : "Street Detail";
+                })()}
+              </span>
+            </div>
+            <div className="h-6 w-[1px] bg-brand-input/40" />
+            <div className="flex items-baseline gap-0.5 font-mono">
+              <span className="text-sm font-black text-white">{mapZoom}</span>
+              <span className="text-[8px] font-bold text-brand-text-muted">z</span>
+            </div>
+          </div>
         </section>
 
       </div>

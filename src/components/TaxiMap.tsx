@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import * as d3 from 'd3';
 import { Location, RideStatus } from '../types';
-import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, ChevronUp, RefreshCw, Flame, Info, CornerUpLeft, CornerUpRight, ArrowUp, Volume2, VolumeX, Clock, Layers, Map as MapIcon, Mountain, Globe } from 'lucide-react';
+import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, ChevronUp, RefreshCw, Flame, Info, CornerUpLeft, CornerUpRight, ArrowUp, Volume2, VolumeX, Clock, Layers, Map as MapIcon, Mountain, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LAGOS_LOCATIONS as DOUALA_LOCATIONS, YAOUNDE_LOCATIONS } from '../data';
 
 export interface DemandZone {
@@ -84,9 +84,9 @@ function getHaversineDistanceInMeters(coords1: { lat: number; lng: number }, coo
   return R * c;
 }
 
-function generateFallbackInstructions(driverLoc: { lat: number; lng: number }, pickupLoc: { lat: number; lng: number }): any[] {
-  const dLat = pickupLoc.lat - driverLoc.lat;
-  const dLng = pickupLoc.lng - driverLoc.lng;
+function generateFallbackInstructions(driverLoc: { lat: number; lng: number }, targetLoc: { lat: number; lng: number }, isToDestination?: boolean): any[] {
+  const dLat = targetLoc.lat - driverLoc.lat;
+  const dLng = targetLoc.lng - driverLoc.lng;
   return [
     {
       instruction: dLat > 0 ? "Dirigez-vous vers le nord sur l'Avenue Principale" : "Dirigez-vous vers le sud sur l'Avenue Principale",
@@ -113,7 +113,9 @@ function generateFallbackInstructions(driverLoc: { lat: number; lng: number }, p
       modifier: dLat > 0 ? "left" : "right"
     },
     {
-      instruction: "Votre passager vous attend droit devant sur votre gauche",
+      instruction: isToDestination 
+        ? "Votre passager est arrivé à sa destination finale"
+        : "Votre passager vous attend droit devant sur votre gauche",
       distance: 100,
       type: "arrive",
       modifier: "arrive"
@@ -178,6 +180,8 @@ interface TaxiMapProps {
   etaMinutes?: number;
   isTilted?: boolean | 'flat' | 'isometric' | 'tilted';
   isZoomLocked?: boolean;
+  onZoomChange?: (zoom: number) => void;
+  showMapGrid?: boolean;
 }
 
 export default function TaxiMap({
@@ -194,7 +198,9 @@ export default function TaxiMap({
   onSetDriverLoc,
   etaMinutes = 3,
   isTilted = false,
-  isZoomLocked = false
+  isZoomLocked = false,
+  onZoomChange,
+  showMapGrid = false
 }: TaxiMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -220,13 +226,33 @@ export default function TaxiMap({
   const [isNavCompact, setIsNavCompact] = useState(true);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
+  // New Tactical Navigation Overlay States
+  const [isTacticalOverlayMinimized, setIsTacticalOverlayMinimized] = useState(() => {
+    const saved = localStorage.getItem('wanda_nav_overlay_minimized');
+    return saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('wanda_nav_overlay_minimized', isTacticalOverlayMinimized.toString());
+  }, [isTacticalOverlayMinimized]);
+
+  const [previewStepIndex, setPreviewStepIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setPreviewStepIndex(null); // Auto-sync when driver progress updates
+  }, [currentStepIndex]);
+
   // Keep refs for markers and polylines to modify them without reloading map
   const pickupMarkerRef = useRef<L.Marker | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
   const driverMarkerRef = useRef<L.Marker | null>(null);
   const liveMarkerRef = useRef<L.Marker | null>(null);
   const routeLineRef = useRef<L.Polyline | null>(null);
+  const routeLineBgRef = useRef<L.Polyline | null>(null);
+  const routeLineMidRef = useRef<L.Polyline | null>(null);
   const activeRouteLineRef = useRef<L.Polyline | null>(null);
+  const activeRouteLineBgRef = useRef<L.Polyline | null>(null);
+  const activeRouteLineMidRef = useRef<L.Polyline | null>(null);
   const approachLineRef = useRef<L.Polyline | null>(null);
   const driverStartLocRef = useRef<{ lat: number; lng: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -238,6 +264,11 @@ export default function TaxiMap({
   useEffect(() => {
     onMapClickRef.current = onMapClick;
   }, [onMapClick]);
+
+  const onZoomChangeRef = useRef(onZoomChange);
+  useEffect(() => {
+    onZoomChangeRef.current = onZoomChange;
+  }, [onZoomChange]);
 
   // Map Detail Mode States and Refs
   const [mapDetailMode, setMapDetailMode] = useState<'clean' | 'moderate' | 'full'>('full');
@@ -637,7 +668,11 @@ export default function TaxiMap({
       driverMarkerRef.current = null;
       liveMarkerRef.current = null;
       routeLineRef.current = null;
+      routeLineBgRef.current = null;
+      routeLineMidRef.current = null;
       activeRouteLineRef.current = null;
+      activeRouteLineBgRef.current = null;
+      activeRouteLineMidRef.current = null;
       approachLineRef.current = null;
       driverStartLocRef.current = null;
       polygonLayersRef.current = {};
@@ -684,15 +719,15 @@ export default function TaxiMap({
 
       if (zoom <= 12) {
         // Zoomed out: Minimal labels, highly clean layout to avoid clutter
-        opacity = 0.08;
+        opacity = 0.02;
         mode = 'clean';
       } else if (zoom >= 13 && zoom <= 15) {
         // Intermediate zoom: Moderate details, major highway labels and landmarks
-        opacity = 0.48;
+        opacity = 0.15;
         mode = 'moderate';
       } else {
         // Zoomed in close: Maximum detail with full POIs and street names for fine-grained navigation
-        opacity = 1.0;
+        opacity = 0.45;
         mode = 'full';
       }
 
@@ -700,6 +735,9 @@ export default function TaxiMap({
         darkLabelsLayerRef.current.setOpacity(showRoadNames ? opacity : 0);
       }
       setMapDetailMode(mode);
+      if (onZoomChangeRef.current) {
+        onZoomChangeRef.current(zoom);
+      }
     };
 
     // Run immediately to sync on status change
@@ -1257,16 +1295,84 @@ export default function TaxiMap({
         [destination.lat, destination.lng]
       ];
 
-      if (routeLineRef.current && map.hasLayer(routeLineRef.current)) {
-        routeLineRef.current.setLatLngs(mainPoints);
+      const isAssigned = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+      if (isAssigned && role === 'passenger') {
+        // RENDER A SPECTACULAR ANIMATED "ROUTE DISCOVERY" GLOWING GRADIENT!
+        
+        // Layer 1. Thick background neon gold glow
+        if (routeLineBgRef.current && map.hasLayer(routeLineBgRef.current)) {
+          routeLineBgRef.current.setLatLngs(mainPoints);
+        } else {
+          routeLineBgRef.current = L.polyline(mainPoints, {
+            color: '#ff9d00',
+            weight: 12,
+            opacity: 0.35,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-bg'
+          } as any).addTo(map);
+        }
+
+        // Layer 2. Middle vibrant brand-gold layer
+        if (routeLineMidRef.current && map.hasLayer(routeLineMidRef.current)) {
+          routeLineMidRef.current.setLatLngs(mainPoints);
+        } else {
+          routeLineMidRef.current = L.polyline(mainPoints, {
+            color: '#ffd385',
+            weight: 6,
+            opacity: 0.7,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-mid'
+          } as any).addTo(map);
+        }
+
+        // Layer 3. Core hot white highlight laser line
+        if (routeLineRef.current && map.hasLayer(routeLineRef.current)) {
+          routeLineRef.current.setLatLngs(mainPoints);
+          routeLineRef.current.setStyle({
+            color: '#ffffff',
+            weight: 2,
+            opacity: 0.95,
+            className: 'route-discovery-glow-core'
+          } as any);
+        } else {
+          routeLineRef.current = L.polyline(mainPoints, {
+            color: '#ffffff',
+            weight: 2,
+            opacity: 0.95,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-core'
+          } as any).addTo(map);
+        }
       } else {
-        routeLineRef.current = L.polyline(mainPoints, {
-          color: '#a39bc9', // faded brand-text-muted
-          weight: 3,
-          opacity: 0.35,
-          dashArray: '4, 8',
-          lineJoin: 'round'
-        }).addTo(map);
+        // Standard Faded/Dashed Planned Trip Polyline
+        if (routeLineBgRef.current && map.hasLayer(routeLineBgRef.current)) {
+          routeLineBgRef.current.remove();
+        }
+        routeLineBgRef.current = null;
+
+        if (routeLineMidRef.current && map.hasLayer(routeLineMidRef.current)) {
+          routeLineMidRef.current.remove();
+        }
+        routeLineMidRef.current = null;
+
+        if (routeLineRef.current && map.hasLayer(routeLineRef.current)) {
+          routeLineRef.current.setLatLngs(mainPoints);
+          routeLineRef.current.setStyle({
+            color: '#a39bc9', // faded brand-text-muted
+            weight: 3,
+            opacity: 0.35,
+            className: ''
+          } as any);
+        } else {
+          routeLineRef.current = L.polyline(mainPoints, {
+            color: '#a39bc9',
+            weight: 3,
+            opacity: 0.35,
+            dashArray: '4, 8',
+            lineJoin: 'round'
+          }).addTo(map);
+        }
       }
     } else {
       if (routeLineRef.current) {
@@ -1274,6 +1380,18 @@ export default function TaxiMap({
           routeLineRef.current.remove();
         }
         routeLineRef.current = null;
+      }
+      if (routeLineBgRef.current) {
+        if (map.hasLayer(routeLineBgRef.current)) {
+          routeLineBgRef.current.remove();
+        }
+        routeLineBgRef.current = null;
+      }
+      if (routeLineMidRef.current) {
+        if (map.hasLayer(routeLineMidRef.current)) {
+          routeLineMidRef.current.remove();
+        }
+        routeLineMidRef.current = null;
       }
     }
 
@@ -1285,22 +1403,77 @@ export default function TaxiMap({
         [driverLocation.lat, driverLocation.lng]
       ];
 
-      if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
-        activeRouteLineRef.current.setLatLngs(activePoints);
-        activeRouteLineRef.current.setStyle({
-          color: '#ffd385', // brand-gold
-          weight: 5,
-          opacity: 1,
-          className: 'route-glow-animate route-flow-animate'
-        } as any);
+      if (role === 'passenger') {
+        if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
+          activeRouteLineBgRef.current.setLatLngs(activePoints);
+          activeRouteLineBgRef.current.setStyle({ color: '#ff9d00', className: 'route-discovery-glow-bg' } as any);
+        } else {
+          activeRouteLineBgRef.current = L.polyline(activePoints, {
+            color: '#ff9d00',
+            weight: 12,
+            opacity: 0.35,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-bg'
+          } as any).addTo(map);
+        }
+
+        if (activeRouteLineMidRef.current && map.hasLayer(activeRouteLineMidRef.current)) {
+          activeRouteLineMidRef.current.setLatLngs(activePoints);
+          activeRouteLineMidRef.current.setStyle({ color: '#ffd385', className: 'route-discovery-glow-mid' } as any);
+        } else {
+          activeRouteLineMidRef.current = L.polyline(activePoints, {
+            color: '#ffd385',
+            weight: 6,
+            opacity: 0.7,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-mid'
+          } as any).addTo(map);
+        }
+
+        if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
+          activeRouteLineRef.current.setLatLngs(activePoints);
+          activeRouteLineRef.current.setStyle({
+            color: '#ffffff',
+            weight: 2,
+            opacity: 0.95,
+            className: 'route-discovery-glow-core'
+          } as any);
+        } else {
+          activeRouteLineRef.current = L.polyline(activePoints, {
+            color: '#ffffff',
+            weight: 2,
+            opacity: 0.95,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-core'
+          } as any).addTo(map);
+        }
       } else {
-        activeRouteLineRef.current = L.polyline(activePoints, {
-          color: '#ffd385', // brand-gold
-          weight: 5,
-          opacity: 1,
-          lineJoin: 'round',
-          className: 'route-glow-animate route-flow-animate'
-        } as any).addTo(map);
+        if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
+          activeRouteLineBgRef.current.remove();
+        }
+        activeRouteLineBgRef.current = null;
+        if (activeRouteLineMidRef.current && map.hasLayer(activeRouteLineMidRef.current)) {
+          activeRouteLineMidRef.current.remove();
+        }
+        activeRouteLineMidRef.current = null;
+
+        if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
+          activeRouteLineRef.current.setLatLngs(activePoints);
+          activeRouteLineRef.current.setStyle({
+            color: '#ffd385', // brand-gold
+            weight: 5,
+            opacity: 1,
+            className: 'route-glow-animate route-flow-animate'
+          } as any);
+        } else {
+          activeRouteLineRef.current = L.polyline(activePoints, {
+            color: '#ffd385', // brand-gold
+            weight: 5,
+            opacity: 1,
+            lineJoin: 'round',
+            className: 'route-glow-animate route-flow-animate'
+          } as any).addTo(map);
+        }
       }
     }
     // (b) Driver heading to pickup: Draws itself from Driver's starting point to current Driver position
@@ -1310,22 +1483,77 @@ export default function TaxiMap({
         [driverLocation.lat, driverLocation.lng]
       ];
 
-      if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
-        activeRouteLineRef.current.setLatLngs(approachTrailPoints);
-        activeRouteLineRef.current.setStyle({
-          color: '#38bdf8', // approach cyan
-          weight: 4,
-          opacity: 0.9,
-          className: 'route-glow-animate-blue'
-        } as any);
+      if (role === 'passenger') {
+        if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
+          activeRouteLineBgRef.current.setLatLngs(approachTrailPoints);
+          activeRouteLineBgRef.current.setStyle({ color: '#0ea5e9', className: 'route-discovery-glow-bg-blue' } as any);
+        } else {
+          activeRouteLineBgRef.current = L.polyline(approachTrailPoints, {
+            color: '#0ea5e9',
+            weight: 12,
+            opacity: 0.35,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-bg-blue'
+          } as any).addTo(map);
+        }
+
+        if (activeRouteLineMidRef.current && map.hasLayer(activeRouteLineMidRef.current)) {
+          activeRouteLineMidRef.current.setLatLngs(approachTrailPoints);
+          activeRouteLineMidRef.current.setStyle({ color: '#38bdf8', className: 'route-discovery-glow-mid-blue' } as any);
+        } else {
+          activeRouteLineMidRef.current = L.polyline(approachTrailPoints, {
+            color: '#38bdf8',
+            weight: 6,
+            opacity: 0.7,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-mid-blue'
+          } as any).addTo(map);
+        }
+
+        if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
+          activeRouteLineRef.current.setLatLngs(approachTrailPoints);
+          activeRouteLineRef.current.setStyle({
+            color: '#ffffff',
+            weight: 2,
+            opacity: 0.95,
+            className: 'route-discovery-glow-core-blue'
+          } as any);
+        } else {
+          activeRouteLineRef.current = L.polyline(approachTrailPoints, {
+            color: '#ffffff',
+            weight: 2,
+            opacity: 0.95,
+            lineJoin: 'round',
+            className: 'route-discovery-glow-core-blue'
+          } as any).addTo(map);
+        }
       } else {
-        activeRouteLineRef.current = L.polyline(approachTrailPoints, {
-          color: '#38bdf8',
-          weight: 4,
-          opacity: 0.9,
-          lineJoin: 'round',
-          className: 'route-glow-animate-blue'
-        } as any).addTo(map);
+        if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
+          activeRouteLineBgRef.current.remove();
+        }
+        activeRouteLineBgRef.current = null;
+        if (activeRouteLineMidRef.current && map.hasLayer(activeRouteLineMidRef.current)) {
+          activeRouteLineMidRef.current.remove();
+        }
+        activeRouteLineMidRef.current = null;
+
+        if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
+          activeRouteLineRef.current.setLatLngs(approachTrailPoints);
+          activeRouteLineRef.current.setStyle({
+            color: '#38bdf8', // approach cyan
+            weight: 4,
+            opacity: 0.9,
+            className: 'route-glow-animate-blue'
+          } as any);
+        } else {
+          activeRouteLineRef.current = L.polyline(approachTrailPoints, {
+            color: '#38bdf8',
+            weight: 4,
+            opacity: 0.9,
+            lineJoin: 'round',
+            className: 'route-glow-animate-blue'
+          } as any).addTo(map);
+        }
       }
     } else {
       if (activeRouteLineRef.current) {
@@ -1333,6 +1561,18 @@ export default function TaxiMap({
           activeRouteLineRef.current.remove();
         }
         activeRouteLineRef.current = null;
+      }
+      if (activeRouteLineBgRef.current) {
+        if (map.hasLayer(activeRouteLineBgRef.current)) {
+          activeRouteLineBgRef.current.remove();
+        }
+        activeRouteLineBgRef.current = null;
+      }
+      if (activeRouteLineMidRef.current) {
+        if (map.hasLayer(activeRouteLineMidRef.current)) {
+          activeRouteLineMidRef.current.remove();
+        }
+        activeRouteLineMidRef.current = null;
       }
     }
 
@@ -1638,13 +1878,15 @@ export default function TaxiMap({
   
   // Effect 1: Fetch Routing path & directions from OSRM driving profile
   useEffect(() => {
-    if (status !== 'driver_found' && status !== 'arriving') {
+    if (status !== 'driver_found' && status !== 'arriving' && status !== 'in_progress') {
       setNavInstructions([]);
       setCurrentStepIndex(0);
       return;
     }
 
-    if (!pickup || !driverLocation || !isValidCoords(pickup.lat, pickup.lng) || !isValidCoords(driverLocation.lat, driverLocation.lng)) {
+    const targetCoords = status === 'in_progress' ? destination : pickup;
+
+    if (!targetCoords || !driverLocation || !isValidCoords(targetCoords.lat, targetCoords.lng) || !isValidCoords(driverLocation.lat, driverLocation.lng)) {
       return;
     }
 
@@ -1653,7 +1895,7 @@ export default function TaxiMap({
     const fetchOSRMRoute = async () => {
       setIsLoadingRoute(true);
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation.lng},${driverLocation.lat};${pickup.lng},${pickup.lat}?overview=full&steps=true&geometries=geojson`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation.lng},${driverLocation.lat};${targetCoords.lng},${targetCoords.lat}?overview=full&steps=true&geometries=geojson`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("OSRM routing server error");
         const data = await res.json();
@@ -1674,7 +1916,7 @@ export default function TaxiMap({
           }));
 
           if (steps.length === 0) {
-            setNavInstructions(generateFallbackInstructions(driverLocation, pickup));
+            setNavInstructions(generateFallbackInstructions(driverLocation, targetCoords, status === 'in_progress'));
           } else {
             setNavInstructions(steps);
           }
@@ -1682,25 +1924,100 @@ export default function TaxiMap({
           if (route.geometry && route.geometry.coordinates && mapRef.current) {
             const pathLatLngs = route.geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
             
-            if (activeRouteLineRef.current && mapRef.current.hasLayer(activeRouteLineRef.current)) {
-              activeRouteLineRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
+            if (role === 'passenger') {
+              // RENDER A SPECTACULAR ANIMATED GLOWING GRADIENT OSRM ROUTE DISCOVERY!
+              // 1. Bottom Glow Layer (deep cyan/teal neon glow for approach, or gold/amber for ride)
+              const glowColor = status === 'in_progress' ? '#ff9d00' : '#0ea5e9';
+              const glowClass = status === 'in_progress' ? 'route-discovery-glow-bg' : 'route-discovery-glow-bg-blue';
+
+              if (activeRouteLineBgRef.current && mapRef.current.hasLayer(activeRouteLineBgRef.current)) {
+                activeRouteLineBgRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
+                activeRouteLineBgRef.current.setStyle({ color: glowColor, className: glowClass } as any);
+              } else {
+                activeRouteLineBgRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                  color: glowColor,
+                  weight: 12,
+                  opacity: 0.35,
+                  lineJoin: 'round',
+                  className: glowClass
+                } as any).addTo(mapRef.current);
+              }
+
+              // 2. Middle Vivid Layer (cyan or gold with flow dash)
+              const midColor = status === 'in_progress' ? '#ffd385' : '#38bdf8';
+              const midClass = status === 'in_progress' ? 'route-discovery-glow-mid' : 'route-discovery-glow-mid-blue';
+
+              if (activeRouteLineMidRef.current && mapRef.current.hasLayer(activeRouteLineMidRef.current)) {
+                activeRouteLineMidRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
+                activeRouteLineMidRef.current.setStyle({ color: midColor, className: midClass } as any);
+              } else {
+                activeRouteLineMidRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                  color: midColor,
+                  weight: 6,
+                  opacity: 0.7,
+                  lineJoin: 'round',
+                  className: midClass
+                } as any).addTo(mapRef.current);
+              }
+
+              // 3. Core Laser Layer (bright white highlight)
+              const coreClass = status === 'in_progress' ? 'route-discovery-glow-core' : 'route-discovery-glow-core-blue';
+
+              if (activeRouteLineRef.current && mapRef.current.hasLayer(activeRouteLineRef.current)) {
+                activeRouteLineRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
+                activeRouteLineRef.current.setStyle({
+                  color: '#ffffff',
+                  weight: 2,
+                  opacity: 0.95,
+                  className: coreClass
+                } as any);
+              } else {
+                activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                  color: '#ffffff',
+                  weight: 2,
+                  opacity: 0.95,
+                  lineJoin: 'round',
+                  className: coreClass
+                } as any).addTo(mapRef.current);
+              }
             } else {
-              activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
-                color: '#ffd385', // brand-gold
-                weight: 5,
-                opacity: 1,
-                lineJoin: 'round',
-                className: 'route-glow-animate route-flow-animate'
-              } as any).addTo(mapRef.current);
+              // Standard driver path
+              if (activeRouteLineBgRef.current && mapRef.current.hasLayer(activeRouteLineBgRef.current)) {
+                activeRouteLineBgRef.current.remove();
+              }
+              activeRouteLineBgRef.current = null;
+
+              if (activeRouteLineMidRef.current && mapRef.current.hasLayer(activeRouteLineMidRef.current)) {
+                activeRouteLineMidRef.current.remove();
+              }
+              activeRouteLineMidRef.current = null;
+
+              if (activeRouteLineRef.current && mapRef.current.hasLayer(activeRouteLineRef.current)) {
+                activeRouteLineRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
+                activeRouteLineRef.current.setStyle({
+                  color: status === 'in_progress' ? '#ffd385' : '#38bdf8',
+                  weight: 5,
+                  opacity: 1,
+                  className: status === 'in_progress' ? 'route-glow-animate route-flow-animate' : 'route-glow-animate-blue'
+                } as any);
+              } else {
+                activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                  color: status === 'in_progress' ? '#ffd385' : '#38bdf8',
+                  weight: 5,
+                  opacity: 1,
+                  lineJoin: 'round',
+                  className: status === 'in_progress' ? 'route-glow-animate route-flow-animate' : 'route-glow-animate-blue'
+                } as any).addTo(mapRef.current);
+              }
             }
           }
         } else {
-          setNavInstructions(generateFallbackInstructions(driverLocation, pickup));
+          setNavInstructions(generateFallbackInstructions(driverLocation, targetCoords, status === 'in_progress'));
         }
       } catch (err) {
         console.warn("OSRM API error, using local fallback:", err);
         if (isSubscribed) {
-          setNavInstructions(generateFallbackInstructions(driverLocation, pickup));
+          setNavInstructions(generateFallbackInstructions(driverLocation, targetCoords, status === 'in_progress'));
         }
       } finally {
         if (isSubscribed) {
@@ -1714,23 +2031,26 @@ export default function TaxiMap({
     return () => {
       isSubscribed = false;
     };
-  }, [pickup, status]);
+  }, [pickup, destination, status]);
 
   // Effect 2: Update navigation progress based on driver movement (live state updates)
   useEffect(() => {
-    if (!pickup || !driverLocation || !isValidCoords(pickup.lat, pickup.lng) || !isValidCoords(driverLocation.lat, driverLocation.lng)) {
+    const targetCoords = status === 'in_progress' ? destination : pickup;
+    if (!targetCoords || !driverLocation || !isValidCoords(targetCoords.lat, targetCoords.lng) || !isValidCoords(driverLocation.lat, driverLocation.lng)) {
       return;
     }
 
-    if (status !== 'driver_found' && status !== 'arriving') return;
+    if (status !== 'driver_found' && status !== 'arriving' && status !== 'in_progress') return;
 
-    const distMeters = getHaversineDistanceInMeters(driverLocation, pickup);
+    const distMeters = getHaversineDistanceInMeters(driverLocation, targetCoords);
     setTotalDistanceRemaining(distMeters);
     setTotalDurationRemaining(Math.round(distMeters / 8.3));
 
     if (navInstructions.length > 0) {
-      // Divide total average distance (1.5 km) dynamically to trace index
-      const initialDist = 1500; 
+      // Divide total average distance dynamically to trace index
+      const initialDist = status === 'in_progress' 
+        ? (pickup && destination ? getHaversineDistanceInMeters(pickup, destination) : 3000)
+        : 1500; 
       const ratio = Math.min(1, Math.max(0, distMeters / initialDist));
       const stepIndex = Math.min(
         navInstructions.length - 1,
@@ -1739,7 +2059,7 @@ export default function TaxiMap({
       
       setCurrentStepIndex(stepIndex);
     }
-  }, [driverLocation, pickup, navInstructions, status]);
+  }, [driverLocation, pickup, destination, navInstructions, status]);
 
   // Effect 3: Voice synthesizer voice guide
   useEffect(() => {
@@ -1773,6 +2093,57 @@ export default function TaxiMap({
           willChange: 'transform, filter, opacity',
         }}
       />
+
+      {/* Tactical Coordinate Grid Overlay */}
+      {showMapGrid && (
+        <div 
+          className="absolute inset-0 z-[499] pointer-events-none overflow-hidden select-none"
+          id="map-coordinate-grid"
+          style={{
+            transform: isTilted === 'isometric'
+              ? 'perspective(1200px) rotateX(45deg) rotateZ(-1deg) scale(1.26) translateY(-4%)'
+              : (isTilted === true || isTilted === 'tilted')
+                ? 'perspective(1200px) rotateX(54deg) rotateZ(-2deg) scale(1.38) translateY(-6%)'
+                : 'perspective(1200px) rotateX(0deg) rotateZ(0deg) scale(1) translateY(0)',
+            transformOrigin: 'bottom center',
+            transition: 'transform 1.1s cubic-bezier(0.25, 1, 0.3, 1), opacity 1.1s cubic-bezier(0.25, 1, 0.3, 1)',
+            backgroundImage: `
+              linear-gradient(to right, rgba(255, 211, 67, 0.03) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(255, 211, 67, 0.03) 1px, transparent 1px),
+              linear-gradient(to right, rgba(255, 211, 67, 0.08) 1.5px, transparent 1.5px),
+              linear-gradient(to bottom, rgba(255, 211, 67, 0.08) 1.5px, transparent 1.5px)
+            `,
+            backgroundSize: '40px 40px, 40px 40px, 160px 160px, 160px 160px',
+            backgroundPosition: 'center center',
+          }}
+        >
+          {/* Edge Tick Coordinate Labels */}
+          <div className="absolute top-[10%] left-6 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
+            LAT: 04.0580° N
+          </div>
+          <div className="absolute top-[50%] left-6 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
+            LAT: 04.0435° N
+          </div>
+          <div className="absolute top-[90%] left-6 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
+            LAT: 04.0290° N
+          </div>
+
+          <div className="absolute bottom-6 left-[10%] text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
+            LNG: 09.6950° E
+          </div>
+          <div className="absolute bottom-6 left-[50%] -translate-x-1/2 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
+            LNG: 09.7100° E
+          </div>
+          <div className="absolute bottom-6 right-[10%] text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
+            LNG: 09.7250° E
+          </div>
+
+          {/* Grid Scale Indicator Info */}
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-brand-midnight/70 backdrop-blur-md px-2 py-0.5 rounded-full text-[7.5px] font-mono text-brand-gold/60 border border-brand-gold/10 font-bold uppercase tracking-wider">
+            {slangMode ? "Échelle Grille: 1 Bloc = ~500m" : "Grid Overlay: 1 Square = ~500m"}
+          </div>
+        </div>
+      )}
 
       {/* Map Detail Mode Adaptive Badge */}
       <div 
@@ -2013,7 +2384,7 @@ export default function TaxiMap({
       </button>
 
       {/* FLOATING LIVE TURN-BY-TURN NAVIGATION HUD */}
-      {role === 'driver' && (status === 'driver_found' || status === 'arriving') && navInstructions.length > 0 && (
+      {role === 'driver' && (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && navInstructions.length > 0 && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1015] w-[90%] max-w-sm" id="driver-gps-nav-hud">
           {isNavCompact ? (
             /* COMPACT MINIMIZED NAV BAR (1/3 to 1/2 of full height) */
@@ -2400,12 +2771,142 @@ export default function TaxiMap({
                 <div className="pt-2 border-t border-brand-input/30 text-[10px] text-brand-text-muted flex justify-between items-center font-semibold">
                   <span>{slangMode ? "Service de course sécurisé" : "Secure Ride Tracking"}</span>
                   <span className="text-[9px] text-brand-gold font-bold px-1.5 py-0.5 rounded bg-brand-gold/10">
-                    {slangMode ? "TAP POUR RÉDUIRE" : "TAP TO COLLAPSE"}
+                    {slangMode ? "TAP POUR RÉDIVE" : "TAP TO COLLAPSE"}
                   </span>
                 </div>
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* FLOATING TACTICAL TURN-BY-TURN INSTRUCTION CARD (Optional & Interactive) */}
+      {navInstructions.length > 0 && (
+        <div 
+          id="floating-turn-instruction-card" 
+          className="absolute top-4 left-4 z-[1010] max-w-xs w-72 transition-all duration-300"
+        >
+          {isTacticalOverlayMinimized ? (
+            /* Minimized coin button */
+            <button
+              onClick={() => setIsTacticalOverlayMinimized(false)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 hover:border-brand-gold text-brand-gold shadow-2xl hover:bg-brand-card transition-all duration-200 cursor-pointer active:scale-95 text-xs font-bold"
+              title={slangMode ? "Déployer Guide Tactique" : "Expand Tactical Copilot"}
+            >
+              <Navigation size={14} className="text-brand-gold rotate-45 animate-pulse" />
+              <span>{slangMode ? "Prochain Virage" : "Next Turn"}</span>
+            </button>
+          ) : (
+            /* Fully Expanded Co-Pilot HUD Card */
+            <div className="bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 rounded-2xl shadow-2xl text-white p-3.5 space-y-3.5 transition-all animate-fade-in relative overflow-hidden">
+              {/* Card top banner with amber warning neon glow */}
+              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-brand-gold via-yellow-400 to-brand-gold animate-pulse" />
+              
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <span className="font-black text-brand-gold uppercase tracking-widest text-[9px] flex items-center gap-1.5 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-gold animate-ping" />
+                  {slangMode ? "CO-PILOTE TACTIQUE" : "TACTICAL CO-PILOT"}
+                </span>
+                <button
+                  onClick={() => setIsTacticalOverlayMinimized(true)}
+                  className="text-brand-text-muted hover:text-white transition p-0.5 rounded hover:bg-white/5 cursor-pointer"
+                  title={slangMode ? "Réduire l'overlay" : "Minimize HUD"}
+                >
+                  <ChevronDown size={14} />
+                </button>
+              </div>
+
+              {/* Main Instruction Body */}
+              <div className="flex items-start gap-3 bg-brand-input/20 p-2.5 rounded-xl border border-brand-input/30 relative">
+                {/* Visual Turn Icon */}
+                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0 shadow-inner">
+                  {getManeuverIcon(navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.modifier || navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.type)}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] uppercase font-black text-brand-gold tracking-wider leading-none">
+                    {previewStepIndex !== null ? (slangMode ? `ÉTAPE SIMULÉE ${previewStepIndex + 1}/${navInstructions.length}` : `PREVIEWING STEP ${previewStepIndex + 1}/${navInstructions.length}`) : (slangMode ? "VIRAGE IMMINENT" : "NEXT ACTION")}
+                  </p>
+                  <h4 className="text-[11.5px] font-black leading-snug mt-1 text-white">
+                    {navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.instruction}
+                  </h4>
+                  <p className="text-[10px] text-brand-text-muted font-bold flex items-center gap-1.5 mt-0.5">
+                    <span className="text-brand-gold">
+                      {formatDistance(navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.distance || 0)}
+                    </span>
+                    <span>•</span>
+                    <span>{formatDuration(navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.duration || 0)}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Step Navigation Slider & Control buttons */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[8.5px] text-brand-text-muted font-bold uppercase tracking-wider font-mono">
+                  <span>{slangMode ? "Parcours Étapes" : "Route Step Navigator"}</span>
+                  <span className="text-brand-gold font-bold">
+                    {previewStepIndex !== null ? `${previewStepIndex + 1} / ${navInstructions.length}` : `${currentStepIndex + 1} / ${navInstructions.length}`}
+                  </span>
+                </div>
+
+                {/* Progress bar representing our position in the steps */}
+                <div className="h-1.5 w-full bg-brand-input/40 rounded-full overflow-hidden relative">
+                  <div 
+                    className="h-full bg-brand-gold transition-all duration-300 rounded-full shadow-[0_0_8px_rgba(255,211,67,0.6)]"
+                    style={{
+                      width: `${((previewStepIndex !== null ? previewStepIndex : currentStepIndex) + 1) / navInstructions.length * 100}%`
+                    }}
+                  />
+                </div>
+
+                {/* Left/Right controls to browse the route steps */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    disabled={(previewStepIndex !== null ? previewStepIndex : currentStepIndex) === 0}
+                    onClick={() => {
+                      const currentIdx = previewStepIndex !== null ? previewStepIndex : currentStepIndex;
+                      if (currentIdx > 0) {
+                        setPreviewStepIndex(currentIdx - 1);
+                      }
+                    }}
+                    className="p-1 rounded-lg border border-brand-input/50 text-brand-text-muted hover:text-white hover:border-brand-gold/60 disabled:opacity-40 disabled:pointer-events-none transition flex items-center gap-1 cursor-pointer bg-brand-midnight/45"
+                    title="Previous maneuver"
+                  >
+                    <ChevronLeft size={13} />
+                    <span className="text-[8.5px] font-bold uppercase pr-1">{slangMode ? "Préc" : "Prev"}</span>
+                  </button>
+
+                  {/* Auto-sync / Reset button to jump back to real driver live step */}
+                  {previewStepIndex !== null && previewStepIndex !== currentStepIndex && (
+                    <button
+                      onClick={() => setPreviewStepIndex(null)}
+                      className="text-[8.5px] font-black text-brand-gold hover:text-white uppercase px-2 py-0.5 rounded border border-brand-gold/20 hover:border-white transition flex items-center gap-1 cursor-pointer animate-fade-in bg-brand-gold/10"
+                      title="Sync back to live position"
+                    >
+                      <RefreshCw size={9} className="animate-spin-slow" />
+                      <span>{slangMode ? "SYNC DIRECT" : "LIVE SYNC"}</span>
+                    </button>
+                  )}
+
+                  <button
+                    disabled={(previewStepIndex !== null ? previewStepIndex : currentStepIndex) === navInstructions.length - 1}
+                    onClick={() => {
+                      const currentIdx = previewStepIndex !== null ? previewStepIndex : currentStepIndex;
+                      if (currentIdx < navInstructions.length - 1) {
+                        setPreviewStepIndex(currentIdx + 1);
+                      }
+                    }}
+                    className="p-1 rounded-lg border border-brand-input/50 text-brand-text-muted hover:text-white hover:border-brand-gold/60 disabled:opacity-40 disabled:pointer-events-none transition flex items-center gap-1 cursor-pointer bg-brand-midnight/45"
+                    title="Next maneuver"
+                  >
+                    <span className="text-[8.5px] font-bold uppercase pl-1">{slangMode ? "Suiv" : "Next"}</span>
+                    <ChevronRight size={13} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

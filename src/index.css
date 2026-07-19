@@ -98,6 +98,76 @@
   animation: route-glow-blue 2.5s ease-in-out infinite;
 }
 
+/* Route Discovery Glowing Gradient & Draw-in Effect */
+@keyframes route-discover-draw {
+  from {
+    stroke-dashoffset: 3000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes route-glow-pulse-amber {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(255, 157, 0, 0.7)) drop-shadow(0 0 10px rgba(255, 157, 0, 0.4));
+    opacity: 0.35;
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(255, 211, 133, 0.95)) drop-shadow(0 0 30px rgba(255, 211, 133, 0.7));
+    opacity: 0.65;
+  }
+}
+
+@keyframes route-glow-pulse-blue {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(14, 165, 233, 0.7)) drop-shadow(0 0 10px rgba(14, 165, 233, 0.4));
+    opacity: 0.35;
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.95)) drop-shadow(0 0 30px rgba(56, 189, 248, 0.7));
+    opacity: 0.65;
+  }
+}
+
+/* Gold/Amber route discovery layers */
+.route-discovery-glow-bg {
+  stroke-dasharray: 3000;
+  stroke-dashoffset: 3000;
+  animation: route-discover-draw 2.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards, route-glow-pulse-amber 3s ease-in-out infinite 2.8s;
+}
+
+.route-discovery-glow-mid {
+  stroke-dasharray: 3000;
+  stroke-dashoffset: 3000;
+  animation: route-discover-draw 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.route-discovery-glow-core {
+  stroke-dasharray: 3000;
+  stroke-dashoffset: 3000;
+  animation: route-discover-draw 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Blue/Cyan route discovery layers */
+.route-discovery-glow-bg-blue {
+  stroke-dasharray: 3000;
+  stroke-dashoffset: 3000;
+  animation: route-discover-draw 2.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards, route-glow-pulse-blue 3s ease-in-out infinite 2.8s;
+}
+
+.route-discovery-glow-mid-blue {
+  stroke-dasharray: 3000;
+  stroke-dashoffset: 3000;
+  animation: route-discover-draw 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.route-discovery-glow-core-blue {
+  stroke-dasharray: 3000;
+  stroke-dashoffset: 3000;
+  animation: route-discover-draw 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
 /* Custom soft pulsing animations for map markers in transit */
 @keyframes transit-pulse {
   0% {
