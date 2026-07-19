@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Shield, Sparkles, Smartphone, ArrowRight, UserCheck, ShieldCheck, Heart, MapPin, Compass } from 'lucide-react';
+import { Shield, Sparkles, Smartphone, ArrowRight, UserCheck, ShieldCheck, Heart, MapPin, Compass, Globe } from 'lucide-react';
 import WandaLogo from './WandaLogo';
 
 interface LandingPageProps {
@@ -14,13 +14,21 @@ interface LandingPageProps {
     vehicleColor?: string;
     vehiclePlate?: string;
   }) => void;
+  currentLanguage?: 'en' | 'fr';
+  onLanguageChange?: (lang: 'en' | 'fr') => void;
 }
 
-export default function LandingPage({ onSignupComplete }: LandingPageProps) {
+export default function LandingPage({ 
+  onSignupComplete,
+  currentLanguage = 'fr',
+  onLanguageChange
+}: LandingPageProps) {
   const [role, setRole] = useState<'passenger' | 'driver'>('passenger');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [slangMode, setSlangMode] = useState(true);
+  
+  const slangMode = currentLanguage === 'fr';
+
   const [vehicleType, setVehicleType] = useState('ecoride');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
@@ -80,30 +88,37 @@ export default function LandingPage({ onSignupComplete }: LandingPageProps) {
       <div className="absolute bottom-[-10%] right-[-10%] w-[45vw] h-[45vw] rounded-full bg-brand-gold/5 blur-[150px] pointer-events-none"></div>
 
       {/* Header bar */}
-      <header className="max-w-7xl mx-auto w-full px-6 py-4 flex justify-between items-center z-10 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <WandaLogo className="w-10 h-10 drop-shadow-[0_0_12px_rgba(226,193,141,0.3)] animate-pulse" />
+      <header className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-3 sm:py-4 flex flex-col xs:flex-row justify-between items-center gap-3 z-10 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          <WandaLogo className="w-8 h-8 sm:w-10 sm:h-10 drop-shadow-[0_0_12px_rgba(226,193,141,0.3)] animate-pulse" />
           <div>
-            <h1 className="text-lg font-black tracking-widest text-brand-gold font-sans">
+            <h1 className="text-base sm:text-lg font-black tracking-widest text-brand-gold font-sans">
               WANDA
             </h1>
-            <p className="text-[10px] text-brand-text-muted italic font-bold">tu Wanda on tes transporte.</p>
+            <p className="text-[9px] sm:text-[10px] text-brand-text-muted italic font-bold hidden xs:block">tu Wanda on tes transporte.</p>
           </div>
         </div>
 
-        {/* Slang toggle */}
-        <div className="flex items-center gap-2 bg-brand-card/60 p-1 rounded-xl border border-brand-input/80 text-[11px]">
+        {/* Language option switcher */}
+        <div className="flex items-center gap-1 bg-brand-card/60 p-1 rounded-xl border border-brand-input/80 text-[10px] sm:text-[11px] shrink-0" id="landing-language-selector">
+          <span className="text-brand-text-muted px-1.5">
+            <Globe size={12} className="text-brand-gold animate-[spin_12s_linear_infinite]" />
+          </span>
           <button
-            onClick={() => setSlangMode(false)}
-            className={`px-2.5 py-1 rounded-lg font-bold transition ${!slangMode ? 'bg-brand-input text-brand-gold' : 'text-brand-text-muted hover:text-white'}`}
+            type="button"
+            onClick={() => onLanguageChange?.('en')}
+            className={`px-2 py-1 rounded-lg font-bold transition flex items-center gap-1 cursor-pointer ${currentLanguage === 'en' ? 'bg-brand-gold text-brand-midnight font-black shadow' : 'text-brand-text-muted hover:text-white'}`}
           >
-            Standard
+            <span>🇬🇧</span>
+            <span className="hidden xs:inline">English</span>
           </button>
           <button
-            onClick={() => setSlangMode(true)}
-            className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${slangMode ? 'bg-brand-gold text-brand-midnight font-black shadow' : 'text-brand-text-muted hover:text-white'}`}
+            type="button"
+            onClick={() => onLanguageChange?.('fr')}
+            className={`px-2 py-1 rounded-lg font-bold transition flex items-center gap-1 cursor-pointer ${currentLanguage === 'fr' ? 'bg-brand-gold text-brand-midnight font-black shadow' : 'text-brand-text-muted hover:text-white'}`}
           >
-            🇨🇲 Wanda Speak
+            <span>🇫🇷</span>
+            <span className="hidden xs:inline">Français</span>
           </button>
         </div>
       </header>

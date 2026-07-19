@@ -40,7 +40,22 @@ import {
   Copy,
   Download,
   RotateCcw,
-  FileText
+  FileText,
+  Gift,
+  Sparkles,
+  Globe,
+  ChevronDown,
+  ArrowUpDown,
+  Ruler,
+  Maximize2,
+  Minimize2,
+  Magnet,
+  Layers,
+  Gauge,
+  Zap,
+  Eye,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 // Subcomponents
@@ -101,20 +116,66 @@ export default function App() {
   // 2. Active Role and Terminology State
   const [role, setRole] = useState<UserRole>(user?.role || 'passenger');
   const [slangMode, setSlangMode] = useState<boolean>(user?.slangMode ?? true);
+  const [language, setLanguage] = useState<'en' | 'fr'>(() => {
+    const saved = localStorage.getItem('wanda_language');
+    if (saved === 'en' || saved === 'fr') return saved;
+    return (user?.slangMode ?? true) ? 'fr' : 'en';
+  });
+  const [langDropdownOpen, setLangDropdownOpen] = useState<boolean>(false);
+
+  const changeLanguage = (lang: 'en' | 'fr') => {
+    setLanguage(lang);
+    const isFr = lang === 'fr';
+    setSlangMode(isFr);
+    localStorage.setItem('wanda_language', lang);
+    if (user) {
+      const updatedUser = { ...user, slangMode: isFr };
+      setUser(updatedUser);
+      localStorage.setItem('wanda_user', JSON.stringify(updatedUser));
+    }
+  };
+
   const [activeTab, setActiveTab] = useState<'booking' | 'wallet' | 'history'>('booking');
+  const [showTabBalance, setShowTabBalance] = useState<boolean>(false);
 
   // Adjust active tab of driver
   const [driverActiveTab, setDriverActiveTab] = useState<'orders' | 'wallet'>('orders');
 
   // 3. Dual Wallet Balances & Shared Transactions (Persistent in Local Storage)
+  const [passengerPoints, setPassengerPoints] = useState<number>(() => {
+    const saved = localStorage.getItem('wanda_passenger_points');
+    if (saved) {
+      const parsed = parseInt(saved);
+      if (!isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return 350; // Credited with 350 Wanda Points initially for testing
+  });
+
+  const [usePoints, setUsePoints] = useState<boolean>(false);
+  const [ridePointsRedeemed, setRidePointsRedeemed] = useState<number>(0);
+
   const [passengerWallet, setPassengerWallet] = useState<number>(() => {
     const saved = localStorage.getItem('wanda_passenger_wallet');
-    return saved ? parseInt(saved) : 12000; // Credited with 12,000 XAF for testing
+    if (saved) {
+      const parsed = parseInt(saved);
+      if (!isNaN(parsed)) {
+        return parsed < 0 ? Math.abs(parsed) : parsed;
+      }
+    }
+    return 12000; // Credited with 12,000 XAF for testing
   });
 
   const [driverWallet, setDriverWallet] = useState<number>(() => {
     const saved = localStorage.getItem('wanda_driver_wallet');
-    return saved ? parseInt(saved) : 18500; // Credited with 18,500 XAF for testing
+    if (saved) {
+      const parsed = parseInt(saved);
+      if (!isNaN(parsed)) {
+        return parsed < 0 ? Math.abs(parsed) : parsed;
+      }
+    }
+    return 18500; // Credited with 18,500 XAF for testing
   });
 
   const [transactions, setTransactions] = useState<any[]>(() => {
@@ -331,6 +392,12 @@ export default function App() {
 
   // Share My Ride States
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showPromoBanner, setShowPromoBanner] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('wanda_topup_promo_dismissed') !== 'true';
+    }
+    return true;
+  });
   const [shareRideData, setShareRideData] = useState<{
     shareRideId: string;
     passengerName: string;
@@ -593,6 +660,315 @@ export default function App() {
     const saved = localStorage.getItem('wanda_ride_history');
     return saved ? JSON.parse(saved) : INITIAL_HISTORY;
   });
+  const [historySortOrder, setHistorySortOrder] = useState<'recent' | 'oldest'>('recent');
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [isMapTilted, setIsMapTilted] = useState<boolean | 'flat' | 'isometric' | 'tilted'>(false);
+  const [isAutoPitchEnabled, setIsAutoPitchEnabled] = useState(false);
+  const [isZoomLocked, setIsZoomLocked] = useState(false);
+
+  // Auto-Pitch Lock Effect: Toggles 3D/2D views automatically based on speed/transit zones
+  useEffect(() => {
+    if (!isAutoPitchEnabled) return;
+
+    if (rideStatus === 'driver_found' && driverLoc && pickup) {
+      const remaining = getDistanceKm(driverLoc.lat, driverLoc.lng, pickup.lat, pickup.lng);
+      // High-speed transit if far from pickup
+      if (remaining > 0.6) {
+        setIsMapTilted(true);
+      } else {
+        setIsMapTilted(false);
+      }
+    } else if (rideStatus === 'in_progress' && driverLoc && destination) {
+      const remaining = getDistanceKm(driverLoc.lat, driverLoc.lng, destination.lat, destination.lng);
+      // High-speed transit if far from destination
+      if (remaining > 0.6) {
+        setIsMapTilted(true);
+      } else {
+        setIsMapTilted(false);
+      }
+    } else if (rideStatus === 'arriving' || rideStatus === 'completed' || rideStatus === 'idle') {
+      // Return to flat 2D map view when arrived/parked/idle
+      setIsMapTilted(false);
+    }
+  }, [isAutoPitchEnabled, rideStatus, driverLoc, pickup, destination]);
+
+  // Compass states and effects
+  const [compassHeading, setCompassHeading] = useState(0);
+  const [continuousHeading, setContinuousHeading] = useState(0);
+  const [isUsingDeviceOrientation, setIsUsingDeviceOrientation] = useState(false);
+  const [compassLockMode, setCompassLockMode] = useState<'north' | 'bearing' | 'device' | 'magnetic'>('north');
+  const [isCompassExpanded, setIsCompassExpanded] = useState(false);
+
+  // Shortest path angle unwrapping to prevent sudden 360-degree backwards spins
+  const getShortestDelta = (target: number, current: number) => {
+    let delta = (target - current) % 360;
+    if (delta > 180) {
+      delta -= 360;
+    } else if (delta < -180) {
+      delta += 360;
+    }
+    return delta;
+  };
+
+  useEffect(() => {
+    setContinuousHeading(prev => prev + getShortestDelta(compassHeading, prev));
+  }, [compassHeading]);
+
+  // Request device orientation permission for WebKit/iOS clients
+  const requestDeviceOrientationPermission = async () => {
+    if (
+      typeof window !== 'undefined' &&
+      typeof (DeviceOrientationEvent as any).requestPermission === 'function'
+    ) {
+      try {
+        const permissionState = await (DeviceOrientationEvent as any).requestPermission();
+        if (permissionState === 'granted') {
+          setIsUsingDeviceOrientation(true);
+        } else {
+          console.warn("DeviceOrientation permission denied.");
+        }
+      } catch (error) {
+        console.error("Error requesting DeviceOrientation permission:", error);
+      }
+    }
+  };
+
+  // Auto-dismiss timer for compass expanded view
+  const compassTimeoutRef = useRef<any>(null);
+
+  const startCompassCollapseTimer = () => {
+    if (compassTimeoutRef.current) {
+      clearTimeout(compassTimeoutRef.current);
+    }
+    compassTimeoutRef.current = setTimeout(() => {
+      setIsCompassExpanded(false);
+    }, 5000); // 5 seconds auto-dismiss
+  };
+
+  const handleCompassToggle = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setIsCompassExpanded(prev => {
+      const next = !prev;
+      if (next) {
+        startCompassCollapseTimer();
+      } else {
+        if (compassTimeoutRef.current) {
+          clearTimeout(compassTimeoutRef.current);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleCompassInteraction = () => {
+    if (isCompassExpanded) {
+      startCompassCollapseTimer();
+    }
+  };
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (compassTimeoutRef.current) {
+        clearTimeout(compassTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Magnetometer calibration and precision states
+  const [isMagnetometerSupported, setIsMagnetometerSupported] = useState(false);
+  const [magnetometerAccuracy, setMagnetometerAccuracy] = useState<'low' | 'medium' | 'high' | 'unknown'>('unknown');
+  const [magHeading, setMagHeading] = useState<number | null>(null);
+  const [calibrationOffset, setCalibrationOffset] = useState(0);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [isMagnetometerCalibrated, setIsMagnetometerCalibrated] = useState(false);
+  const calibrationIntervalRef = useRef<any>(null);
+
+  // Helper to calculate geographical bearing/heading from coordinate A to coordinate B
+  const getBearing = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const rLat1 = lat1 * Math.PI / 180;
+    const rLat2 = lat2 * Math.PI / 180;
+    const y = Math.sin(dLon) * Math.cos(rLat2);
+    const x = Math.cos(rLat1) * Math.sin(rLat2) - Math.sin(rLat1) * Math.cos(rLat2) * Math.cos(dLon);
+    let brng = Math.atan2(y, x) * 180 / Math.PI;
+    return (brng + 360) % 360;
+  };
+
+  // Sync compass heading with travel bearing when locked to travel direction
+  useEffect(() => {
+    if (rideStatus === 'in_progress' && driverLoc && destination && compassLockMode === 'bearing') {
+      const bearing = getBearing(driverLoc.lat, driverLoc.lng, destination.lat, destination.lng);
+      setCompassHeading(Math.round(bearing));
+    }
+  }, [rideStatus, driverLoc, destination, compassLockMode]);
+
+  // Listen to device orientation changes
+  useEffect(() => {
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      let headingVal = null;
+      if ('webkitCompassHeading' in e) {
+        headingVal = (e as any).webkitCompassHeading;
+      } else if (e.alpha !== null) {
+        headingVal = 360 - e.alpha;
+      }
+      
+      if (headingVal !== null && headingVal !== undefined) {
+        setIsUsingDeviceOrientation(true);
+        if (compassLockMode === 'device') {
+          setCompassHeading(Math.round(headingVal));
+        }
+      }
+    };
+
+    window.addEventListener('deviceorientation', handleOrientation);
+    window.addEventListener('deviceorientationabsolute', handleOrientation);
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('deviceorientationabsolute', handleOrientation);
+    };
+  }, [compassLockMode]);
+
+  // W3C Sensor API Magnetometer integration & fallback
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const hasPhysicalSupport = 'Magnetometer' in window || 'AbsoluteOrientationSensor' in window;
+    setIsMagnetometerSupported(hasPhysicalSupport);
+
+    if (compassLockMode !== 'magnetic') return;
+
+    let sensor: any = null;
+    let fallbackInterval: any = null;
+
+    if (hasPhysicalSupport && 'Magnetometer' in window) {
+      try {
+        sensor = new (window as any).Magnetometer({ frequency: 10 });
+        
+        sensor.addEventListener('reading', () => {
+          const x = sensor.x || 0;
+          const y = sensor.y || 0;
+          const z = sensor.z || 0;
+
+          // Standard heading calculation from X and Y components of magnetic field
+          let rawHeading = Math.atan2(y, x) * (180 / Math.PI);
+          rawHeading = (rawHeading + 360) % 360;
+          setMagHeading(Math.round(rawHeading));
+
+          // Combine with calibration offset
+          const correctedHeading = Math.round((rawHeading + calibrationOffset + 360) % 360);
+          setCompassHeading(correctedHeading);
+
+          // Estimate accuracy based on magnetic intensity vector length (standard field is 25-65 uT)
+          const fieldStrength = Math.sqrt(x*x + y*y + z*z);
+          if (isMagnetometerCalibrated) {
+            setMagnetometerAccuracy('high');
+          } else if (fieldStrength < 20 || fieldStrength > 80) {
+            setMagnetometerAccuracy('low');
+          } else {
+            setMagnetometerAccuracy('medium');
+          }
+        });
+
+        sensor.addEventListener('error', (e: any) => {
+          console.warn("W3C Magnetometer Sensor error, falling back to simulated high-precision sensor:", e.error);
+          startFallbackSensor();
+        });
+
+        sensor.start();
+      } catch (err) {
+        console.warn("W3C Magnetometer init failed, starting high-precision simulated magnetometer:", err);
+        startFallbackSensor();
+      }
+    } else {
+      // Fallback for systems/browsers without physical Magnetometer API
+      startFallbackSensor();
+    }
+
+    function startFallbackSensor() {
+      // High-precision simulation of geomagnetic fields with realistic micro-fluctuations (magnetic noise)
+      let currentBaseHeading = 45; // default base North direction
+      fallbackInterval = setInterval(() => {
+        // Introduce small micro-fluctuations (0.1 to 0.4 degrees) simulating real magnetometer drift
+        const fluctuation = (Math.random() - 0.5) * 0.8;
+        currentBaseHeading = (currentBaseHeading + fluctuation + 360) % 360;
+        
+        setMagHeading(Math.round(currentBaseHeading));
+        const correctedHeading = Math.round((currentBaseHeading + calibrationOffset + 360) % 360);
+        setCompassHeading(correctedHeading);
+
+        if (!isMagnetometerCalibrated) {
+          setMagnetometerAccuracy('medium');
+        } else {
+          setMagnetometerAccuracy('high');
+        }
+      }, 150);
+    }
+
+    return () => {
+      if (sensor) {
+        try {
+          sensor.stop();
+        } catch (e) {}
+      }
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
+    };
+  }, [compassLockMode, calibrationOffset, isMagnetometerCalibrated]);
+
+  // Magnetometer figure-8 calibration flow
+  const handleMagnetometerCalibration = () => {
+    if (calibrationIntervalRef.current) {
+      clearInterval(calibrationIntervalRef.current);
+    }
+    if (compassTimeoutRef.current) {
+      clearTimeout(compassTimeoutRef.current);
+    }
+    setIsCalibrating(true);
+    setCalibrationProgress(0);
+    setMagnetometerAccuracy('low');
+
+    const interval = setInterval(() => {
+      setCalibrationProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          calibrationIntervalRef.current = null;
+          setIsCalibrating(false);
+          setIsMagnetometerCalibrated(true);
+          setMagnetometerAccuracy('high');
+          // Set a random but stable geomagnetic calibration offset (e.g. -12 to 15 degrees)
+          // to align simulated heading with geographical True North
+          setCalibrationOffset(prevOffset => prevOffset + Math.round((Math.random() - 0.5) * 30));
+          startCompassCollapseTimer();
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 400); // 4 seconds total calibration procedure
+    calibrationIntervalRef.current = interval;
+  };
+
+  const handleCancelCalibration = () => {
+    if (calibrationIntervalRef.current) {
+      clearInterval(calibrationIntervalRef.current);
+      calibrationIntervalRef.current = null;
+    }
+    setIsCalibrating(false);
+    setCalibrationProgress(0);
+    startCompassCollapseTimer();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (calibrationIntervalRef.current) {
+        clearInterval(calibrationIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Auto-geolocate on mount to align with the user's physical live location (e.g., Yaounde/Douala)
   useEffect(() => {
@@ -629,6 +1005,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('wanda_passenger_wallet', passengerWallet.toString());
   }, [passengerWallet]);
+
+  useEffect(() => {
+    localStorage.setItem('wanda_passenger_points', passengerPoints.toString());
+  }, [passengerPoints]);
 
   useEffect(() => {
     localStorage.setItem('wanda_driver_wallet', driverWallet.toString());
@@ -1088,6 +1468,75 @@ export default function App() {
   // Selected payment rate depending on checkout choice
   const activeFareToCharge = paymentMethod === 'wallet' ? walletPrice : cashPrice;
 
+  // Wanda Points Rewards Calculations:
+  // 1 Wanda Point = 10 FCFA discount.
+  const maxPointsRedeemable = Math.min(passengerPoints, Math.floor(activeFareToCharge / 10));
+  const pointsDiscount = usePoints ? maxPointsRedeemable * 10 : 0;
+  const finalFareToPay = Math.max(0, activeFareToCharge - pointsDiscount);
+
+  // Active discount amount for the active ride
+  const activeDiscountAmount = (rideStatus === 'idle' || rideStatus === 'searching') 
+    ? pointsDiscount 
+    : (ridePointsRedeemed * 10);
+
+  // Traffic simulation helper based on active surgeMultiplier
+  const getTrafficDetails = () => {
+    const surge = systemSettings.surgeMultiplier || 1.0;
+    
+    // Normal base duration
+    const baseDuration = Math.round(rideDistance * 1.5) + 3;
+    
+    // Duration with traffic delay
+    const totalDuration = Math.round(baseDuration * surge);
+    const delayMinutes = Math.max(0, totalDuration - baseDuration);
+    
+    // Format ETA
+    const arrivalTime = new Date(Date.now() + totalDuration * 60 * 1000);
+    const formattedArrival = arrivalTime.toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    let statusLabel = '';
+    let statusText = '';
+    let badgeColor = '';
+    let icon = '';
+
+    if (surge >= 1.8) {
+      statusLabel = slangMode ? "🚨 Ndokoti Jam" : "🚨 Extreme Gridlock";
+      statusText = slangMode ? `Embouteillage chaud Ndokoti ! Retard de +${delayMinutes} mins` : `Severe delays! Ndokoti congestion adds +${delayMinutes} mins`;
+      badgeColor = 'bg-rose-500/10 border-rose-500/30 text-rose-400';
+      icon = '🚨';
+    } else if (surge >= 1.4) {
+      statusLabel = slangMode ? "🌧️ Pluie à Bastos" : "🌧️ Heavy Rain Bastos";
+      statusText = slangMode ? `Route glissante, vitesse réduite. Retard de +${delayMinutes} mins` : `Wet roads & slow speed. Delay of +${delayMinutes} mins`;
+      badgeColor = 'bg-sky-500/10 border-sky-500/30 text-sky-400';
+      icon = '🌧️';
+    } else if (surge > 1.0) {
+      statusLabel = slangMode ? "🟡 Trafic dense" : "🟡 Dense Traffic";
+      statusText = slangMode ? `Ralentissement léger sur ton trajet. Retard de +${delayMinutes} mins` : `Slightly dense traffic. Delay of +${delayMinutes} mins`;
+      badgeColor = 'bg-amber-500/10 border-amber-500/30 text-amber-400';
+      icon = '🟡';
+    } else {
+      statusLabel = slangMode ? "🟢 Route dégagée" : "🟢 Fluid Traffic";
+      statusText = slangMode ? "Aucun embouteillage signalé. Allure normale !" : "Smooth sailing, normal transit speeds!";
+      badgeColor = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400';
+      icon = '🟢';
+    }
+
+    return {
+      baseDuration,
+      totalDuration,
+      delayMinutes,
+      formattedArrival,
+      statusLabel,
+      statusText,
+      badgeColor,
+      icon,
+      surge
+    };
+  };
+
   // Handle Map Tap Directly
   const handleMapTap = (lat: number, lng: number) => {
     const defaultName = `Custom Map Point (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
@@ -1112,9 +1561,16 @@ export default function App() {
   const handleBookRide = () => {
     if (!pickup || !destination) return;
 
+    // Lock in points to redeem for this active ride
+    const pointsToLock = usePoints ? maxPointsRedeemable : 0;
+    setRidePointsRedeemed(pointsToLock);
+
+    // Calculate discounted fare to pay
+    const discountedPrice = Math.max(0, activeFareToCharge - (pointsToLock * 10));
+
     if (paymentMethod === 'wallet') {
       // Wallet check
-      if (passengerWallet < walletPrice) {
+      if (passengerWallet < discountedPrice) {
         alert(slangMode 
           ? "Massa! Ton wallet n'a pas assez d'argent. S'il te plaît, recharge ton wallet via MTN MoMo / Orange Money ou choisis le payement Cash !"
           : "Insufficient wallet balance. Please top up your wallet via mobile money or select Cash Payment."
@@ -1364,6 +1820,13 @@ export default function App() {
       const steps = 8;
       let currentStep = 0;
 
+      const totalDist = getDistanceKm(startLat, startLng, targetLat, targetLng);
+      
+      // Immediately set initial ETA values upon start of the trip
+      const initialRemainingTime = Math.max(1, Math.round(totalDist * 1.5));
+      setEtaMinutes(initialRemainingTime);
+      setEtaStatusText(slangMode ? "🟢 Route dégagée, début du trajet" : "🟢 Clear roads, ride started");
+
       intervalId = setInterval(() => {
         currentStep++;
         const ratio = currentStep / steps;
@@ -1372,6 +1835,33 @@ export default function App() {
         const nextLng = startLng + (targetLng - startLng) * ratio;
 
         setDriverLoc({ lat: nextLat, lng: nextLng });
+
+        // Calculate and simulate real-time traffic and dynamic ETA
+        const remainingRatio = Math.max(0, 1 - ratio);
+        const baseRemainingTime = Math.max(0.5, totalDist * 1.5 * remainingRatio);
+
+        let trafficFactor = 1.0;
+        let trafficDesc = '';
+
+        if (ratio < 0.25) {
+          trafficFactor = 1.0;
+          trafficDesc = slangMode ? "🟢 Route dégagée, allure normale" : "🟢 Clear roads, normal speed";
+        } else if (ratio < 0.5) {
+          trafficFactor = 1.6; // Heavy traffic delay
+          trafficDesc = slangMode ? "⚠️ Embouteillage au rond-point (+2 min)" : "⚠️ Traffic delay at roundabout (+2 min)";
+        } else if (ratio < 0.75) {
+          trafficFactor = 1.3; // Light congestion
+          trafficDesc = slangMode ? "🟡 Trafic dense mais ça avance" : "🟡 Dense traffic, moving slowly";
+        } else {
+          trafficFactor = 0.95; // Smooth run
+          trafficDesc = slangMode ? "⚡ Voie express libre" : "⚡ Highway is clear, speeding up";
+        }
+
+        const simulatedInTransitEta = Math.round(baseRemainingTime * trafficFactor);
+        const finalEta = simulatedInTransitEta < 1 ? 0.5 : simulatedInTransitEta;
+
+        setEtaMinutes(finalEta);
+        setEtaStatusText(trafficDesc);
 
         if (currentStep >= steps) {
           clearInterval(intervalId);
@@ -1469,22 +1959,27 @@ export default function App() {
     if (!pickup || !destination || !activeDriver) return;
 
     const tipToPay = paymentMethod === 'wallet' ? tipAmount : 0;
+    
+    // Calculate final discounted fare of this ride
+    const pointsDiscountAmount = ridePointsRedeemed * 10;
+    const finalFareToCharge = Math.max(0, activeFareToCharge - pointsDiscountAmount);
+    
     // Standard payout math including waiting time extra fare adjustments (commission not applied to tip)
-    const totalRideFare = activeFareToCharge + currentRideWaitingFare;
+    const totalRideFare = finalFareToCharge + currentRideWaitingFare;
     const platformCommission = Math.round(totalRideFare * systemSettings.commissionRate / 100);
     const driverNetEarnings = (totalRideFare - platformCommission) + tipToPay;
 
     // Staging updates depending on cash vs wallet payment
     if (paymentMethod === 'wallet') {
       // Wallet Pay: deduct total (including waiting fee and tip) from passenger, credit driver's balance
-      setPassengerWallet(prev => prev - (walletPrice + currentRideWaitingFare + tipToPay));
+      setPassengerWallet(prev => Math.max(0, prev - (finalFareToCharge + currentRideWaitingFare + tipToPay)));
       setDriverWallet(prev => prev + driverNetEarnings);
 
       // Log wallet payout transactions
       const pTx = {
         id: `RIDE-${Date.now()}`,
         type: 'ride_payout',
-        amount: walletPrice + currentRideWaitingFare + tipToPay,
+        amount: finalFareToCharge + currentRideWaitingFare + tipToPay,
         tipAmount: tipToPay,
         phone: user?.phone || '677123456',
         carrier: 'wallet_debit',
@@ -1494,7 +1989,7 @@ export default function App() {
       setTransactions(prev => [pTx, ...prev]);
     } else {
       // Cash Pay: passenger paid driver cash on hand. We deduct the commission from driver wallet!
-      setDriverWallet(prev => prev - platformCommission);
+      setDriverWallet(prev => Math.max(0, prev - platformCommission));
       
       const cTx = {
         id: `COMM-${Date.now()}`,
@@ -1507,6 +2002,10 @@ export default function App() {
       };
       setTransactions(prev => [cTx, ...prev]);
     }
+
+    // Deduct redeemed points and award new earned points (1 point per 100 FCFA spent, excluding tip)
+    const pointsEarned = Math.round(totalRideFare / 100);
+    setPassengerPoints(prev => Math.max(0, prev - ridePointsRedeemed + pointsEarned));
 
     // Save history item
     const newHistoryItem: HistoryItem = {
@@ -1523,7 +2022,9 @@ export default function App() {
       pickupLat: pickup.lat,
       pickupLng: pickup.lng,
       destLat: destination.lat,
-      destLng: destination.lng
+      destLng: destination.lng,
+      pointsEarned,
+      pointsRedeemed: ridePointsRedeemed
     };
 
     addHistoryItem(newHistoryItem);
@@ -1538,6 +2039,8 @@ export default function App() {
     setCurrentRideWaitingTime(0);
     setCurrentRideWaitingFare(0);
     setTipAmount(0);
+    setUsePoints(false);
+    setRidePointsRedeemed(0);
   };
 
   const handleCancelBooking = () => {
@@ -1964,6 +2467,8 @@ export default function App() {
             driverType={shareRideData.vehicleType}
             role="passenger"
             slangMode={slangMode}
+            isTilted={isMapTilted}
+            isZoomLocked={isZoomLocked}
           />
         </div>
       </div>
@@ -1972,125 +2477,295 @@ export default function App() {
 
   // Render signup page if user has not onboarding
   if (!user) {
-    return <LandingPage onSignupComplete={handleSignupComplete} />;
+    return (
+      <LandingPage 
+        onSignupComplete={handleSignupComplete} 
+        currentLanguage={language}
+        onLanguageChange={changeLanguage}
+      />
+    );
   }
 
   return (
     <div className="flex flex-col h-screen bg-brand-midnight text-white select-none overflow-hidden" id="app-root-container">
       
       {/* Header bar */}
-      <header className="bg-brand-deep border-b border-brand-card/80 px-4 py-3 shrink-0 z-50 flex items-center justify-between shadow-md">
+      <header className="bg-brand-deep border-b border-brand-card/80 px-3 sm:px-4 py-2.5 sm:py-3 shrink-0 z-50 flex items-center justify-between shadow-md">
         
         {/* Brand identity */}
-        <div className="flex items-center gap-2.5">
-          <WandaLogo className="w-9 h-9 drop-shadow-[0_0_8px_rgba(226,193,141,0.25)]" />
+        <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <WandaLogo className="w-7 h-7 sm:w-9 sm:h-9 drop-shadow-[0_0_8px_rgba(226,193,141,0.25)]" />
           <div>
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-sm font-black tracking-widest text-brand-gold font-sans">
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <h1 className="text-xs sm:text-sm font-black tracking-widest text-brand-gold font-sans">
                 WANDA
               </h1>
               {currentCity && (
-                <span className="bg-brand-gold/15 text-brand-gold border border-brand-gold/30 text-[9px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shadow-inner">
+                <span className="bg-brand-gold/15 text-brand-gold border border-brand-gold/30 text-[8px] sm:text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-inner hidden sm:inline-flex">
                   📍 {currentCity}
                 </span>
               )}
             </div>
-            <p className="text-[9px] text-brand-text-muted italic font-bold">tu Wanda on tes transporte.</p>
+            <p className="text-[8px] sm:text-[9px] text-brand-text-muted italic font-bold hidden xs:block">tu Wanda on tes transporte.</p>
           </div>
         </div>
 
         {/* Global Toolbar and Dashboard controllers */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3">
           
           {/* Admin Switch (Independent URL Link) */}
           <button
             onClick={() => setIsAdminOpen(true)}
-            className="bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/20 hover:border-brand-gold/40 px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wide flex items-center gap-1.5 cursor-pointer transition shadow-sm"
+            className="bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/20 hover:border-brand-gold/40 px-1.5 py-1 rounded-xl text-[9px] sm:text-[10px] font-black tracking-wide flex items-center gap-0.5 sm:gap-1 cursor-pointer transition shadow-sm shrink-0"
             id="admin-console-trigger"
           >
-            🔧 Admin Portal ↗
+            <span>🔧</span>
+            <span className="hidden sm:inline">Admin Portal</span>
+            <span className="text-[8px] opacity-75">↗</span>
           </button>
 
           {/* Dual Role Selector: Passenger vs Driver */}
-          <div className="flex bg-brand-card/60 p-0.5 rounded-xl border border-brand-input text-[11px]">
+          <div className="flex bg-brand-card/60 p-0.5 rounded-xl border border-brand-input text-[10px] sm:text-[11px] shrink-0">
             <button
               onClick={() => { setRole('passenger'); handleCancelBooking(); }}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${role === 'passenger' ? 'bg-brand-gold text-brand-midnight shadow font-black' : 'text-brand-text-muted hover:text-white'}`}
+              className={`px-1.5 py-1 sm:px-2.5 sm:py-1 rounded-lg font-bold transition-all cursor-pointer ${role === 'passenger' ? 'bg-brand-gold text-brand-midnight shadow font-black' : 'text-brand-text-muted hover:text-white'}`}
               id="role-passenger-btn"
             >
-              Passager
+              <span className="hidden xs:inline">{language === 'fr' ? "Passager" : "Passenger"}</span>
+              <span className="xs:hidden">{language === 'fr' ? "Rider" : "Passenger"}</span>
             </button>
             <button
               onClick={() => { setRole('driver'); handleCancelBooking(); }}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${role === 'driver' ? 'bg-brand-input text-brand-gold shadow font-black' : 'text-brand-text-muted hover:text-white'}`}
+              className={`px-1.5 py-1 sm:px-2.5 sm:py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-0.5 sm:gap-1 ${role === 'driver' ? 'bg-brand-input text-brand-gold shadow font-black' : 'text-brand-text-muted hover:text-white'}`}
               id="role-driver-btn"
             >
-              Driver
+              <span>{language === 'fr' ? "Chauffeur" : "Driver"}</span>
               {driverOnline && (
                 <span className="w-1 h-1 bg-brand-gold rounded-full animate-ping"></span>
               )}
             </button>
           </div>
 
+          {/* Language Toggle Group with Globe and Flags Dropdown */}
+          <div className="relative shrink-0" id="language-switcher-header">
+            <button
+              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+              className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-brand-card/60 hover:bg-brand-card border border-brand-input rounded-xl text-[10px] sm:text-[11px] font-black cursor-pointer transition shadow-sm text-brand-gold hover:text-white select-none"
+              id="language-dropdown-trigger"
+              title={language === 'fr' ? "Changer de langue" : "Change language"}
+            >
+              <Globe size={12} className="text-brand-gold shrink-0 animate-[spin_12s_linear_infinite]" />
+              <span className="flex items-center gap-1 sm:gap-1.5">
+                {language === 'fr' ? "🇫🇷" : "🇬🇧"}
+                <span className="hidden xs:inline">{language === 'fr' ? "Français" : "English"}</span>
+              </span>
+              <ChevronDown size={10} className={`text-brand-text-muted transition-transform duration-200 ${langDropdownOpen ? 'rotate-180 text-brand-gold' : ''}`} />
+            </button>
+
+            <AnimatePresence>
+              {langDropdownOpen && (
+                <>
+                  {/* Backdrop overlay to close when clicking outside */}
+                  <div 
+                    className="fixed inset-0 z-40 cursor-default" 
+                    onClick={() => setLangDropdownOpen(false)}
+                  />
+                  
+                  {/* Dropdown Options List */}
+                  <motion.div 
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="absolute right-0 mt-1.5 w-36 sm:w-40 bg-brand-deep border border-brand-input rounded-xl shadow-xl py-1 z-50 overflow-hidden font-sans text-[10px] sm:text-[11px]"
+                    id="language-dropdown-menu"
+                  >
+                    <button
+                      onClick={() => {
+                        changeLanguage('en');
+                        setLangDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
+                        language === 'en' 
+                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold hover:bg-brand-gold/25' 
+                          : 'text-brand-text-muted hover:text-white'
+                      }`}
+                      id="lang-opt-en"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span>🇬🇧</span>
+                        <span>English</span>
+                      </span>
+                      {language === 'en' && <Check size={12} className="text-brand-gold shrink-0" />}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        changeLanguage('fr');
+                        setLangDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
+                        language === 'fr' 
+                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold hover:bg-brand-gold/25' 
+                          : 'text-brand-text-muted hover:text-white'
+                      }`}
+                      id="lang-opt-fr"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span>🇫🇷</span>
+                        <span>Français</span>
+                      </span>
+                      {language === 'fr' && <Check size={12} className="text-brand-gold shrink-0" />}
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* User Signout */}
           <button
             onClick={handleLogout}
             title="Log Out Profile"
-            className="p-1.5 text-brand-text-muted hover:text-rose-400 bg-brand-card/30 border border-brand-input rounded-xl hover:bg-brand-input transition cursor-pointer"
+            className="p-1.5 text-brand-text-muted hover:text-rose-400 bg-brand-card/30 border border-brand-input rounded-xl hover:bg-brand-input transition cursor-pointer shrink-0"
           >
-            <LogOut size={14} />
+            <LogOut size={13} />
           </button>
         </div>
 
       </header>
 
+      {/* High-visibility Dismissible Promo Banner */}
+      <AnimatePresence>
+        {showPromoBanner && systemSettings.topupPromoActive && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden shrink-0"
+            id="promo-bonus-topup-banner"
+          >
+            <div className="bg-gradient-to-r from-brand-gold/20 via-brand-gold/10 to-brand-midnight border-b border-brand-gold/25 px-4 py-2 flex items-center justify-between text-xs relative z-40">
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <div className="bg-brand-gold/20 p-1 rounded-lg text-brand-gold animate-pulse shrink-0">
+                  <Gift size={15} className="fill-brand-gold/10" />
+                </div>
+                <div className="text-white truncate">
+                  <span className="font-extrabold text-brand-gold tracking-wider uppercase mr-2 bg-brand-gold/15 px-1.5 py-0.5 rounded border border-brand-gold/20 text-[9px]">
+                    {slangMode ? "PROMO RECHARGE !" : "TOP-UP SPECIAL !"}
+                  </span>
+                  <span className="font-semibold text-[11px] leading-relaxed">
+                    {slangMode ? (
+                      <>
+                        Gagne <strong className="text-brand-gold">+{systemSettings.topupPromoRate}% de bonus</strong> auto sur toutes tes recharges MoMo / Orange Money ! 🚀
+                      </>
+                    ) : (
+                      <>
+                        Get <strong className="text-brand-gold">+{systemSettings.topupPromoRate}% bonus</strong> automatically on all Mobile Money top-ups ! 🚀
+                      </>
+                    )}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <button
+                  onClick={() => {
+                    const walletTrigger = document.getElementById('passenger-wallet-card') || document.getElementById('wallet-topup-trigger');
+                    if (walletTrigger) {
+                      walletTrigger.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
+                  className="bg-brand-gold text-brand-midnight hover:bg-white px-2 py-0.5 rounded-lg text-[9px] font-black tracking-wider transition cursor-pointer flex items-center gap-1 shrink-0 h-6"
+                >
+                  <Sparkles size={10} className="fill-brand-midnight" />
+                  {slangMode ? "RECHARGER" : "TOP UP"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPromoBanner(false);
+                    localStorage.setItem('wanda_topup_promo_dismissed', 'true');
+                  }}
+                  className="p-1 hover:bg-brand-gold/10 rounded-lg text-brand-text-muted hover:text-white transition cursor-pointer"
+                  title={slangMode ? "Fermer" : "Dismiss"}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main split viewport layout */}
-      <div className="flex flex-1 relative overflow-hidden" id="app-main-view">
+      <div 
+        className={`flex flex-1 relative overflow-hidden ${
+          rideStatus !== 'idle' && rideStatus !== 'searching' 
+            ? 'flex-col-reverse md:flex-row' 
+            : 'flex-col md:flex-row'
+        }`} 
+        id="app-main-view"
+      >
         
         {/* Left Side Control Panel */}
-        <aside className="w-full md:w-96 bg-brand-deep border-r border-brand-card/80 flex flex-col shrink-0 z-10 overflow-y-auto text-white" id="sidebar-controls">
+        <aside 
+          className={`bg-brand-deep border-r border-brand-card/80 flex flex-col shrink-0 z-10 overflow-y-auto text-white ${
+            rideStatus !== 'idle' && rideStatus !== 'searching'
+              ? 'w-full md:w-96 h-[40vh] md:h-full border-t md:border-t-0 border-brand-card/80'
+              : 'w-full md:w-96 h-full'
+          }`} 
+          id="sidebar-controls"
+        >
           
           {/* PROMINENT PASSENGER & CHAUFFEUR SWITCH PANEL */}
-          <div className="p-4 border-b border-brand-card bg-brand-midnight/45 space-y-2.5">
-            <div className="flex items-center justify-between text-[10px] tracking-wide">
-              <span className="font-extrabold uppercase text-brand-gold">🔄 MODE D'APPLICATION</span>
-              <span className="text-[9px] font-black uppercase text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                🟢 Actif
-              </span>
+          {(rideStatus === 'idle' || rideStatus === 'searching') && (
+            <div className="p-4 border-b border-brand-card bg-brand-midnight/45 space-y-2.5">
+              <div className="flex items-center justify-between text-[10px] tracking-wide">
+                <span className="font-extrabold uppercase text-brand-gold">
+                  {language === 'fr' ? "🔄 MODE D'APPLICATION" : "🔄 APPLICATION MODE"}
+                </span>
+                <span className="text-[9px] font-black uppercase text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  🟢 {language === 'fr' ? "Actif" : "Active"}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 bg-brand-input border border-brand-card/60 p-1 rounded-2xl relative shadow-inner">
+                <button
+                  onClick={() => { setRole('passenger'); handleCancelBooking(); }}
+                  className={`py-2 px-3 rounded-xl font-black text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${
+                    role === 'passenger' 
+                      ? 'bg-brand-gold text-brand-midnight shadow-lg transform scale-102 font-extrabold' 
+                      : 'text-brand-text-muted hover:text-white font-bold'
+                  }`}
+                  id="sidebar-role-passenger"
+                >
+                  👤 {language === 'fr' ? "Passager" : "Passenger"}
+                </button>
+                <button
+                  onClick={() => { setRole('driver'); handleCancelBooking(); }}
+                  className={`py-2 px-3 rounded-xl font-black text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${
+                    role === 'driver' 
+                      ? 'bg-brand-gold text-brand-midnight shadow-lg transform scale-102 font-extrabold' 
+                      : 'text-brand-text-muted hover:text-white font-bold'
+                  }`}
+                  id="sidebar-role-driver"
+                >
+                  🚖 {language === 'fr' ? "Chauffeur" : "Driver"}
+                </button>
+              </div>
+              
+              <p className="text-[9.5px] text-brand-text-muted text-center font-semibold italic leading-snug">
+                {role === 'passenger' 
+                  ? (language === 'fr' 
+                      ? "Vous êtes en mode Passager : Commandez une moto, un petit taxi ou un VIP."
+                      : "You are in Passenger mode: Order a bike, a classic taxi or a VIP ride.")
+                  : (language === 'fr' 
+                      ? "Vous êtes en mode Chauffeur : Activez votre statut en ligne pour recevoir des courses."
+                      : "You are in Driver mode: Go online to receive ride requests and start earning.")
+                }
+              </p>
             </div>
-            
-            <div className="grid grid-cols-2 bg-brand-input border border-brand-card/60 p-1 rounded-2xl relative shadow-inner">
-              <button
-                onClick={() => { setRole('passenger'); handleCancelBooking(); }}
-                className={`py-2 px-3 rounded-xl font-black text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${
-                  role === 'passenger' 
-                    ? 'bg-brand-gold text-brand-midnight shadow-lg transform scale-102 font-extrabold' 
-                    : 'text-brand-text-muted hover:text-white font-bold'
-                }`}
-                id="sidebar-role-passenger"
-              >
-                👤 Passager
-              </button>
-              <button
-                onClick={() => { setRole('driver'); handleCancelBooking(); }}
-                className={`py-2 px-3 rounded-xl font-black text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${
-                  role === 'driver' 
-                    ? 'bg-brand-gold text-brand-midnight shadow-lg transform scale-102 font-extrabold' 
-                    : 'text-brand-text-muted hover:text-white font-bold'
-                }`}
-                id="sidebar-role-driver"
-              >
-                🚖 Chauffeur
-              </button>
-            </div>
-            
-            <p className="text-[9.5px] text-brand-text-muted text-center font-semibold italic leading-snug">
-              {role === 'passenger' 
-                ? "Vous êtes en mode Passager : Commandez une moto, un petit taxi ou un VIP."
-                : "Vous êtes en mode Chauffeur : Activez votre statut en ligne pour recevoir des courses."
-              }
-            </p>
-          </div>
+          )}
 
           {/* ========================================================================= */}
           {/* PASSENGER ROLE COMPONENT */}
@@ -2099,29 +2774,37 @@ export default function App() {
             <div className="flex flex-col flex-1 p-4 space-y-4">
               
               {/* Tab selector */}
-              <div className="flex border-b border-brand-card/80 pb-1.5 gap-1 text-xs">
-                <button
-                  onClick={() => setActiveTab('booking')}
-                  className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer ${activeTab === 'booking' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
-                >
-                  {slangMode ? "Course" : "Book Ride"}
-                </button>
-                <button
-                  onClick={() => setActiveTab('wallet')}
-                  className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer flex items-center justify-center gap-1 ${activeTab === 'wallet' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
-                >
-                  {slangMode ? "Mon Wallet" : "My Wallet"}
-                  <span className="text-[9px] bg-brand-gold/10 text-brand-gold px-1.5 py-0.5 rounded-full font-black">
-                    {passengerWallet.toLocaleString('fr-FR')} XAF
-                  </span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('history')}
-                  className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer ${activeTab === 'history' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
-                >
-                  {slangMode ? "Historique" : "Past Rides"}
-                </button>
-              </div>
+              {(rideStatus === 'idle' || rideStatus === 'searching') && (
+                <div className="flex border-b border-brand-card/80 pb-1.5 gap-1 text-xs">
+                  <button
+                    onClick={() => setActiveTab('booking')}
+                    className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer ${activeTab === 'booking' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
+                  >
+                    {slangMode ? "Course" : "Book Ride"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('wallet');
+                      setShowTabBalance(prev => !prev);
+                    }}
+                    className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer flex items-center justify-center gap-1 ${activeTab === 'wallet' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
+                  >
+                    {slangMode ? "Mon Wallet" : "My Wallet"}
+                    <span 
+                      className="text-[9px] bg-brand-gold/10 text-brand-gold px-1.5 py-0.5 rounded-full font-black cursor-pointer hover:bg-brand-gold/20 transition-colors animate-pulse"
+                      title={slangMode ? "Cliquer pour afficher/masquer" : "Click to show/hide balance"}
+                    >
+                      {showTabBalance ? `${passengerWallet.toLocaleString('fr-FR')} XAF` : '•••• XAF'}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('history')}
+                    className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer ${activeTab === 'history' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
+                  >
+                    {slangMode ? "Historique" : "Past Rides"}
+                  </button>
+                </div>
+              )}
 
               {/* BOOKING TAB */}
               {activeTab === 'booking' && (
@@ -2130,6 +2813,92 @@ export default function App() {
                     <div className="space-y-4 flex-1 flex flex-col justify-between">
                       <div className="space-y-4">
                         
+                        {pickup && destination && (() => {
+                          const traffic = getTrafficDetails();
+                          return (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="bg-brand-midnight/90 border border-brand-gold/40 rounded-2xl p-4 shadow-xl space-y-3 relative overflow-hidden"
+                              id="estimated-journey-banner"
+                            >
+                              {/* Decorative Top Accent Stripe */}
+                              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-gold via-amber-400 to-emerald-500 animate-pulse" />
+                              
+                              {/* Header Row */}
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] uppercase font-black tracking-widest text-brand-gold flex items-center gap-1">
+                                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-gold animate-ping" />
+                                  {slangMode ? "Wanda Live Estimation" : "Live Journey Estimate"}
+                                </span>
+                                <div className={`px-2 py-0.5 rounded-full text-[8.5px] font-black border uppercase ${traffic.badgeColor}`}>
+                                  {traffic.statusLabel}
+                                </div>
+                              </div>
+
+                              {/* Core Stats Grid */}
+                              <div className="grid grid-cols-2 gap-3 divide-x divide-brand-card/60">
+                                
+                                {/* Left Side: Arrival Time & ETA */}
+                                <div className="flex flex-col justify-center">
+                                  <span className="text-[8px] uppercase font-bold text-brand-text-muted tracking-wider">
+                                    {slangMode ? "Est. Durée & Arrivée" : "Duration & ETA"}
+                                  </span>
+                                  <div className="flex items-baseline gap-1.5 mt-0.5">
+                                    <span className="text-xl font-extrabold text-white tracking-tight">
+                                      {traffic.totalDuration} <span className="text-xs font-semibold">mins</span>
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-brand-text-muted mt-0.5 font-medium flex items-center gap-1 flex-wrap">
+                                    <span>🕒 {slangMode ? "Arrivée vers" : "Arrive by"}</span>
+                                    <strong className="text-white font-mono font-bold bg-brand-input px-1.5 py-0.5 rounded border border-brand-card/45">
+                                      {traffic.formattedArrival}
+                                    </strong>
+                                  </div>
+                                </div>
+
+                                {/* Right Side: Estimated Cost for Selected Class */}
+                                <div className="flex flex-col justify-center pl-3">
+                                  <span className="text-[8px] uppercase font-bold text-brand-text-muted tracking-wider">
+                                    {slangMode ? "Tarif Estimé" : "Estimated Fare"} ({activeRideClass.name})
+                                  </span>
+                                  <div className="flex flex-col mt-1 gap-1">
+                                    {/* Wallet option */}
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[9px] text-brand-text-muted">
+                                        {slangMode ? "Wallet (-10%)" : "Wallet (-10%)"}
+                                      </span>
+                                      <strong className="text-[11px] text-brand-gold font-mono font-black">
+                                        {walletPrice.toLocaleString('fr-FR')} FCFA
+                                      </strong>
+                                    </div>
+                                    {/* Cash option */}
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[9px] text-brand-text-muted">
+                                        {slangMode ? "Espèces" : "Cash Pay"}
+                                      </span>
+                                      <strong className="text-[11px] text-emerald-400 font-mono font-black">
+                                        {cashPrice.toLocaleString('fr-FR')} FCFA
+                                      </strong>
+                                    </div>
+                                  </div>
+                                </div>
+
+                              </div>
+
+                              {/* Traffic Status description block */}
+                              <div className="pt-2 border-t border-brand-card/50 text-[10px] text-brand-text-muted flex items-center gap-1.5 leading-snug">
+                                <span className="text-xs shrink-0">{traffic.icon}</span>
+                                <p className="font-semibold italic">
+                                  {traffic.statusText}
+                                </p>
+                              </div>
+
+                            </motion.div>
+                          );
+                        })()}
+
                         {/* Route Selection */}
                         <div className="bg-brand-card/40 p-4 rounded-2xl border border-brand-card/80 space-y-3 shadow-inner">
                           <h3 className="text-[10px] font-black uppercase text-brand-gold tracking-wider flex items-center gap-1.5">
@@ -2304,6 +3073,51 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Wanda Points Rewards Redemption Block */}
+                        <div className="bg-indigo-950/20 border border-indigo-500/25 rounded-2xl p-3 space-y-2 text-white font-sans">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">🎁</span>
+                              <div>
+                                <span className="text-xs font-black text-indigo-300 block leading-none uppercase tracking-wider">
+                                  {slangMode ? "WANDA POINTS FIDÉLITÉ" : "WANDA POINTS REWARDS"}
+                                </span>
+                                <span className="text-[10px] text-brand-text-muted font-semibold mt-0.5 block leading-none">
+                                  {passengerPoints > 0 ? (
+                                    `${passengerPoints.toLocaleString('fr-FR')} points dispos (≈ ${(passengerPoints * 10).toLocaleString('fr-FR')} FCFA)`
+                                  ) : (
+                                    slangMode ? "0 points • Gagnez 1 point par 100 FCFA dépensé !" : "0 points • Earn 1 point per 100 FCFA spent!"
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {passengerPoints > 0 && (
+                              <label className="relative inline-flex items-center cursor-pointer select-none">
+                                <input 
+                                  type="checkbox" 
+                                  checked={usePoints} 
+                                  onChange={(e) => setUsePoints(e.target.checked)}
+                                  className="sr-only peer"
+                                  id="redeem-points-toggle"
+                                />
+                                <div className="w-9 h-5 bg-brand-input/80 rounded-full peer peer-focus:ring-1 peer-focus:ring-indigo-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500"></div>
+                              </label>
+                            )}
+                          </div>
+
+                          {usePoints && maxPointsRedeemable > 0 && (
+                            <div className="flex items-center justify-between bg-indigo-500/15 border border-indigo-500/25 px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-indigo-300">
+                              <span>
+                                {slangMode ? "Réduction appliquée :" : "Discount applied :"}
+                              </span>
+                              <strong className="text-white font-black text-xs animate-pulse">
+                                -{(maxPointsRedeemable * 10).toLocaleString('fr-FR')} FCFA
+                              </strong>
+                            </div>
+                          )}
+                        </div>
+
                       </div>
 
                       {/* SOS Button triggers */}
@@ -2322,7 +3136,7 @@ export default function App() {
                           className="bg-brand-gold hover:bg-brand-gold/90 disabled:opacity-50 disabled:pointer-events-none text-brand-midnight font-black py-3 px-5 rounded-2xl flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-brand-gold/25 hover:scale-[1.01] active:scale-[0.99] transition flex-[2]"
                           id="book-ride-main-btn"
                         >
-                          <span>{slangMode ? "Lancer la course" : "Confirm Taxi"} • {activeFareToCharge.toLocaleString('fr-FR')} FCFA</span>
+                          <span>{slangMode ? "Lancer la course" : "Confirm Taxi"} • {finalFareToPay.toLocaleString('fr-FR')} FCFA</span>
                           <ChevronRight size={16} />
                         </button>
                       </div>
@@ -2427,7 +3241,8 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Miniature Map view for active ride tracking */}
+                        {/* Miniature Map view for active ride tracking - hidden because the main map is now fully visible and dominant */}
+                        {/* 
                         <MiniatureMap
                           pickup={pickup}
                           destination={destination}
@@ -2436,11 +3251,12 @@ export default function App() {
                           driverType={selectedClassId}
                           slangMode={slangMode}
                         />
+                        */}
 
                         {/* AC / waiting stats */}
-                        <div className="bg-brand-input border border-brand-card/80 p-3 rounded-xl space-y-2 text-xs">
+                        <div className="bg-brand-input border border-brand-card/80 p-3.5 rounded-xl space-y-2 text-xs">
                           <div className="space-y-1">
-                            <p className="text-brand-text-muted font-semibold">
+                            <p className="text-brand-text-muted font-bold tracking-wide text-[10px] uppercase">
                               {rideStatus === 'driver_found' && (slangMode ? "Arrivée estimée :" : "ETA to Pickup:")}
                               {rideStatus === 'arriving' && (slangMode ? "Le chauffeur t'attend au point de ramassage :" : "Driver is parked outside!")}
                               {rideStatus === 'in_progress' && (slangMode ? "Destination de dépôt :" : "Dropoff Destination:")}
@@ -2457,14 +3273,11 @@ export default function App() {
                                       opacity: 1,
                                     }}
                                     transition={{ duration: 0.5, ease: "easeOut" }}
-                                    className="font-black text-white flex items-center gap-1.5 text-xs"
+                                    className="font-black text-white flex items-center gap-2"
                                   >
-                                    <Clock size={12} className="text-brand-gold animate-pulse" /> 
-                                    <span className="text-brand-gold font-mono font-black text-sm">
-                                      {etaMinutes === 0.5 ? (slangMode ? "< 1 min" : "< 1 min") : `${etaMinutes} min${etaMinutes > 1 ? 's' : ''}`}
-                                    </span>
-                                    <span className="text-white text-[10px] font-semibold">
-                                      {slangMode ? "restant" : "remaining"}
+                                    <Clock size={16} className="text-brand-gold animate-pulse shrink-0" /> 
+                                    <span className="text-brand-gold font-mono font-black text-xl tracking-tight">
+                                      {etaMinutes === 0.5 ? (slangMode ? "< 1 min away" : "< 1 min away") : `${etaMinutes} min${etaMinutes > 1 ? 's' : ''} away`}
                                     </span>
                                   </motion.div>
 
@@ -2522,94 +3335,184 @@ export default function App() {
                         </div>
 
                         {/* Detailed Ride Summary when trip is in progress */}
-                        {rideStatus === 'in_progress' && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.4 }}
-                            className="bg-brand-card/30 border border-brand-gold/15 rounded-2xl p-3.5 space-y-3 mt-2 shadow-lg"
-                            id="passenger-ride-summary-card"
-                          >
-                            {/* Section Title */}
-                            <div className="flex items-center justify-between border-b border-brand-input pb-2">
-                              <h5 className="text-[10px] font-black uppercase tracking-wider text-brand-gold flex items-center gap-1.5">
-                                <ShieldCheck size={11} className="text-brand-gold animate-pulse" />
-                                {slangMode ? "Résumé de la course" : "Ride Summary Details"}
-                              </h5>
-                              <span className="text-[9px] bg-brand-gold/10 text-brand-gold border border-brand-gold/20 px-2 py-0.5 rounded-full font-bold">
-                                {slangMode ? "En route" : "On Trip"}
-                              </span>
-                            </div>
+                        {rideStatus === 'in_progress' && (() => {
+                          const total = (pickup && destination) ? getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng) : 0;
+                          const remaining = (driverLoc && destination) ? getDistanceKm(driverLoc.lat, driverLoc.lng, destination.lat, destination.lng) : 0;
+                          const progress = total > 0 ? Math.max(0, Math.min(100, Math.round((1 - remaining / total) * 100))) : 0;
 
-                            {/* Dynamic Ride details Grid */}
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                              {/* Estimated Fare & Payment Method */}
-                              <div className="bg-brand-input/60 border border-brand-input p-2.5 rounded-xl flex flex-col justify-between space-y-1">
-                                <span className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider flex items-center gap-1">
-                                  <DollarSign size={10} className="text-brand-gold" />
-                                  {slangMode ? "Tarif estimé" : "Estimated Fare"}
+                          const radius = 34;
+                          const stroke = 4.5;
+                          const normalizedRadius = radius - stroke;
+                          const circumference = normalizedRadius * 2 * Math.PI;
+                          const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+                          return (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.4 }}
+                              className="bg-brand-card/30 border border-brand-gold/15 rounded-2xl p-3.5 space-y-3 mt-2 shadow-lg"
+                              id="passenger-ride-summary-card"
+                            >
+                              {/* Section Title */}
+                              <div className="flex items-center justify-between border-b border-brand-input pb-2">
+                                <h5 className="text-[10px] font-black uppercase tracking-wider text-brand-gold flex items-center gap-1.5">
+                                  <ShieldCheck size={11} className="text-brand-gold animate-pulse" />
+                                  {slangMode ? "Résumé de la course" : "Ride Summary Details"}
+                                </h5>
+                                <span className="text-[9px] bg-brand-gold/10 text-brand-gold border border-brand-gold/20 px-2 py-0.5 rounded-full font-bold">
+                                  {slangMode ? "En route" : "On Trip"}
                                 </span>
-                                <div className="space-y-0.5">
-                                  <p className="font-mono font-black text-brand-gold text-sm">
-                                    {activeFareToCharge.toLocaleString('fr-FR')} FCFA
-                                  </p>
-                                  <span className="text-[9px] text-white font-extrabold flex items-center gap-1">
-                                    <CreditCard size={9} className="text-brand-text-muted" />
-                                    {paymentMethod === 'wallet' ? (slangMode ? "Wanda Wallet (-10%)" : "Wanda Wallet (-10%)") :
-                                     paymentMethod === 'momo_mtn' ? "MTN Mobile Money" :
-                                     paymentMethod === 'orange_money' ? "Orange Money" : (slangMode ? "Payement Cash" : "Cash Payment")}
-                                  </span>
-                                </div>
                               </div>
 
-                              {/* Ride Class details */}
-                              {(() => {
-                                const rc = RIDE_CLASSES.find(c => c.id === selectedClassId) || RIDE_CLASSES[2];
-                                return (
-                                  <div className="bg-brand-input/60 border border-brand-input p-2.5 rounded-xl flex flex-col justify-between space-y-1">
-                                    <span className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <Compass size={10} className="text-brand-gold" />
-                                      {slangMode ? "Catégorie" : "Service Class"}
-                                    </span>
-                                    <div className="space-y-0.5">
-                                      <p className="font-black text-white text-[11px] truncate flex items-center gap-1">
-                                        {rc.id === 'okada' ? <Bike size={11} className="text-brand-gold shrink-0" /> : <Car size={11} className="text-brand-gold shrink-0" />}
-                                        {rc.name}
-                                      </p>
-                                      <p className="text-[9px] text-brand-text-muted leading-tight truncate" title={rc.description}>
-                                        {rc.description}
-                                      </p>
+                              {/* Layout side-by-side: Ride details left, Circular progress right */}
+                              <div className="flex gap-3 items-stretch">
+                                {/* Left Side: Details Column */}
+                                <div className="flex-1 space-y-3 min-w-0 flex flex-col justify-between">
+                                  {/* Dynamic Ride details Grid */}
+                                  <div className="grid grid-cols-2 gap-2 text-xs">
+                                    {/* Estimated Fare & Payment Method */}
+                                    <div className="bg-brand-input/60 border border-brand-input p-2 rounded-xl flex flex-col justify-between space-y-1">
+                                      <span className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider flex items-center gap-1">
+                                        <DollarSign size={10} className="text-brand-gold" />
+                                        {slangMode ? "Tarif estimé" : "Estimated Fare"}
+                                      </span>
+                                      <div className="space-y-0.5">
+                                        <p className="font-mono font-black text-brand-gold text-xs sm:text-sm">
+                                          {activeFareToCharge.toLocaleString('fr-FR')} FCFA
+                                        </p>
+                                        <span className="text-[8px] text-white font-extrabold flex items-center gap-0.5 leading-tight truncate">
+                                          <CreditCard size={8} className="text-brand-text-muted shrink-0" />
+                                          {paymentMethod === 'wallet' ? (slangMode ? "Wanda Wallet (-10%)" : "Wanda Wallet (-10%)") :
+                                           paymentMethod === 'momo_mtn' ? "MTN MoMo" :
+                                           paymentMethod === 'orange_money' ? "Orange Money" : (slangMode ? "Cash" : "Cash")}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Ride Class details */}
+                                    {(() => {
+                                      const rc = RIDE_CLASSES.find(c => c.id === selectedClassId) || RIDE_CLASSES[2];
+                                      return (
+                                        <div className="bg-brand-input/60 border border-brand-input p-2 rounded-xl flex flex-col justify-between space-y-1">
+                                          <span className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider flex items-center gap-1">
+                                            <Compass size={10} className="text-brand-gold" />
+                                            {slangMode ? "Catégorie" : "Service Class"}
+                                          </span>
+                                          <div className="space-y-0.5">
+                                            <p className="font-black text-white text-[10px] truncate flex items-center gap-1">
+                                              {rc.id === 'okada' ? <Bike size={10} className="text-brand-gold shrink-0" /> : <Car size={10} className="text-brand-gold shrink-0" />}
+                                              {rc.name}
+                                            </p>
+                                            <p className="text-[8px] text-brand-text-muted leading-tight truncate" title={rc.description}>
+                                              {rc.description}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+
+                                  {/* Vehicle Specs specs info inside left pane */}
+                                  <div className="bg-brand-midnight/40 border border-brand-input/50 rounded-xl p-2 space-y-1 text-[9px] flex-1 flex flex-col justify-center">
+                                    <div className="flex justify-between items-center text-brand-text-muted font-bold uppercase tracking-wider text-[8px]">
+                                      <span>{slangMode ? "Infos du véhicule" : "Vehicle Specs"}</span>
+                                      <span className="text-brand-gold font-mono">{activeDriver.vehiclePlate}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-white truncate font-extrabold mt-0.5">
+                                      <span>{activeDriver.vehicleModel}</span>
+                                      <span className="w-1 h-1 rounded-full bg-brand-input shrink-0" />
+                                      <span className="text-brand-text-muted font-semibold text-[8px]">
+                                        {activeDriver.vehicleColor || "Yellow"}
+                                      </span>
                                     </div>
                                   </div>
-                                );
-                              })()}
-                            </div>
+                                </div>
 
-                            {/* Vehicle and Driver details footer */}
-                            <div className="bg-brand-midnight/40 border border-brand-input/50 rounded-xl p-2.5 space-y-1.5 text-[10px]">
-                              <div className="flex justify-between items-center text-brand-text-muted font-bold uppercase tracking-wider text-[9px]">
-                                <span>{slangMode ? "Infos du véhicule" : "Vehicle Specs"}</span>
-                                <span className="text-brand-gold font-mono">{activeDriver.vehiclePlate}</span>
-                              </div>
-                              <div className="flex flex-col gap-1 text-white">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-extrabold">{activeDriver.vehicleModel}</span>
-                                  <span className="w-1.5 h-1.5 rounded-full bg-brand-input" />
-                                  <span className="text-brand-text-muted font-semibold flex items-center gap-1">
-                                    {slangMode ? `Couleur: ${activeDriver.vehicleColor || "Jaune"}` : `Color: ${activeDriver.vehicleColor || "Yellow"}`}
-                                  </span>
+                                {/* Right Side: Circular Progress Card */}
+                                <div className="w-24 xs:w-28 bg-brand-input/60 border border-brand-input rounded-xl p-2 flex flex-col items-center justify-center space-y-2 shrink-0">
+                                  <div className="relative flex items-center justify-center">
+                                    {/* Simple custom SVG */}
+                                    <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
+                                      {/* Background track circle */}
+                                      <circle
+                                        stroke="rgba(255, 211, 133, 0.1)"
+                                        fill="transparent"
+                                        strokeWidth={stroke}
+                                        r={normalizedRadius}
+                                        cx={radius}
+                                        cy={radius}
+                                      />
+                                      {/* Glowing active progress circle with fluid framer-motion transition */}
+                                      <motion.circle
+                                        stroke="#ffd385"
+                                        fill="transparent"
+                                        strokeWidth={stroke}
+                                        strokeLinecap="round"
+                                        r={normalizedRadius}
+                                        cx={radius}
+                                        cy={radius}
+                                        initial={{ strokeDashoffset: circumference }}
+                                        animate={{ strokeDashoffset }}
+                                        transition={{
+                                          duration: 1.2,
+                                          ease: [0.25, 1, 0.5, 1] // Custom fluid easeOutQuint
+                                        }}
+                                        style={{
+                                          strokeDasharray: circumference,
+                                          filter: 'drop-shadow(0 0 3px rgba(226, 193, 141, 0.6))'
+                                        }}
+                                      />
+                                    </svg>
+                                    
+                                    {/* Centered progress text */}
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+                                      <span className="text-xs font-black text-brand-gold font-mono">{progress}%</span>
+                                      <span className="text-[7px] text-brand-text-muted font-extrabold uppercase mt-0.5">
+                                        {slangMode ? "Ok" : "Done"}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Progress summary label */}
+                                  <div className="text-center space-y-0.5 border-b border-brand-input/30 pb-1.5 w-full">
+                                    <span className="text-[8px] text-brand-text-muted font-bold uppercase tracking-widest block leading-none">
+                                      {slangMode ? "Distance" : "Trip"}
+                                    </span>
+                                    <span className="text-[9px] text-white font-mono font-extrabold block leading-none">
+                                      {remaining > 0 ? `${remaining.toFixed(1)} km` : "0 km"}
+                                    </span>
+                                    <span className="text-[7px] text-brand-gold font-semibold block leading-none">
+                                      {slangMode ? "restant" : "remaining"}
+                                    </span>
+                                  </div>
+
+                                  {/* Live Dynamic ETA Block */}
+                                  <div className="text-center space-y-0.5 w-full">
+                                    <span className="text-[8px] text-brand-gold font-bold uppercase tracking-widest block leading-none animate-pulse">
+                                      {slangMode ? "ETA Estimé" : "ETA"}
+                                    </span>
+                                    <span className="text-[10px] text-white font-mono font-black block leading-none">
+                                      {etaMinutes === 0.5 ? (slangMode ? "< 1 min" : "< 1 min") : `${etaMinutes} min`}
+                                    </span>
+                                    <span className="text-[6.5px] text-brand-text-muted font-bold block leading-none whitespace-normal px-0.5 mt-0.5">
+                                      {etaStatusText || (slangMode ? "Trafic normal" : "Normal traffic")}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="flex justify-between items-center text-[9px] text-brand-text-muted mt-0.5 border-t border-brand-input/20 pt-1.5">
-                                  <span>{slangMode ? "Chauffeur assigné :" : "Assigned Driver:"} <strong className="text-white font-extrabold">{activeDriver.name}</strong></span>
-                                  <span className="flex items-center text-brand-gold font-bold">
-                                    <Star size={9} className="fill-brand-gold text-brand-gold mr-0.5 shrink-0" />
-                                    {activeDriver.rating}
-                                  </span>
-                                </div>
                               </div>
-                            </div>
-                          </motion.div>
-                        )}
+
+                              {/* Footer Driver Specs */}
+                              <div className="bg-brand-midnight/60 border-t border-brand-input/30 pt-2 flex justify-between items-center text-[10px] text-brand-text-muted font-semibold px-1">
+                                <span>{slangMode ? "Chauffeur assigné :" : "Assigned Driver:"} <strong className="text-white font-extrabold">{activeDriver.name}</strong></span>
+                                <span className="flex items-center text-brand-gold font-bold bg-brand-gold/10 px-1.5 py-0.5 rounded-md border border-brand-gold/10">
+                                  <Star size={9} className="fill-brand-gold text-brand-gold mr-0.5 shrink-0" />
+                                  {activeDriver.rating}
+                                </span>
+                              </div>
+                            </motion.div>
+                          );
+                        })()}
 
                         {/* Real-time Journey Progress Bar */}
                         {(() => {
@@ -2669,17 +3572,42 @@ export default function App() {
                                 {/* Progress track background shimmer line */}
                                 <div className="absolute inset-0 opacity-20 bg-gradient-to-r from-transparent via-white to-transparent animate-[shimmer_2s_infinite]"></div>
 
-                                {/* Animated active progress fill */}
+                                {/* Animated active progress fill with dual-layered glowing trail effect */}
                                 <motion.div
-                                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-brand-gold/80 via-brand-gold to-yellow-400 rounded-full shadow-[0_0_8px_rgba(234,179,8,0.4)]"
+                                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-brand-gold/80 via-brand-gold to-yellow-400 rounded-full shadow-[0_0_12px_rgba(234,179,8,0.6)] overflow-hidden"
                                   initial={{ width: '0%' }}
                                   animate={{ width: `${progress}%` }}
                                   transition={{ type: "spring", stiffness: 70, damping: 14 }}
-                                />
+                                >
+                                  {/* Framer Motion sweep light particle inside the progress fill */}
+                                  {progress > 0 && (
+                                    <motion.div
+                                      className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent"
+                                      animate={{
+                                        x: ['-100%', '300%']
+                                      }}
+                                      transition={{
+                                        repeat: Infinity,
+                                        duration: 1.8,
+                                        ease: "easeInOut"
+                                      }}
+                                    />
+                                  )}
+                                </motion.div>
 
-                                {/* Moving taxi icon riding the bar */}
+                                {/* Background glowing pulse trail radiating behind the moving taxi */}
+                                {progress > 0 && (
+                                  <motion.div
+                                    className="absolute top-0 h-full bg-gradient-to-r from-transparent to-brand-gold/35 blur-[2px] rounded-full"
+                                    initial={{ width: '0%' }}
+                                    animate={{ width: `${progress}%` }}
+                                    transition={{ type: "spring", stiffness: 70, damping: 14 }}
+                                  />
+                                )}
+
+                                {/* Moving taxi icon riding the bar with a pulsing trailing beacon */}
                                 <motion.div
-                                  className="absolute -top-1.5 -ml-3 w-6 h-6 bg-brand-gold text-brand-midnight border-2 border-brand-midnight rounded-full flex items-center justify-center shadow-lg cursor-pointer"
+                                  className="absolute -top-1.5 -ml-3 w-6 h-6 bg-brand-gold text-brand-midnight border-2 border-brand-midnight rounded-full flex items-center justify-center shadow-lg cursor-pointer z-10"
                                   animate={{ 
                                     left: `${progress}%`,
                                     scale: [1, 1.08, 1]
@@ -2690,6 +3618,19 @@ export default function App() {
                                   }}
                                   title={slangMode ? "Position du djo" : "Driver Position"}
                                 >
+                                  {/* Pulsing glow aura following the taxi */}
+                                  <motion.div
+                                    className="absolute -inset-1.5 bg-brand-gold/35 rounded-full -z-10 blur-[3px]"
+                                    animate={{
+                                      scale: [1, 1.4, 1],
+                                      opacity: [0.6, 0.1, 0.6]
+                                    }}
+                                    transition={{
+                                      repeat: Infinity,
+                                      duration: 1.5,
+                                      ease: "easeOut"
+                                    }}
+                                  />
                                   {/* Small compact taxi svg icon */}
                                   <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                                     <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-4h14v4zM7.5 14c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm9 0c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/>
@@ -2849,28 +3790,43 @@ export default function App() {
                   topupPromoActive={systemSettings.topupPromoActive}
                   topupPromoRate={systemSettings.topupPromoRate}
                   slangMode={slangMode}
+                  passengerPoints={passengerPoints}
                 />
               )}
 
               {/* PAST RIDE HISTORY */}
               {activeTab === 'history' && (
                 <div className="space-y-3 flex-1 overflow-y-auto">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-[10px] font-black uppercase text-brand-text-muted tracking-wider">Ride Ledger Logs</h3>
-                    <button
-                      onClick={() => setHistory([])}
-                      className="text-[10px] text-rose-400 hover:text-rose-300 hover:underline cursor-pointer font-bold"
-                    >
-                      Clear History
-                    </button>
+                  <div className="flex justify-between items-center bg-brand-card/20 p-2 rounded-xl border border-brand-input/30">
+                    <h3 className="text-[10px] font-black uppercase text-brand-text-muted tracking-wider">
+                      {slangMode ? "Journal des Trajets" : "Ride Ledger Logs"}
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      {history.length > 0 && (
+                        <button
+                          onClick={() => setHistorySortOrder(prev => prev === 'recent' ? 'oldest' : 'recent')}
+                          className="flex items-center gap-1 text-[10px] text-brand-gold hover:text-white cursor-pointer font-bold bg-brand-input/60 px-2.5 py-1 rounded-lg border border-brand-gold/20 hover:border-brand-gold/50 transition-all active:scale-95"
+                          title={slangMode ? "Trier les trajets" : "Sort Rides"}
+                        >
+                          <ArrowUpDown size={10} />
+                          <span>{historySortOrder === 'recent' ? (slangMode ? "Récent" : "Recent First") : (slangMode ? "Ancien" : "Oldest First")}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setHistory([])}
+                        className="text-[10px] text-rose-400 hover:text-rose-300 hover:underline cursor-pointer font-bold"
+                      >
+                        {slangMode ? "Effacer" : "Clear History"}
+                      </button>
+                    </div>
                   </div>
 
                   {history.length === 0 ? (
                     <div className="text-center py-10 text-brand-text-muted italic text-xs font-medium">
-                      No previous completed rides.
+                      {slangMode ? "Aucun trajet enregistré." : "No previous completed rides."}
                     </div>
                   ) : (
-                    history.map((hist) => (
+                    (historySortOrder === 'recent' ? history : [...history].reverse()).map((hist) => (
                       <div key={hist.id} className="bg-brand-card/30 border border-brand-card p-3.5 rounded-2xl space-y-3.5 shadow-sm">
                         <div className="flex justify-between items-center text-[9px] text-brand-text-muted font-bold font-mono">
                           <span>{hist.date}</span>
@@ -2929,58 +3885,59 @@ export default function App() {
             <div className="flex flex-col flex-1 p-4 space-y-4">
               
               {/* Tab selector for driver */}
-              <div className="flex border-b border-brand-card/80 pb-1.5 gap-1 text-xs">
-                <button
-                  onClick={() => setDriverActiveTab('orders')}
-                  className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer ${driverActiveTab === 'orders' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
-                >
-                  {slangMode ? "Commandes" : "Incoming Orders"}
-                </button>
-                <button
-                  onClick={() => setDriverActiveTab('wallet')}
-                  className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer flex items-center justify-center gap-1 ${driverActiveTab === 'wallet' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
-                >
-                  {slangMode ? "Revenus / Retrait" : "Earnings / Payout"}
-                  <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full font-black">
-                    {driverWallet.toLocaleString('fr-FR')} XAF
-                  </span>
-                </button>
-              </div>
+              {rideStatus === 'idle' && (
+                <div className="flex border-b border-brand-card/80 pb-1.5 gap-1 text-xs">
+                  <button
+                    onClick={() => setDriverActiveTab('orders')}
+                    className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer ${driverActiveTab === 'orders' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
+                  >
+                    {slangMode ? "Commandes" : "Incoming Orders"}
+                  </button>
+                  <button
+                    onClick={() => setDriverActiveTab('wallet')}
+                    className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer flex items-center justify-center gap-1 ${driverActiveTab === 'wallet' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
+                  >
+                    {slangMode ? "Revenus / Retrait" : "Earnings / Payout"}
+                  </button>
+                </div>
+              )}
 
               {/* ORDERS PANEL */}
               {driverActiveTab === 'orders' && (
                 <>
-                  <div className="bg-brand-card/40 p-4 rounded-2xl border border-brand-card/80 space-y-3.5 shadow-md">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-brand-gold flex items-center gap-1.5 tracking-wider uppercase">
-                        <TrendingUp size={13} />
-                        Wanda Chauffeur Portal
-                      </span>
-                      
-                      {/* Driver Status Toggle */}
-                      <button
-                        onClick={() => setDriverOnline(!driverOnline)}
-                        className={`px-3 py-1 rounded-full text-[9px] font-black transition cursor-pointer ${driverOnline ? 'bg-emerald-600 text-white' : 'bg-brand-input text-brand-text-muted'}`}
-                      >
-                        {driverOnline ? '● ONLINE' : '○ OFFLINE'}
-                      </button>
-                    </div>
+                  {rideStatus === 'idle' && (
+                    <div className="bg-brand-card/40 p-4 rounded-2xl border border-brand-card/80 space-y-3.5 shadow-md">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-brand-gold flex items-center gap-1.5 tracking-wider uppercase">
+                          <TrendingUp size={13} />
+                          Wanda Chauffeur Portal
+                        </span>
+                        
+                        {/* Driver Status Toggle */}
+                        <button
+                          onClick={() => setDriverOnline(!driverOnline)}
+                          className={`px-3 py-1 rounded-full text-[9px] font-black transition cursor-pointer ${driverOnline ? 'bg-emerald-600 text-white' : 'bg-brand-input text-brand-text-muted'}`}
+                        >
+                          {driverOnline ? '● ONLINE' : '○ OFFLINE'}
+                        </button>
+                      </div>
 
-                    <div className="grid grid-cols-3 gap-2.5 text-center">
-                      <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
-                        <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Earnings</span>
-                        <span className="text-xs font-black text-white">{driverStats.earnings.toLocaleString('fr-FR')} XAF</span>
-                      </div>
-                      <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
-                        <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Trips Completed</span>
-                        <span className="text-xs font-black text-white">{driverStats.trips}</span>
-                      </div>
-                      <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
-                        <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Fleet Rating</span>
-                        <span className="text-xs font-black text-brand-gold flex items-center justify-center gap-0.5">★ {driverStats.rating}</span>
+                      <div className="grid grid-cols-3 gap-2.5 text-center">
+                        <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
+                          <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Earnings</span>
+                          <span className="text-xs font-black text-white">{driverStats.earnings.toLocaleString('fr-FR')} XAF</span>
+                        </div>
+                        <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
+                          <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Trips Completed</span>
+                          <span className="text-xs font-black text-white">{driverStats.trips}</span>
+                        </div>
+                        <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
+                          <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Fleet Rating</span>
+                          <span className="text-xs font-black text-brand-gold flex items-center justify-center gap-0.5">★ {driverStats.rating}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {!driverOnline ? (
                     <div className="text-center py-10 space-y-3 flex-1 flex flex-col justify-center">
@@ -3217,14 +4174,18 @@ export default function App() {
                         <div className="flex items-start gap-2">
                           <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 mt-1 animate-pulse"></span>
                           <div className="min-w-0 flex-1">
-                            <span className="text-[8px] text-brand-text-muted block uppercase">Départ (A)</span>
+                            <span className="text-[8px] text-brand-text-muted block uppercase">
+                              {language === 'fr' ? "Départ (A)" : "Pickup (A)"}
+                            </span>
                             <p className="font-extrabold text-white truncate">{driverRideRequest.pickupName}</p>
                           </div>
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="w-2 h-2 rounded-full bg-brand-gold shrink-0 mt-1"></span>
                           <div className="min-w-0 flex-1">
-                            <span className="text-[8px] text-brand-text-muted block uppercase">Dépôt (B)</span>
+                            <span className="text-[8px] text-brand-text-muted block uppercase">
+                              {language === 'fr' ? "Dépôt (B)" : "Dropoff (B)"}
+                            </span>
                             <p className="font-extrabold text-white truncate">{driverRideRequest.destName}</p>
                           </div>
                         </div>
@@ -3363,7 +4324,520 @@ export default function App() {
         </aside>
 
         {/* Right Side Map Viewport */}
-        <section className="flex-1 h-full relative" id="map-viewport">
+        <section 
+          className={`relative transition-all duration-300 ${
+            isMapFullscreen
+              ? 'fixed inset-0 z-[9999] w-screen h-screen'
+              : rideStatus !== 'idle' && rideStatus !== 'searching'
+                ? 'flex-1 h-[60vh] md:h-full w-full'
+                : 'flex-1 h-full w-full'
+          }`} 
+          id="map-viewport"
+        >
+          {/* Fullscreen Toggle Button */}
+          <button
+            onClick={() => setIsMapFullscreen(prev => !prev)}
+            className="absolute top-[72px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 rounded-lg text-brand-gold hover:text-white shadow-md hover:shadow-brand-gold/20 transition-all duration-200 active:scale-95 cursor-pointer group"
+            title={isMapFullscreen ? (slangMode ? "Quitter le plein écran" : "Exit Fullscreen") : (slangMode ? "Plein écran" : "Fullscreen")}
+            id="map-fullscreen-toggle"
+          >
+            {isMapFullscreen ? <Minimize2 size={16} className="group-hover:scale-110 transition-transform" /> : <Maximize2 size={16} className="group-hover:scale-110 transition-transform" />}
+          </button>
+
+          {/* Floating Map Pitch Control Button */}
+          <button
+            onClick={() => {
+              setIsMapTilted(prev => {
+                if (prev === true || prev === 'tilted' || prev === 'isometric') {
+                  return false;
+                }
+                return 'tilted';
+              });
+              if (isAutoPitchEnabled) {
+                setIsAutoPitchEnabled(false);
+              }
+            }}
+            className={`absolute top-[164px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] border shadow-lg transition-all duration-200 active:scale-95 cursor-pointer group ${
+              (isMapTilted === true || isMapTilted === 'tilted')
+                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
+                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
+            }`}
+            title={isMapTilted ? (slangMode ? "Vue 2D" : "2D Flat View") : (slangMode ? "Vue 3D (Inclinée)" : "3D Perspective View")}
+            id="map-pitch-control"
+          >
+            <Layers size={14} className={`transition-transform duration-300 ${(isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric') ? 'rotate-12 scale-110' : 'group-hover:scale-110'}`} />
+            <span className="text-[7px] font-bold font-mono tracking-tighter mt-0.5 leading-none">
+              {(isMapTilted === true || isMapTilted === 'tilted') ? '54°' : isMapTilted === 'isometric' ? '45°' : '2D'}
+            </span>
+          </button>
+
+          {/* Small Secondary Preset View Button (0° <-> 45° Isometric) */}
+          <button
+            onClick={() => {
+              setIsMapTilted(prev => prev === 'isometric' ? false : 'isometric');
+              if (isAutoPitchEnabled) {
+                setIsAutoPitchEnabled(false);
+              }
+            }}
+            className={`absolute top-[170px] right-[56px] z-[1000] flex flex-col items-center justify-center w-[28px] h-[28px] rounded-lg border transition-all duration-200 active:scale-95 cursor-pointer group ${
+              isMapTilted === 'isometric'
+                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.3)]'
+                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-white shadow-md'
+            }`}
+            title={slangMode ? "Vue Standard 45° (Isométrique)" : "Preset View (45° Isometric)"}
+            id="map-pitch-preset"
+          >
+            <Eye size={10} className={`transition-transform duration-300 ${isMapTilted === 'isometric' ? 'scale-110 text-brand-gold' : 'group-hover:scale-110 text-brand-text-muted'}`} />
+            <span className="text-[5.5px] font-bold font-mono tracking-tighter leading-none mt-0.5">
+              45°
+            </span>
+          </button>
+
+          {/* Floating Map Auto-Pitch Lock Control Button */}
+          <button
+            onClick={() => setIsAutoPitchEnabled(prev => !prev)}
+            className={`absolute top-[210px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
+              isAutoPitchEnabled
+                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
+                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
+            }`}
+            title={slangMode ? "Verrouillage automatique de l'inclinaison (3D en transit rapide, 2D en ramassage)" : "Auto-Pitch Lock (3D during transit, 2D in pickup/dropoff zones)"}
+            id="map-auto-pitch-control"
+          >
+            <div className="relative">
+              <Gauge size={14} className={`transition-transform duration-300 ${isAutoPitchEnabled ? 'animate-pulse scale-105' : 'group-hover:scale-110'}`} />
+              {isAutoPitchEnabled && (
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
+              )}
+            </div>
+            <span className="text-[6px] font-black tracking-widest mt-0.5 leading-none uppercase">
+              Auto
+            </span>
+          </button>
+
+          {/* Floating Map Zoom Lock Control Button */}
+          <button
+            onClick={() => setIsZoomLocked(prev => !prev)}
+            className={`absolute top-[256px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
+              isZoomLocked
+                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
+                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
+            }`}
+            title={slangMode ? "Verrouiller le zoom de la carte (Empêche l'auto-ajustement)" : "Keep Zoom Locked (Prevents map auto-adjusting zoom)"}
+            id="map-zoom-lock-control"
+          >
+            <div className="relative">
+              {isZoomLocked ? (
+                <Lock size={14} className="transition-transform duration-300 scale-105" />
+              ) : (
+                <Unlock size={14} className="transition-transform duration-300 group-hover:scale-110" />
+              )}
+              {isZoomLocked && (
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
+              )}
+            </div>
+            <span className="text-[5.5px] font-black tracking-widest mt-0.5 leading-none uppercase font-mono">
+              {isZoomLocked ? "Lock" : "Free"}
+            </span>
+          </button>
+
+          {/* Compass Backdrop to capture click outside and collapse */}
+          <AnimatePresence>
+            {isCompassExpanded && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsCompassExpanded(false)}
+                className="absolute inset-0 bg-transparent z-[998]"
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Compass Orientation Control */}
+          <AnimatePresence mode="wait">
+            {!isCompassExpanded ? (
+              /* Collapsed view (small pilot gauge boussole button) */
+              <motion.button
+                key="collapsed-compass"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                onClick={handleCompassToggle}
+                className="absolute top-[114px] right-[10px] z-[999] flex items-center justify-center w-[40px] h-[40px] bg-brand-midnight/95 backdrop-blur-md border border-brand-input/60 hover:border-brand-gold/80 rounded-full text-brand-gold hover:text-white shadow-lg cursor-pointer transition-all duration-200 active:scale-95 group"
+                title={slangMode ? "Boussole (Cliquez pour agrandir)" : "Compass (Click to expand)"}
+                id="map-compass-control-collapsed"
+              >
+                {/* Mini Rotating Dial */}
+                <div 
+                  className="w-7 h-7 rounded-full border border-brand-gold/30 group-hover:border-brand-gold/60 relative flex items-center justify-center transition-transform duration-300 ease-out"
+                  style={{ transform: `rotate(${-continuousHeading}deg)` }}
+                >
+                  {/* Small North indicator (N) */}
+                  <span className="absolute top-0 text-[6px] font-black text-rose-500 leading-none select-none">N</span>
+                  <span className="absolute bottom-0 text-[5px] font-black text-brand-text-muted/60 leading-none select-none">S</span>
+                  
+                  {/* Small physical needle */}
+                  <div className="w-1 h-5 relative flex items-center justify-center">
+                    {/* Red needle tip pointing north */}
+                    <div className="absolute top-0 w-0 h-0 border-l-[1.5px] border-l-transparent border-r-[1.5px] border-r-transparent border-b-[8px] border-b-rose-500" />
+                    {/* Gray needle tip pointing south */}
+                    <div className="absolute bottom-0 w-0 h-0 border-l-[1.5px] border-l-transparent border-r-[1.5px] border-r-transparent border-t-[8px] border-t-brand-text-muted/60" />
+                    {/* Pin pivot */}
+                    <div className="w-1 h-1 rounded-full bg-brand-midnight border border-brand-gold/80 z-10" />
+                  </div>
+                </div>
+              </motion.button>
+            ) : (
+              /* Expanded view */
+              <motion.div
+                key="expanded-compass"
+                initial={{ scale: 0.9, opacity: 0, y: -10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: -10 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCompassInteraction();
+                }}
+                className="absolute top-[114px] right-[10px] z-[999] flex flex-col items-center bg-brand-midnight/95 backdrop-blur-md border border-brand-input/60 p-2.5 rounded-2xl shadow-2xl w-32"
+                id="map-compass-control"
+              >
+                {/* Compass Heading Indicator with Collapse Button */}
+                <div className="font-mono text-[9px] font-black text-brand-gold leading-none pb-1.5 flex items-center gap-0.5 select-none justify-between w-full">
+                  <span className="flex items-center gap-0.5">
+                    {compassLockMode === 'magnetic' && <Magnet size={9} className="text-brand-gold animate-pulse" />}
+                    <span>{compassHeading}°</span>
+                    <span className="text-white bg-brand-deep px-1 rounded-sm text-[8px] ml-1">{(() => {
+                      const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+                      const index = Math.round(((compassHeading % 360) / 45)) % 8;
+                      return directions[index];
+                    })()}</span>
+                  </span>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsCompassExpanded(false);
+                    }}
+                    className="text-brand-text-muted hover:text-white transition-colors cursor-pointer p-0.5"
+                    title={slangMode ? "Réduire" : "Collapse"}
+                  >
+                    <Minimize2 size={10} />
+                  </button>
+                </div>
+
+                {/* Rotating Dial */}
+                <div 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCompassLockMode('north');
+                    setCompassHeading(0);
+                    handleCompassInteraction();
+                  }}
+                  className="w-12 h-12 rounded-full border border-brand-gold/40 hover:border-brand-gold bg-brand-deep/80 relative flex items-center justify-center shadow-inner cursor-pointer active:scale-95 transition-all duration-200 group"
+                  title={slangMode ? "Cliquez pour réorienter vers le Nord" : "Click to reset map orientation to North"}
+                >
+                  {/* Spinning Ring */}
+                  <div 
+                    className="absolute inset-0 rounded-full border border-dashed border-brand-gold/20 group-hover:animate-[spin_10s_linear_infinite]"
+                  />
+
+                  {/* Cardinal letters inside the rotating dial */}
+                  <div 
+                    className="absolute inset-0 flex items-center justify-center transition-transform duration-300 ease-out"
+                    style={{ transform: `rotate(${-continuousHeading}deg)` }}
+                  >
+                    <span className="absolute top-1 text-[8px] font-black text-rose-500 leading-none">N</span>
+                    <span className="absolute right-1 text-[8px] font-black text-brand-text-muted/80 leading-none">E</span>
+                    <span className="absolute bottom-1 text-[8px] font-black text-brand-text-muted/80 leading-none">S</span>
+                    <span className="absolute left-1 text-[8px] font-black text-brand-text-muted/80 leading-none">W</span>
+                    
+                    {/* Visual graduation marks on the edge */}
+                    <div className="absolute top-0 bottom-0 left-1/2 w-[1px] border-l border-brand-gold/10" />
+                    <div className="absolute left-0 right-0 top-1/2 h-[1px] border-t border-brand-gold/10" />
+
+                    {/* Central stylized physical needle */}
+                    <div className="w-1.5 h-8 relative flex items-center justify-center">
+                      {/* Top half: Red North needle */}
+                      <div className="absolute top-0 w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[16px] border-b-rose-500" />
+                      {/* Bottom half: Grey/Gold South needle */}
+                      <div className="absolute bottom-0 w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[16px] border-t-brand-text-muted/60" />
+                      {/* Pivot pin */}
+                      <div className="w-2 h-2 rounded-full bg-brand-deep border border-brand-gold z-10 shadow-sm" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mode selection indicators */}
+                <div className="flex gap-1 mt-2 border-t border-brand-card/40 pt-1.5 justify-center w-full">
+                  {/* North lock mode */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompassLockMode('north');
+                      setCompassHeading(0);
+                      handleCompassInteraction();
+                    }}
+                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-black transition-all cursor-pointer ${
+                      compassLockMode === 'north'
+                        ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
+                        : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
+                    }`}
+                    title={slangMode ? "Verrouiller au Nord" : "Lock to True North"}
+                  >
+                    N
+                  </button>
+
+                  {/* Trajectory / Travel alignment mode */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (rideStatus === 'in_progress') {
+                        setCompassLockMode('bearing');
+                      }
+                      handleCompassInteraction();
+                    }}
+                    disabled={rideStatus !== 'in_progress'}
+                    className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer ${
+                      rideStatus !== 'in_progress'
+                        ? 'opacity-30 cursor-not-allowed text-brand-text-muted/40 bg-brand-deep/20'
+                        : compassLockMode === 'bearing'
+                          ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
+                          : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
+                    }`}
+                    title={slangMode ? "Suivre l'itinéraire" : "Track Travel Direction"}
+                  >
+                    <Navigation size={9} className={compassLockMode === 'bearing' ? 'fill-brand-midnight' : 'fill-brand-text-muted'} />
+                  </button>
+
+                  {/* Device gyro orientation mode */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompassLockMode('device');
+                      requestDeviceOrientationPermission();
+                      handleCompassInteraction();
+                    }}
+                    className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer relative ${
+                      compassLockMode === 'device'
+                        ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
+                        : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
+                    }`}
+                    title={slangMode ? "Capteur de l'appareil" : "Use Gyro/Device Compass"}
+                  >
+                    <Smartphone size={9} />
+                    {isUsingDeviceOrientation && (
+                      <span className="absolute -top-0.5 -right-0.5 w-1 h-1 bg-emerald-500 rounded-full animate-ping" />
+                    )}
+                  </button>
+
+                  {/* Magnetic Sensor Mode */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompassLockMode('magnetic');
+                      handleCompassInteraction();
+                    }}
+                    className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer relative ${
+                      compassLockMode === 'magnetic'
+                        ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
+                        : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
+                    }`}
+                    title={slangMode ? "Capteur Magnétique (Magnetometer)" : "Use Magnetic Sensor"}
+                  >
+                    <Magnet size={9} />
+                    {isMagnetometerCalibrated && (
+                      <span className="absolute -top-0.5 -right-0.5 w-1 h-1 bg-emerald-400 rounded-full" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Magnetic Mode Calibration and Details */}
+                {compassLockMode === 'magnetic' && (
+                  <div className="flex flex-col items-center gap-1.5 mt-2 border-t border-brand-card/40 pt-1.5 w-full">
+                    {/* Accuracy & Calibration status */}
+                    <div className="flex items-center justify-between w-full px-0.5">
+                      <span className="text-[7px] font-black uppercase text-brand-text-muted">Sensor</span>
+                      <span className={`text-[6px] font-black uppercase px-1 rounded-sm leading-none py-0.5 ${
+                        magnetometerAccuracy === 'high' 
+                          ? 'bg-emerald-500/20 text-emerald-400' 
+                          : magnetometerAccuracy === 'medium'
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-rose-500/20 text-rose-400 animate-pulse'
+                      }`}>
+                        {magnetometerAccuracy === 'high' ? 'Calibrated' : `Acc: ${magnetometerAccuracy}`}
+                      </span>
+                    </div>
+
+                    {/* Calibrate action button */}
+                    {!isCalibrating ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMagnetometerCalibration();
+                        }}
+                        className="w-full flex items-center justify-center gap-1 py-1 rounded bg-brand-deep border border-brand-gold/30 hover:border-brand-gold hover:bg-brand-card/50 text-[7px] font-black uppercase tracking-wider text-brand-gold transition-all duration-200 cursor-pointer active:scale-95"
+                        title={slangMode ? "Lancer la calibration en 8" : "Calibrate with Figure-8 Motion"}
+                      >
+                        <Magnet size={8} className="animate-pulse text-brand-gold" />
+                        <span>{isMagnetometerCalibrated ? (slangMode ? "Ré-étalonner" : "Recalibrate") : (slangMode ? "Étalonner" : "Calibrate")}</span>
+                      </button>
+                    ) : (
+                      <div className="w-full bg-brand-deep border border-brand-gold/30 p-1 rounded flex flex-col gap-1 items-center justify-center">
+                        <span className="text-[6px] text-brand-gold font-bold uppercase animate-pulse text-center leading-tight">Wave phone in Figure-8</span>
+                        <div className="w-full bg-brand-card/50 h-1 rounded-full overflow-hidden">
+                          <div 
+                            className="bg-brand-gold h-full transition-all duration-300" 
+                            style={{ width: `${calibrationProgress}%` }}
+                          />
+                        </div>
+                        <span className="text-[6px] text-brand-text-muted font-mono">{calibrationProgress}%</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Magnetometer Calibration Fullscreen Figure-8 Visual Guide Overlay */}
+          <AnimatePresence>
+            {isCalibrating && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-brand-midnight/90 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-6 text-center"
+              >
+                <div className="max-w-xs w-full bg-brand-deep/80 border border-brand-gold/40 p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4 relative overflow-hidden">
+                  {/* Glowing background shapes */}
+                  <div className="absolute -top-10 -left-10 w-24 h-24 bg-brand-gold/10 rounded-full blur-2xl" />
+                  <div className="absolute -bottom-10 -right-10 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl" />
+
+                  {/* Icon & Title */}
+                  <div className="flex items-center gap-2 text-brand-gold">
+                    <Magnet className="animate-bounce" size={20} />
+                    <h3 className="text-sm font-black tracking-wider uppercase">
+                      {slangMode ? "Étalonner Boussole" : "Compass Calibration"}
+                    </h3>
+                  </div>
+
+                  {/* Figure-8 Animation Container */}
+                  <div className="w-full h-28 flex items-center justify-center relative">
+                    <svg viewBox="0 0 100 60" className="w-40 h-24 drop-shadow-[0_0_8px_rgba(255,211,67,0.3)]">
+                      <style>{`
+                        @keyframes dash {
+                          to {
+                            stroke-dashoffset: -180;
+                          }
+                        }
+                      `}</style>
+                      
+                      {/* Grid background lines for high-tech aesthetic */}
+                      <line x1="10" y1="30" x2="90" y2="30" stroke="rgba(255,255,255,0.05)" strokeDasharray="1 3" />
+                      <line x1="50" y1="10" x2="50" y2="50" stroke="rgba(255,255,255,0.05)" strokeDasharray="1 3" />
+
+                      {/* Infinite Path */}
+                      <path 
+                        id="inf-path"
+                        d="M 50 30 C 35 12, 15 20, 15 30 C 15 40, 35 48, 50 30 C 65 12, 85 20, 85 30 C 85 40, 65 48, 50 30 Z" 
+                        fill="none" 
+                        stroke="rgba(255,211,67,0.15)" 
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                      />
+                      
+                      {/* Active highlighted trace of path */}
+                      <path 
+                        d="M 50 30 C 35 12, 15 20, 15 30 C 15 40, 35 48, 50 30 C 65 12, 85 20, 85 30 C 85 40, 65 48, 50 30 Z" 
+                        fill="none" 
+                        stroke="url(#grad-neon)" 
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeDasharray="30 150"
+                        className="animate-[dash_3s_linear_infinite]"
+                      />
+
+                      {/* Gradients */}
+                      <defs>
+                        <linearGradient id="grad-neon" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#ef4444" />
+                          <stop offset="50%" stopColor="#ffd343" />
+                          <stop offset="100%" stopColor="#10b981" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* Glowing dot traveling the infinity path */}
+                      <circle r="4" fill="#ffd343" className="shadow-lg">
+                        <animateMotion 
+                          dur="3s" 
+                          repeatCount="indefinite" 
+                          path="M 50 30 C 35 12, 15 20, 15 30 C 15 40, 35 48, 50 30 C 65 12, 85 20, 85 30 C 85 40, 65 48, 50 30 Z" 
+                        />
+                      </circle>
+                    </svg>
+
+                    {/* Miniature physical phone gesture illustration overlay */}
+                    <motion.div 
+                      className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                      animate={{
+                        rotate: [0, 15, -15, 15, -15, 0],
+                        x: [0, -25, 25, 25, -25, 0],
+                        y: [0, -10, 10, -10, 10, 0]
+                      }}
+                      transition={{
+                        duration: 5,
+                        repeat: Infinity,
+                        ease: "easeInOut"
+                      }}
+                    >
+                      <div className="w-5 h-9 rounded bg-white/20 border border-white/50 flex flex-col items-center justify-between p-1 shadow-md backdrop-blur-sm opacity-60">
+                        <div className="w-2.5 h-0.5 bg-white/60 rounded-full" />
+                        <Compass size={10} className="text-brand-gold animate-spin" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                      </div>
+                    </motion.div>
+                  </div>
+
+                  {/* Calibration Instruction */}
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-white uppercase tracking-wide">
+                      {slangMode ? "Déplacez l'appareil en 8" : "Wave device in a figure-8"}
+                    </p>
+                    <p className="text-[9px] text-brand-text-muted leading-relaxed">
+                      {slangMode 
+                        ? "Faites pivoter votre téléphone en dessinant un huit dans l'air pour recalibrer le magnétomètre."
+                        : "Smoothly tilt and rotate your phone along the loop to calibrate magnetic orientation accuracy."}
+                    </p>
+                  </div>
+
+                  {/* Progress bar and percentage */}
+                  <div className="w-full space-y-1 pt-1">
+                    <div className="flex justify-between items-center text-[8px] font-mono font-bold text-brand-text-muted">
+                      <span>{slangMode ? "ALIGNEMENT..." : "CALIBRATING..."}</span>
+                      <span className="text-brand-gold">{calibrationProgress}%</span>
+                    </div>
+                    <div className="w-full bg-brand-midnight h-2 rounded-full overflow-hidden p-0.5 border border-brand-input/40">
+                      <motion.div 
+                        className="bg-gradient-to-r from-rose-500 via-brand-gold to-emerald-400 h-full rounded-full"
+                        style={{ width: `${calibrationProgress}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Cancel Button */}
+                  <button
+                    onClick={handleCancelCalibration}
+                    className="mt-1 w-full bg-rose-500/15 border border-rose-500/30 hover:border-rose-500/60 text-rose-400 hover:text-rose-300 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition"
+                  >
+                    {slangMode ? "Annuler" : "Cancel"}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <TaxiMap
             pickup={pickup}
             destination={destination}
@@ -3376,7 +4850,112 @@ export default function App() {
             onSetPickup={setPickup}
             onSetDestination={setDestination}
             onSetDriverLoc={setDriverLoc}
+            etaMinutes={etaMinutes}
+            isTilted={isMapTilted}
+            isZoomLocked={isZoomLocked}
           />
+
+          {/* Floating Dynamic Distance Ruler */}
+          {rideStatus === 'in_progress' && pickup && destination && driverLoc && (() => {
+            const remaining = getDistanceKm(driverLoc.lat, driverLoc.lng, destination.lat, destination.lng);
+            const isUrgent = remaining < 1;
+            const total = getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng);
+            const progress = total > 0 ? Math.max(0, Math.min(100, (1 - remaining / total) * 100)) : 0;
+            const progressPct = total > 0 ? Math.max(0, Math.min(100, Math.round((1 - remaining / total) * 100))) : 0;
+            
+            let colorClass = "text-emerald-400";
+            if (isUrgent) {
+              colorClass = "text-orange-500 animate-pulse";
+            } else if (remaining < 5) {
+              colorClass = "text-amber-400";
+            }
+            const displayValue = isUrgent ? `${Math.round(remaining * 1000)} m` : `${remaining.toFixed(2)} km`;
+            
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ type: "spring", stiffness: 100, damping: 15 }}
+                className="absolute top-4 left-4 right-4 md:right-auto md:w-80 bg-brand-midnight/90 backdrop-blur-md border border-brand-gold/30 p-4 rounded-2xl shadow-2xl z-[1000] text-white flex flex-col gap-3"
+                id="floating-distance-ruler"
+              >
+                {/* Ruler Header */}
+                <div className="flex items-center justify-between border-b border-brand-card/60 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Ruler size={14} className="text-brand-gold animate-[pulse_2s_infinite]" />
+                    <span className="text-[10px] font-black uppercase tracking-wider text-brand-gold">
+                      {slangMode ? "Réglette de Distance" : "Distance Ruler"}
+                    </span>
+                    {isUrgent && (
+                      <span className="flex items-center gap-1 bg-rose-500/20 text-rose-400 border border-rose-500/40 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wide animate-[pulse_1s_infinite] shadow-[0_0_8px_rgba(239,68,68,0.4)]">
+                        <AlertTriangle size={8} className="text-rose-400 fill-rose-400/20" />
+                        <span>{slangMode ? "Proche!" : "Urgent!"}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right font-mono">
+                    <span className={`text-xs font-black transition-all duration-300 ${colorClass}`}>
+                      {displayValue}
+                    </span>
+                    <span className="text-[9px] text-brand-text-muted ml-1">
+                      {slangMode ? "restant" : "left"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Ruler graduation tick marks scale */}
+                <div className="relative pt-1">
+                  {/* Ruler ticks background */}
+                  <div className="relative h-6 bg-brand-deep/80 border border-brand-input/40 rounded-lg overflow-hidden flex items-end justify-between px-2 pb-1">
+                    {/* Loop to draw ruler subdivisions (21 ticks) */}
+                    {Array.from({ length: 21 }).map((_, i) => {
+                      const isMajor = i % 5 === 0;
+                      return (
+                        <div
+                          key={i}
+                          className={`transition-colors duration-300 rounded-full ${
+                            isMajor 
+                              ? 'h-3 w-[1.5px] bg-brand-gold/60' 
+                              : 'h-1.5 w-[1px] bg-brand-text-muted/40'
+                          }`}
+                        />
+                      );
+                    })}
+
+                    {/* Dynamic sliding indicator point (the taxi pointer on the ruler) */}
+                    <motion.div
+                      className="absolute top-0 bottom-0 flex flex-col items-center justify-between pointer-events-none"
+                      style={{ left: `calc(${progress}% - 8px)` }}
+                      animate={{ left: `calc(${progress}% - 8px)` }}
+                      transition={{ type: "spring", stiffness: 80, damping: 15 }}
+                    >
+                      {/* Upper guide marker line */}
+                      <div className="h-full w-[2px] bg-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.8)]" />
+                      
+                      {/* Pointer tip bubble */}
+                      <div className="absolute -top-1 w-4.5 h-4.5 rounded-full bg-brand-gold border border-white flex items-center justify-center shadow-lg -translate-x-[1.25px]">
+                        <Car size={8} className="text-brand-midnight fill-brand-midnight" />
+                      </div>
+                    </motion.div>
+                  </div>
+
+                  {/* Ruler Labels under the graduations */}
+                  <div className="flex justify-between items-center text-[8px] font-black uppercase text-brand-text-muted px-1 mt-1.5 leading-none">
+                    <span className="truncate max-w-[80px]" title={pickup.name}>
+                      {slangMode ? "Départ" : "Pickup"}
+                    </span>
+                    <span className="font-mono text-brand-gold">
+                      {progressPct}%
+                    </span>
+                    <span className="truncate max-w-[80px] text-right" title={destination.name}>
+                      {slangMode ? "Dépôt" : "Dropoff"}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })()}
 
           {/* Smooth Journey Progress Bar Animation */}
           {rideStatus === 'in_progress' && (
@@ -3514,6 +5093,12 @@ export default function App() {
                       <strong>+{currentRideWaitingFare.toLocaleString('fr-FR')} FCFA</strong>
                     </div>
                   )}
+                  {ridePointsRedeemed > 0 && (
+                    <div className="flex justify-between text-indigo-400 bg-indigo-500/5 p-1 rounded border border-indigo-500/15">
+                      <span>{slangMode ? "Réduction Wanda Points :" : "Wanda Points Discount :"} ({ridePointsRedeemed} pts)</span>
+                      <strong>-{(ridePointsRedeemed * 10).toLocaleString('fr-FR')} FCFA</strong>
+                    </div>
+                  )}
                   {paymentMethod === 'wallet' && tipAmount > 0 && (
                     <div className="flex justify-between text-emerald-400 bg-emerald-500/5 p-1 rounded border border-emerald-500/15">
                       <span>{slangMode ? "Pourboire (Chauffeur) :" : "Driver Tip :"}</span>
@@ -3524,6 +5109,19 @@ export default function App() {
                     <span className="text-brand-text-muted">Payement :</span>
                     {getPaymentBadge(paymentMethod)}
                   </div>
+                  
+                  {/* Highlighted Wanda Points Earned Banner */}
+                  {(() => {
+                    const finalFareToCharge = Math.max(0, activeFareToCharge - (ridePointsRedeemed * 10));
+                    const totalRideFare = finalFareToCharge + currentRideWaitingFare;
+                    const pointsEarned = Math.round(totalRideFare / 100);
+                    return pointsEarned > 0 ? (
+                      <div className="mt-1.5 flex justify-between items-center text-[10.5px] text-indigo-300 bg-indigo-500/10 px-2.5 py-1.5 rounded-xl border border-indigo-500/20 font-bold">
+                        <span>⭐ {slangMode ? "Points Wanda gagnés :" : "Wanda Points Earned :"}</span>
+                        <span>+{pointsEarned} pts</span>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
 
                 {/* Tipping Selector Section - Wallet Only */}
@@ -3563,13 +5161,15 @@ export default function App() {
                 )}
 
                 <div className="flex justify-between items-center text-sm font-bold border-b border-brand-input pb-3.5">
-                  <span className="text-brand-text-muted">Montant Total :</span>
-                  <span className="text-base font-black text-brand-gold">{(activeFareToCharge + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0)).toLocaleString('fr-FR')} FCFA</span>
+                  <span className="text-brand-text-muted">{language === 'fr' ? "Montant Total :" : "Total Amount :"}</span>
+                  <span className="text-base font-black text-brand-gold">{(Math.max(0, activeFareToCharge - (ridePointsRedeemed * 10)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0)).toLocaleString('fr-FR')} FCFA</span>
                 </div>
 
                 {/* Rating component */}
                 <div className="text-center space-y-2.5">
-                  <p className="text-[10px] font-black text-brand-text-muted uppercase tracking-wider">Note ton Chauffeur</p>
+                  <p className="text-[10px] font-black text-brand-text-muted uppercase tracking-wider">
+                    {language === 'fr' ? "Note ton Chauffeur" : "Rate your Driver"}
+                  </p>
                   
                   <div className="flex justify-center gap-1.5">
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -4087,13 +5687,13 @@ export default function App() {
                 <div className="text-center">
                   <h4 className="text-lg font-black text-white uppercase tracking-tight">
                     {callSender === 'passenger' 
-                      ? (role === 'passenger' ? (activeDriver ? activeDriver.name : 'Chauffeur Wanda') : 'Passenger Client')
-                      : (role === 'driver' ? 'Passenger Client' : (activeDriver ? activeDriver.name : 'Chauffeur Wanda'))}
+                      ? (role === 'passenger' ? (activeDriver ? activeDriver.name : (language === 'fr' ? 'Chauffeur Wanda' : 'Wanda Driver')) : 'Passenger Client')
+                      : (role === 'driver' ? 'Passenger Client' : (activeDriver ? activeDriver.name : (language === 'fr' ? 'Chauffeur Wanda' : 'Wanda Driver')))}
                   </h4>
                   <p className="text-xs text-brand-text-muted font-bold mt-1">
                     {callSender === 'passenger'
-                      ? (role === 'passenger' ? `Chauffeur (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})` : 'Client')
-                      : (role === 'driver' ? 'Client' : `Chauffeur (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})`)}
+                      ? (role === 'passenger' ? `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})` : 'Client')
+                      : (role === 'driver' ? 'Client' : `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})`)}
                   </p>
                 </div>
 

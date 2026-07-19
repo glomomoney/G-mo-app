@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Smartphone, Plus, CreditCard, ArrowUpRight, History, Shield, Info, Sparkles, Award } from 'lucide-react';
+import { Smartphone, Plus, CreditCard, ArrowUpRight, History, Shield, Info, Sparkles, Award, Eye, EyeOff } from 'lucide-react';
 import { PaymentMethod } from '../types';
 
 interface WalletCardProps {
@@ -10,6 +10,7 @@ interface WalletCardProps {
   topupPromoActive?: boolean;
   topupPromoRate?: number;
   slangMode?: boolean;
+  passengerPoints?: number;
 }
 
 export default function WalletCard({ 
@@ -18,8 +19,10 @@ export default function WalletCard({
   transactions,
   topupPromoActive = false,
   topupPromoRate = 0,
-  slangMode = false
+  slangMode = false,
+  passengerPoints = 0
 }: WalletCardProps) {
+  const [showBalance, setShowBalance] = useState<boolean>(false);
   const [amount, setAmount] = useState<string>('5000');
   const [provider, setProvider] = useState<'momo_mtn' | 'orange_money'>('momo_mtn');
 
@@ -38,14 +41,36 @@ export default function WalletCard({
     <div className="bg-brand-card/40 border border-brand-card rounded-2xl p-4 space-y-4 shadow-md text-white font-sans" id="passenger-wallet-component">
       
       {/* Mini Wallet Header Card */}
-      <div className="bg-gradient-to-br from-brand-card to-brand-midnight border border-brand-input p-4.5 rounded-2xl relative overflow-hidden shadow-inner">
+      <div 
+        onClick={() => setShowBalance(!showBalance)}
+        className="bg-gradient-to-br from-brand-card to-brand-midnight border border-brand-input p-4.5 rounded-2xl relative overflow-hidden shadow-inner cursor-pointer select-none hover:border-brand-gold/40 transition-colors group"
+        title={slangMode ? "Tapez pour afficher/masquer le solde" : "Tap to show/hide balance"}
+      >
         {/* Glow ambient decoration */}
         <div className="absolute right-[-20px] top-[-20px] w-28 h-28 rounded-full bg-brand-gold/10 blur-xl pointer-events-none"></div>
         
         <div className="flex justify-between items-start">
-          <div>
-            <span className="text-[10px] text-brand-text-muted font-black tracking-wider uppercase block">Integrated Wallet</span>
-            <h3 className="text-xl font-black text-brand-gold tracking-tight mt-1">{balance.toLocaleString('fr-FR')} FCFA</h3>
+          <div className="space-y-1">
+            <span className="text-[10px] text-brand-text-muted font-black tracking-wider uppercase block">
+              {slangMode ? "Mon Portefeuille" : "Integrated Wallet"}
+            </span>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-black text-brand-gold tracking-tight mt-1 min-h-[1.75rem] flex items-center">
+                {showBalance ? (
+                  `${balance.toLocaleString('fr-FR')} FCFA`
+                ) : (
+                  <span className="text-brand-text-muted/60 tracking-widest">•••••• FCFA</span>
+                )}
+              </h3>
+              <div className="text-brand-text-muted group-hover:text-brand-gold transition-colors mt-1 shrink-0 p-1 rounded-md bg-brand-input/30">
+                {showBalance ? <EyeOff size={14} /> : <Eye size={14} />}
+              </div>
+            </div>
+            {!showBalance && (
+              <span className="text-[8px] text-brand-gold font-bold block mt-0.5 animate-pulse">
+                {slangMode ? "👉 Tapez pour voir votre argent" : "👉 Tap to view your balance"}
+              </span>
+            )}
           </div>
           <span className="bg-brand-gold/10 text-brand-gold border border-brand-gold/25 text-[8px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase">
             Active
@@ -61,6 +86,41 @@ export default function WalletCard({
             <span>•</span>
             <span>Instant MoMo Handshake</span>
           </div>
+        </div>
+      </div>
+
+      {/* Wanda Points Rewards Loyalty Widget */}
+      <div className="bg-gradient-to-br from-indigo-950/40 to-brand-midnight/65 border border-indigo-500/25 p-3.5 rounded-2xl space-y-2.5 relative overflow-hidden shadow">
+        <div className="absolute right-[-10px] top-[-10px] opacity-15 pointer-events-none">
+          <Award size={65} className="text-indigo-400" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 h-fit bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-500/35">
+            <Award size={14} className="text-indigo-300" />
+          </span>
+          <div>
+            <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-300">
+              {slangMode ? "PROGRAMME DE FIDÉLITÉ" : "WANDA POINTS REWARDS"}
+            </h4>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-lg font-black text-white">{passengerPoints.toLocaleString('fr-FR')}</span>
+              <span className="text-[9px] text-indigo-200 font-extrabold uppercase">Wanda Points</span>
+              <span className="text-[9px] text-brand-text-muted font-bold">
+                (≈ {(passengerPoints * 10).toLocaleString('fr-FR')} FCFA)
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="text-[9.5px] text-brand-text-muted leading-relaxed pt-2 border-t border-indigo-500/10 space-y-1">
+          <p className="flex items-center gap-1.5 font-medium">
+            <span className="text-indigo-400 font-bold">★</span>
+            <span>{slangMode ? "Gagnez 1 point par 100 FCFA dépensé sur vos trajets." : "Earn 1 point for every 100 FCFA spent on rides."}</span>
+          </p>
+          <p className="flex items-center gap-1.5 font-medium">
+            <span className="text-indigo-400 font-bold">★</span>
+            <span>{slangMode ? "Utilisez vos points pour réduire le prix de vos prochaines courses." : "Redeem points for discounts on future bookings."}</span>
+          </p>
         </div>
       </div>
 
@@ -190,10 +250,10 @@ export default function WalletCard({
           <p className="text-[10px] text-brand-text-muted/60 italic text-center py-2 font-medium">No recent deposits.</p>
         ) : (
           <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
-            {transactions.map((tx) => {
+            {transactions.map((tx, idx) => {
               const hasBonus = tx.bonusAmount && tx.bonusAmount > 0;
               return (
-                <div key={tx.id} className="flex justify-between items-center text-[10px] bg-brand-input/30 p-2 rounded-lg border border-brand-card/50">
+                <div key={`${tx.id}-${idx}`} className="flex justify-between items-center text-[10px] bg-brand-input/30 p-2 rounded-lg border border-brand-card/50">
                   <div>
                     <span className="font-bold text-white flex items-center gap-1">
                       <span>Wallet Top-up</span>

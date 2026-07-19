@@ -24,7 +24,7 @@ export default function PaymentGateway({
   const [momoPin, setMomoPin] = useState('');
   const [timer, setTimer] = useState(30);
   const [error, setError] = useState('');
-  const [txId] = useState(() => 'MOMO-' + Math.floor(100000 + Math.random() * 900000));
+  const [txId, setTxId] = useState(() => 'MOMO-' + Math.floor(100000 + Math.random() * 900000));
   const [simulatedOtp, setSimulatedOtp] = useState('');
 
   // Start OTP Timer
@@ -47,6 +47,7 @@ export default function PaymentGateway({
       setMomoPin('');
       setTimer(30);
       setError('');
+      setTxId('MOMO-' + Math.floor(100000 + Math.random() * 900000));
       // Generate a dynamic mock OTP for user guidance
       setSimulatedOtp(Math.floor(1000 + Math.random() * 9000).toString());
     }

@@ -75,4 +75,6 @@ export interface HistoryItem {
   pickupLng?: number;
   destLat?: number;
   destLng?: number;
+  pointsEarned?: number;
+  pointsRedeemed?: number;
 }

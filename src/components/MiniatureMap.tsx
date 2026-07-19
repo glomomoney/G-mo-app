@@ -115,8 +115,8 @@ export default function MiniatureMap({
         className: 'mini-pin-dest',
         html: `
           <div class="relative flex items-center justify-center">
-            <div class="absolute w-5 h-5 rounded-full bg-[#e2c18d]/40 animate-ping"></div>
-            <div class="relative w-4 h-4 rounded-full bg-[#e2c18d] border-2 border-slate-900 shadow-md flex items-center justify-center text-slate-900 font-extrabold text-[8px]">
+            <div class="absolute w-5 h-5 rounded-full bg-[#ffd385]/40 animate-ping"></div>
+            <div class="relative w-4 h-4 rounded-full bg-[#ffd385] border-2 border-slate-900 shadow-md flex items-center justify-center text-slate-900 font-extrabold text-[8px]">
               B
             </div>
           </div>
@@ -139,8 +139,8 @@ export default function MiniatureMap({
 
     // 3. Manage Active Driver Marker (Emoji)
     if (driverLoc && isValidCoords(driverLoc.lat, driverLoc.lng)) {
-      let vehicleSvg = '🚗';
-      let bgColor = 'bg-[#e2c18d]';
+       let vehicleSvg = '🚗';
+       let bgColor = 'bg-[#ffd385]';
       if (driverType === 'okada') {
         vehicleSvg = '🏍️';
         bgColor = 'bg-sky-500';
@@ -207,7 +207,7 @@ export default function MiniatureMap({
           completedPolylineRef.current.setLatLngs(completedPoints);
         } else {
           completedPolylineRef.current = L.polyline(completedPoints, {
-            color: '#e2c18d', // brand-gold
+            color: '#ffd385', // brand-gold
             weight: 4,
             opacity: 0.95,
             lineJoin: 'round'
@@ -244,7 +244,7 @@ export default function MiniatureMap({
           remainingPolylineRef.current.setLatLngs(remainingPoints);
         } else {
           remainingPolylineRef.current = L.polyline(remainingPoints, {
-            color: '#e2c18d',
+            color: '#ffd385',
             weight: 3,
             opacity: 0.4,
             dashArray: '5, 8',
@@ -257,7 +257,7 @@ export default function MiniatureMap({
           remainingPulseRef.current.setLatLngs(remainingPoints);
         } else {
           remainingPulseRef.current = L.polyline(remainingPoints, {
-            color: '#e2c18d',
+            color: '#ffd385',
             weight: 3,
             opacity: 0.7,
             dashArray: '6, 12',

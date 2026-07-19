@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import * as d3 from 'd3';
 import { Location, RideStatus } from '../types';
-import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, ChevronUp, RefreshCw, Flame, Info } from 'lucide-react';
+import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, ChevronUp, RefreshCw, Flame, Info, CornerUpLeft, CornerUpRight, ArrowUp, Volume2, VolumeX, Clock, Layers, Map as MapIcon, Mountain, Globe } from 'lucide-react';
 import { LAGOS_LOCATIONS as DOUALA_LOCATIONS, YAOUNDE_LOCATIONS } from '../data';
 
 export interface DemandZone {
@@ -71,6 +71,97 @@ const isValidCoords = (lat: any, lng: any): boolean => {
   return typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng);
 };
 
+// Turn-by-turn Navigation Helpers
+function getHaversineDistanceInMeters(coords1: { lat: number; lng: number }, coords2: { lat: number; lng: number }): number {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = (coords2.lat - coords1.lat) * Math.PI / 180;
+  const dLng = (coords2.lng - coords1.lng) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(coords1.lat * Math.PI / 180) * Math.cos(coords2.lat * Math.PI / 180) * 
+    Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function generateFallbackInstructions(driverLoc: { lat: number; lng: number }, pickupLoc: { lat: number; lng: number }): any[] {
+  const dLat = pickupLoc.lat - driverLoc.lat;
+  const dLng = pickupLoc.lng - driverLoc.lng;
+  return [
+    {
+      instruction: dLat > 0 ? "Dirigez-vous vers le nord sur l'Avenue Principale" : "Dirigez-vous vers le sud sur l'Avenue Principale",
+      distance: 350,
+      type: "depart",
+      modifier: "straight"
+    },
+    {
+      instruction: dLng > 0 ? "Tournez à droite au prochain carrefour" : "Tournez à gauche au prochain carrefour",
+      distance: 400,
+      type: "turn",
+      modifier: dLng > 0 ? "right" : "left"
+    },
+    {
+      instruction: "Prenez la deuxième sortie au rond-point",
+      distance: 300,
+      type: "roundabout",
+      modifier: "straight"
+    },
+    {
+      instruction: dLat > 0 ? "Tournez à gauche après la station service" : "Tournez à droite après la station service",
+      distance: 250,
+      type: "turn",
+      modifier: dLat > 0 ? "left" : "right"
+    },
+    {
+      instruction: "Votre passager vous attend droit devant sur votre gauche",
+      distance: 100,
+      type: "arrive",
+      modifier: "arrive"
+    }
+  ];
+}
+
+const getManeuverIcon = (modifier: string) => {
+  const mod = modifier?.toLowerCase() || '';
+  if (mod.includes('left')) return <CornerUpLeft size={20} className="text-white" />;
+  if (mod.includes('right')) return <CornerUpRight size={20} className="text-white" />;
+  if (mod.includes('arrive')) return <MapPin size={20} className="text-emerald-300 fill-emerald-300" />;
+  return <ArrowUp size={20} className="text-white animate-pulse" />;
+};
+
+const getManeuverIconSmall = (modifier: string, isActive: boolean) => {
+  const mod = modifier?.toLowerCase() || '';
+  const colorClass = isActive ? 'text-brand-gold font-black' : 'text-brand-text-muted';
+  if (mod.includes('left')) return <CornerUpLeft size={12} className={colorClass} />;
+  if (mod.includes('right')) return <CornerUpRight size={12} className={colorClass} />;
+  if (mod.includes('arrive')) return <MapPin size={12} className={isActive ? 'text-brand-gold' : 'text-emerald-400'} />;
+  return <ArrowUp size={12} className={colorClass} />;
+};
+
+const formatDistance = (m: number) => {
+  if (m < 1000) return `${Math.round(m)}m`;
+  return `${(m / 1000).toFixed(1)}km`;
+};
+
+const formatDuration = (s: number) => {
+  if (s < 60) return `${s}s`;
+  return `${Math.ceil(s / 60)} min`;
+};
+
+const TILE_PROVIDERS = {
+  dark: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png',
+  streets: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  terrain: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+};
+
+const TILE_ATTRIBUTIONS = {
+  dark: '&copy; <a href="https://carto.com/">CARTO</a>',
+  streets: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  terrain: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
+  satellite: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+};
+
 interface TaxiMapProps {
   pickup: Location | null;
   destination: Location | null;
@@ -84,6 +175,9 @@ interface TaxiMapProps {
   onSetPickup?: (loc: Location) => void;
   onSetDestination?: (loc: Location) => void;
   onSetDriverLoc?: (loc: { lat: number; lng: number }) => void;
+  etaMinutes?: number;
+  isTilted?: boolean | 'flat' | 'isometric' | 'tilted';
+  isZoomLocked?: boolean;
 }
 
 export default function TaxiMap({
@@ -97,7 +191,10 @@ export default function TaxiMap({
   slangMode = false,
   onSetPickup,
   onSetDestination,
-  onSetDriverLoc
+  onSetDriverLoc,
+  etaMinutes = 3,
+  isTilted = false,
+  isZoomLocked = false
 }: TaxiMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -110,7 +207,18 @@ export default function TaxiMap({
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [isLegendExpanded, setIsLegendExpanded] = useState(false);
   const [demandZones, setDemandZones] = useState<DemandZone[]>([]);
+
+  // Turn-by-Turn Navigation State
+  const [navInstructions, setNavInstructions] = useState<any[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [totalDistanceRemaining, setTotalDistanceRemaining] = useState<number>(0);
+  const [totalDurationRemaining, setTotalDurationRemaining] = useState<number>(0);
+  const [isVoiceMuted, setIsVoiceMuted] = useState(false);
+  const [showItinerary, setShowItinerary] = useState(false);
+  const [isNavCompact, setIsNavCompact] = useState(true);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
   // Keep refs for markers and polylines to modify them without reloading map
   const pickupMarkerRef = useRef<L.Marker | null>(null);
@@ -118,15 +226,209 @@ export default function TaxiMap({
   const driverMarkerRef = useRef<L.Marker | null>(null);
   const liveMarkerRef = useRef<L.Marker | null>(null);
   const routeLineRef = useRef<L.Polyline | null>(null);
+  const activeRouteLineRef = useRef<L.Polyline | null>(null);
+  const approachLineRef = useRef<L.Polyline | null>(null);
+  const driverStartLocRef = useRef<{ lat: number; lng: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const polygonLayersRef = useRef<{ [zoneId: string]: L.Polygon }>({});
   const nearbyDriverMarkersRef = useRef<L.Marker[]>([]);
   const d3OverlayRef = useRef<SVGSVGElement | null>(null);
-
+  const heatmapOverlayRef = useRef<L.LayerGroup | null>(null);
   const onMapClickRef = useRef(onMapClick);
   useEffect(() => {
     onMapClickRef.current = onMapClick;
   }, [onMapClick]);
+
+  // Map Detail Mode States and Refs
+  const [mapDetailMode, setMapDetailMode] = useState<'clean' | 'moderate' | 'full'>('full');
+  const darkLabelsLayerRef = useRef<L.TileLayer | null>(null);
+
+  // Custom Layers and Map Detail Advanced Settings States & Refs
+  const [isLayersMenuExpanded, setIsLayersMenuExpanded] = useState(false);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [selectedBaseLayer, setSelectedBaseLayer] = useState<'dark' | 'streets' | 'satellite' | 'terrain'>('dark');
+  const [showRoadNames, setShowRoadNames] = useState(true);
+  const [showBuildingPois, setShowBuildingPois] = useState(true);
+  const [showPublicTransit, setShowPublicTransit] = useState(true);
+
+  const layersMenuRef = useRef<HTMLDivElement>(null);
+
+  const darkLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const streetLayerRef = useRef<L.TileLayer | null>(null);
+  const satelliteLayerRef = useRef<L.TileLayer | null>(null);
+  const terrainLayerRef = useRef<L.TileLayer | null>(null);
+
+  const roadNamesLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const buildingPoisLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const publicTransitLayerGroupRef = useRef<L.LayerGroup | null>(null);
+
+  // Click outside layers menu to close it
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isLayersMenuExpanded && layersMenuRef.current && !layersMenuRef.current.contains(event.target as Node)) {
+        setIsLayersMenuExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isLayersMenuExpanded]);
+
+  // Synchronize React Selected Base Layer with Leaflet Map
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const removeIfExists = (layer: L.Layer | null) => {
+      if (layer && map.hasLayer(layer)) {
+        map.removeLayer(layer);
+      }
+    };
+
+    removeIfExists(darkLayerGroupRef.current);
+    removeIfExists(streetLayerRef.current);
+    removeIfExists(satelliteLayerRef.current);
+    removeIfExists(terrainLayerRef.current);
+
+    if (selectedBaseLayer === 'dark' && darkLayerGroupRef.current) {
+      darkLayerGroupRef.current.addTo(map);
+    } else if (selectedBaseLayer === 'streets' && streetLayerRef.current) {
+      streetLayerRef.current.addTo(map);
+    } else if (selectedBaseLayer === 'satellite' && satelliteLayerRef.current) {
+      satelliteLayerRef.current.addTo(map);
+    } else if (selectedBaseLayer === 'terrain' && terrainLayerRef.current) {
+      terrainLayerRef.current.addTo(map);
+    }
+  }, [selectedBaseLayer]);
+
+  // Dynamic Map Layer Settings Sync
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (showRoadNames) {
+      if (roadNamesLayerGroupRef.current && !map.hasLayer(roadNamesLayerGroupRef.current)) {
+        roadNamesLayerGroupRef.current.addTo(map);
+      }
+    } else {
+      if (roadNamesLayerGroupRef.current && map.hasLayer(roadNamesLayerGroupRef.current)) {
+        roadNamesLayerGroupRef.current.remove();
+      }
+    }
+  }, [showRoadNames]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (showBuildingPois) {
+      if (buildingPoisLayerGroupRef.current && !map.hasLayer(buildingPoisLayerGroupRef.current)) {
+        buildingPoisLayerGroupRef.current.addTo(map);
+      }
+    } else {
+      if (buildingPoisLayerGroupRef.current && map.hasLayer(buildingPoisLayerGroupRef.current)) {
+        buildingPoisLayerGroupRef.current.remove();
+      }
+    }
+  }, [showBuildingPois]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (showPublicTransit) {
+      if (publicTransitLayerGroupRef.current && !map.hasLayer(publicTransitLayerGroupRef.current)) {
+        publicTransitLayerGroupRef.current.addTo(map);
+      }
+    } else {
+      if (publicTransitLayerGroupRef.current && map.hasLayer(publicTransitLayerGroupRef.current)) {
+        publicTransitLayerGroupRef.current.remove();
+      }
+    }
+  }, [showPublicTransit]);
+
+  // Collapsible Passenger ETA Status Card States, Refs and Handlers
+  const [isEtaCardExpanded, setIsEtaCardExpanded] = useState(false);
+  const collapseTimerRef = useRef<any>(null);
+  const etaCardRef = useRef<HTMLDivElement>(null);
+
+  // Trigger auto-expand when status changes, then auto-collapse
+  useEffect(() => {
+    if (status === 'driver_found' || status === 'arriving' || status === 'in_progress') {
+      setIsEtaCardExpanded(true);
+      
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+      }
+      
+      collapseTimerRef.current = setTimeout(() => {
+        setIsEtaCardExpanded(false);
+      }, 4000); // 4 seconds
+    }
+    return () => {
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+      }
+    };
+  }, [status]);
+
+  // Click outside to collapse
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isEtaCardExpanded && etaCardRef.current && !etaCardRef.current.contains(event.target as Node)) {
+        setIsEtaCardExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isEtaCardExpanded]);
+
+  const handleToggleEtaCard = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    
+    setIsEtaCardExpanded(prev => {
+      const nextState = !prev;
+      if (nextState) {
+        if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = setTimeout(() => {
+          setIsEtaCardExpanded(false);
+        }, 5000);
+      } else {
+        if (collapseTimerRef.current) {
+          clearTimeout(collapseTimerRef.current);
+          collapseTimerRef.current = null;
+        }
+      }
+      return nextState;
+    });
+  };
+
+  const handleCardInteraction = () => {
+    if (isEtaCardExpanded) {
+      if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = setTimeout(() => {
+        setIsEtaCardExpanded(false);
+      }, 5000);
+    }
+  };
+
+  const getCollapsedText = () => {
+    if (status === 'arriving') {
+      return slangMode ? "Le djo est là (Chauffeur arrivé) !" : "Driver is outside !";
+    }
+    const mins = etaMinutes === 0.5 ? "1 min" : `${etaMinutes} min`;
+    if (status === 'in_progress') {
+      return slangMode ? `En route (Dépôt : ${mins})` : `On Trip: ${mins} to destination`;
+    }
+    return slangMode ? `Le chauffeur arrive (${mins})` : `Driver is ${mins} away`;
+  };
 
   // Initialize Map
   useEffect(() => {
@@ -138,10 +440,172 @@ export default function TaxiMap({
       attributionControl: false
     }).setView([4.0435, 9.7100], 12);
 
-    // Dark styled map tiles (CartoDB Dark Matter fits our Wanda Brand Palette perfectly)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19
-    }).addTo(map);
+    // Initialize all requested layer styles
+    // We split Wanda Dark into base (no labels) and separate labels layer so we can toggle detail levels dynamically
+    const darkBaseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: TILE_ATTRIBUTIONS.dark
+    });
+
+    const darkLabelsLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: TILE_ATTRIBUTIONS.dark
+    });
+
+    darkLabelsLayerRef.current = darkLabelsLayer;
+
+    const darkLayerGroup = L.layerGroup([darkBaseLayer, darkLabelsLayer]);
+
+    const streetLayer = L.tileLayer(TILE_PROVIDERS.streets, {
+      maxZoom: 19,
+      attribution: TILE_ATTRIBUTIONS.streets
+    });
+
+    const satelliteLayer = L.tileLayer(TILE_PROVIDERS.satellite, {
+      maxZoom: 19,
+      attribution: TILE_ATTRIBUTIONS.satellite
+    });
+
+    const terrainLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
+    });
+
+    // Default layer is Wanda Dark (which contains both base + labels)
+    darkLayerGroup.addTo(map);
+
+    // Assign tile layers and groups to refs for React state control
+    darkLayerGroupRef.current = darkLayerGroup;
+    streetLayerRef.current = streetLayer;
+    satelliteLayerRef.current = satelliteLayer;
+    terrainLayerRef.current = terrainLayer;
+
+    // Set up heatmap overlay layer group
+    const heatmapOverlay = L.layerGroup();
+    heatmapOverlayRef.current = heatmapOverlay;
+    heatmapOverlay.addTo(map);
+
+    // Initialize custom map detail layers
+    const roadNamesLayerGroup = L.layerGroup();
+    const buildingPoisLayerGroup = L.layerGroup();
+    const publicTransitLayerGroup = L.layerGroup();
+
+    roadNamesLayerGroupRef.current = roadNamesLayerGroup;
+    buildingPoisLayerGroupRef.current = buildingPoisLayerGroup;
+    publicTransitLayerGroupRef.current = publicTransitLayerGroup;
+
+    // Add them to map initially
+    roadNamesLayerGroup.addTo(map);
+    buildingPoisLayerGroup.addTo(map);
+    publicTransitLayerGroup.addTo(map);
+
+    // Define and populate Road Names overlay data
+    const roadNamesData = [
+      { name: "Boulevard de la Liberté", lat: 4.0485, lng: 9.6974 },
+      { name: "Avenue de l'Indépendance", lat: 4.0435, lng: 9.6895 },
+      { name: "Route de l'Aéroport", lat: 4.0080, lng: 9.7220 },
+      { name: "Boulevard de l'Unité", lat: 4.0620, lng: 9.7090 },
+      { name: "Axe Lourd Douala-Yaoundé", lat: 4.0415, lng: 9.7420 },
+      { name: "Boulevard de la République", lat: 4.0530, lng: 9.7150 },
+      { name: "Avenue Winston Churchill", lat: 3.8910, lng: 11.5130 },
+      { name: "Boulevard du 20 Mai", lat: 3.8612, lng: 11.5175 },
+      { name: "Route de Nsimalen", lat: 3.7320, lng: 11.5510 },
+      { name: "Avenue de l'Indépendance", lat: 3.8640, lng: 11.5205 },
+      { name: "Rue Melen", lat: 3.8580, lng: 11.4940 }
+    ];
+
+    roadNamesData.forEach(road => {
+      const icon = L.divIcon({
+        className: 'custom-road-label-icon',
+        html: `<div class="bg-brand-midnight/90 text-white border border-brand-gold/30 rounded-md px-1.5 py-0.5 text-[8.5px] font-bold font-sans uppercase tracking-wider whitespace-nowrap shadow-md flex items-center gap-1">
+                 <span class="w-1.5 h-1.5 bg-brand-gold rounded-full"></span>
+                 ${road.name}
+               </div>`,
+        iconSize: [120, 20],
+        iconAnchor: [60, 10]
+      });
+      L.marker([road.lat, road.lng], { icon, interactive: false }).addTo(roadNamesLayerGroup);
+    });
+
+    // Define and populate Building POIs overlay data
+    const buildingPoisData = [
+      { name: "Douala Grand Mall", lat: 4.0152, lng: 9.7360, type: "mall" },
+      { name: "Akwa Palace Hotel", lat: 4.0485, lng: 9.6974, type: "hotel" },
+      { name: "Bonanjo Administrative Block", lat: 4.0435, lng: 9.6895, type: "office" },
+      { name: "Bonamoussadi Market", lat: 4.0825, lng: 9.7405, type: "market" },
+      { name: "Japoma Omnisports Stadium", lat: 4.0150, lng: 9.8250, type: "stadium" },
+      { name: "Logbessou University Campus", lat: 4.0780, lng: 9.7710, type: "university" },
+      { name: "Bastos Embassy Block", lat: 3.8910, lng: 11.5130, type: "office" },
+      { name: "Yaoundé Central Market", lat: 3.8655, lng: 11.5190, type: "market" },
+      { name: "Ngoa-Ekelle University Campus", lat: 3.8490, lng: 11.5030, type: "university" },
+      { name: "Omnisports Stadium", lat: 3.8855, lng: 11.5395, type: "stadium" },
+      { name: "Santa Lucia Supermarket", lat: 3.8560, lng: 11.4920, type: "market" },
+      { name: "Mokolo Market", lat: 3.8710, lng: 11.4980, type: "market" }
+    ];
+
+    buildingPoisData.forEach(poi => {
+      let iconHtml = '';
+      if (poi.type === 'mall' || poi.type === 'market') {
+        iconHtml = '🛍️';
+      } else if (poi.type === 'hotel') {
+        iconHtml = '🏨';
+      } else if (poi.type === 'stadium') {
+        iconHtml = '🏟️';
+      } else if (poi.type === 'university') {
+        iconHtml = '🎓';
+      } else {
+        iconHtml = '🏢';
+      }
+      
+      const icon = L.divIcon({
+        className: 'custom-building-poi-icon',
+        html: `<div class="bg-brand-midnight/95 text-brand-text-muted hover:text-white border border-brand-input/55 rounded-xl px-2 py-1 text-[9px] font-black shadow-lg flex items-center gap-1.5 whitespace-nowrap transition-all hover:scale-105 active:scale-95 cursor-pointer">
+                 <span class="text-[11px]">${iconHtml}</span>
+                 <span>${poi.name}</span>
+               </div>`,
+        iconSize: [140, 24],
+        iconAnchor: [70, 12]
+      });
+      L.marker([poi.lat, poi.lng], { icon }).addTo(buildingPoisLayerGroup);
+    });
+
+    // Define and populate Public Transit Stops
+    const publicTransitData = [
+      { name: "Douala International Airport (DLA)", lat: 4.0053, lng: 9.7194, type: "airport" },
+      { name: "Deido Roundabout Transit Hub", lat: 4.0620, lng: 9.7090, type: "hub" },
+      { name: "Ndokoti Junction Railway", lat: 4.0415, lng: 9.7420, type: "rail" },
+      { name: "Bonamoussadi Bus Station", lat: 4.0840, lng: 9.7420, type: "bus" },
+      { name: "Yaoundé Nsimalen International Airport (NSI)", lat: 3.7225, lng: 11.5532, type: "airport" },
+      { name: "Mvan Bus Terminal", lat: 3.8290, lng: 11.5180, type: "bus" },
+      { name: "Poste Centrale Transit Hub", lat: 3.8640, lng: 11.5205, type: "hub" },
+      { name: "Melen Taxi Park", lat: 3.8595, lng: 11.4915, type: "taxi" }
+    ];
+
+    publicTransitData.forEach(transit => {
+      let iconHtml = '';
+      if (transit.type === 'airport') {
+        iconHtml = '✈️';
+      } else if (transit.type === 'bus') {
+        iconHtml = '🚌';
+      } else if (transit.type === 'rail') {
+        iconHtml = '🚊';
+      } else if (transit.type === 'taxi') {
+        iconHtml = '🚖';
+      } else {
+        iconHtml = '🔄';
+      }
+
+      const icon = L.divIcon({
+        className: 'custom-transit-poi-icon',
+        html: `<div class="bg-blue-950/95 text-blue-300 hover:text-white border border-blue-500/40 rounded-xl px-2 py-1 text-[9px] font-black shadow-lg flex items-center gap-1.5 whitespace-nowrap transition-all hover:scale-105 active:scale-95 cursor-pointer">
+                 <span class="text-[11.5px]">${iconHtml}</span>
+                 <span>${transit.name}</span>
+               </div>`,
+        iconSize: [150, 24],
+        iconAnchor: [75, 12]
+      });
+      L.marker([transit.lat, transit.lng], { icon }).addTo(publicTransitLayerGroup);
+    });
 
     // Add clean zoom control at bottom-right
     L.control.zoom({
@@ -173,14 +637,93 @@ export default function TaxiMap({
       driverMarkerRef.current = null;
       liveMarkerRef.current = null;
       routeLineRef.current = null;
+      activeRouteLineRef.current = null;
+      approachLineRef.current = null;
+      driverStartLocRef.current = null;
       polygonLayersRef.current = {};
       nearbyDriverMarkersRef.current = [];
+      heatmapOverlayRef.current = null;
+      roadNamesLayerGroupRef.current = null;
+      buildingPoisLayerGroupRef.current = null;
+      publicTransitLayerGroupRef.current = null;
+      darkLayerGroupRef.current = null;
+      streetLayerRef.current = null;
+      satelliteLayerRef.current = null;
+      terrainLayerRef.current = null;
       if (d3OverlayRef.current) {
         d3.select(d3OverlayRef.current).remove();
         d3OverlayRef.current = null;
       }
     };
   }, []);
+
+  // Track size changes of the map container to invalidate map size automatically
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    const resizeObserver = new ResizeObserver(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    });
+    resizeObserver.observe(mapContainerRef.current);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  // Dynamic Map Detail Control Effect (Toggles road names & POIs based on Zoom & Status)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const handleZoomOrStatusChange = () => {
+      const zoom = map.getZoom();
+      
+      let opacity = 1.0;
+      let mode: 'clean' | 'moderate' | 'full' = 'full';
+
+      if (zoom <= 12) {
+        // Zoomed out: Minimal labels, highly clean layout to avoid clutter
+        opacity = 0.08;
+        mode = 'clean';
+      } else if (zoom >= 13 && zoom <= 15) {
+        // Intermediate zoom: Moderate details, major highway labels and landmarks
+        opacity = 0.48;
+        mode = 'moderate';
+      } else {
+        // Zoomed in close: Maximum detail with full POIs and street names for fine-grained navigation
+        opacity = 1.0;
+        mode = 'full';
+      }
+
+      if (darkLabelsLayerRef.current) {
+        darkLabelsLayerRef.current.setOpacity(showRoadNames ? opacity : 0);
+      }
+      setMapDetailMode(mode);
+    };
+
+    // Run immediately to sync on status change
+    handleZoomOrStatusChange();
+
+    // Bind event listeners
+    map.on('zoomend', handleZoomOrStatusChange);
+
+    return () => {
+      map.off('zoomend', handleZoomOrStatusChange);
+    };
+  }, [status, showRoadNames]);
+
+  // Sync showHeatmap state changes back to Leaflet layer control status
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !heatmapOverlayRef.current) return;
+    const hasLayer = map.hasLayer(heatmapOverlayRef.current);
+    if (showHeatmap && !hasLayer) {
+      heatmapOverlayRef.current.addTo(map);
+    } else if (!showHeatmap && hasLayer) {
+      heatmapOverlayRef.current.remove();
+    }
+  }, [showHeatmap]);
 
   // 1. Initialize stable demand zones with organic polygon vertices
   useEffect(() => {
@@ -247,8 +790,10 @@ export default function TaxiMap({
     const map = mapRef.current;
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
-    // Clear everything if heatmap is hidden
-    if (!showHeatmap) {
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+    // Clear everything if heatmap is hidden or a ride is active
+    if (!showHeatmap || isRideActive) {
       (Object.values(polygonLayersRef.current) as L.Polygon[]).forEach(layer => {
         if (layer && map.hasLayer(layer)) {
           layer.remove();
@@ -296,33 +841,6 @@ export default function TaxiMap({
         fillOpacity = 0.22;
       }
 
-      const popupContent = `
-        <div class="p-2 text-slate-100 min-w-[170px]">
-          <h4 class="font-extrabold text-[12px] text-white border-b border-white/10 pb-1 mb-1.5 flex items-center gap-1">
-            🔥 ${zone.name}
-          </h4>
-          <div class="space-y-1.5 text-[11px]">
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Demand:</span>
-              <span class="font-black uppercase text-[9px] px-1.5 py-0.5 rounded ${
-                zone.demandLevel === 'critical' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                zone.demandLevel === 'high' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
-                zone.demandLevel === 'medium' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-              }">${zone.demandLevel}</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Active Requests:</span>
-              <span class="font-mono font-bold text-white">${zone.activeRequests} / min</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Surge Pricing:</span>
-              <span class="font-bold text-brand-gold font-mono">x${zone.surgeMultiplier.toFixed(1)}</span>
-            </div>
-          </div>
-        </div>
-      `;
-
       if (polygonLayersRef.current[zone.id]) {
         const poly = polygonLayersRef.current[zone.id];
         poly.setStyle({
@@ -331,7 +849,6 @@ export default function TaxiMap({
           fillColor: color,
           fillOpacity
          });
-        poly.getPopup()?.setContent(popupContent);
       } else {
         const poly = L.polygon(zone.vertices, {
           color,
@@ -341,14 +858,6 @@ export default function TaxiMap({
           lineJoin: 'round',
           className: 'transition-all duration-300'
         }).addTo(map);
-
-        const popup = L.popup({
-          className: 'custom-heatmap-popup',
-          closeButton: false,
-          offset: [0, 0]
-        }).setContent(popupContent);
-
-        poly.bindPopup(popup);
 
         // Hover feedback
         poly.on('mouseover', () => {
@@ -368,7 +877,7 @@ export default function TaxiMap({
       }
     });
 
-  }, [demandZones, showHeatmap, pickup]);
+  }, [demandZones, showHeatmap, pickup, status]);
 
   // 3b. Render D3 Demand Heatmap dynamic intensity circles
   useEffect(() => {
@@ -378,8 +887,10 @@ export default function TaxiMap({
     const overlayPane = map.getPanes().overlayPane;
     if (!overlayPane) return;
 
-    // If heatmap is disabled, clear any existing D3 overlays and return
-    if (!showHeatmap) {
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+    // If heatmap is disabled or a ride is active, clear any existing D3 overlays and return
+    if (!showHeatmap || isRideActive) {
       if (d3OverlayRef.current) {
         d3.select(d3OverlayRef.current).remove();
         d3OverlayRef.current = null;
@@ -565,7 +1076,7 @@ export default function TaxiMap({
         d3OverlayRef.current = null;
       }
     };
-  }, [showHeatmap, demandZones, pickup]);
+  }, [showHeatmap, demandZones, pickup, status]);
 
   // 4. Render nearby available drivers on map during idle or searching status
   useEffect(() => {
@@ -592,7 +1103,7 @@ export default function TaxiMap({
 
       activeDrivers.forEach(driver => {
         let vehicleSvg = '🚗';
-        let bgColor = 'bg-[#e2c18d]';
+        let bgColor = 'bg-[#ffd385]';
         if (driver.vehicleType === 'okada') {
           vehicleSvg = '🏍️';
           bgColor = 'bg-sky-500';
@@ -621,29 +1132,6 @@ export default function TaxiMap({
 
         const marker = L.marker([driver.lat, driver.lng], { icon: nearbyIcon }).addTo(map);
 
-        const popupContent = `
-          <div class="p-2 text-slate-100 min-w-[155px]">
-            <h4 class="font-extrabold text-[12px] text-white border-b border-white/10 pb-1 mb-1.5 flex items-center gap-1.5">
-              🟢 ${driver.name}
-            </h4>
-            <div class="space-y-1 text-[10px]">
-              <p class="text-slate-300 font-medium leading-tight">${driver.vehicleModel}</p>
-              <div class="flex items-center justify-between mt-1 text-slate-400">
-                <span class="font-bold text-[9px] px-1 py-0.5 rounded bg-brand-input border border-brand-card uppercase text-brand-gold">${driver.vehicleType}</span>
-                <span class="text-brand-gold font-extrabold flex items-center gap-0.5">★ ${driver.rating}</span>
-              </div>
-              <div class="text-[8px] text-emerald-400 font-semibold italic mt-1">Disponible • Active nearby</div>
-            </div>
-          </div>
-        `;
-
-        const popup = L.popup({
-          className: 'custom-heatmap-popup',
-          closeButton: false,
-          offset: [0, 0]
-        }).setContent(popupContent);
-
-        marker.bindPopup(popup);
         nearbyDriverMarkersRef.current.push(marker);
       });
     }
@@ -667,12 +1155,17 @@ export default function TaxiMap({
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
     if (pickup && isValidCoords(pickup.lat, pickup.lng)) {
+      const isTransit = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
       const pickupIcon = L.divIcon({
         className: 'custom-pin-pickup',
         html: `
           <div class="relative flex items-center justify-center">
-            <div class="absolute w-8 h-8 rounded-full bg-emerald-500/30 animate-ping"></div>
-            <div class="relative w-7 h-7 rounded-full bg-emerald-600 border-2 border-white shadow-md flex items-center justify-center text-white font-bold text-xs">
+            ${isTransit 
+              ? `<div class="absolute w-9 h-9 rounded-full bg-emerald-500/25 animate-pulse border border-emerald-500/40"></div>
+                 <div class="absolute w-12 h-12 rounded-full bg-emerald-500/10 animate-ping"></div>`
+              : `<div class="absolute w-8 h-8 rounded-full bg-emerald-500/30 animate-ping"></div>`
+            }
+            <div class="relative w-7 h-7 rounded-full bg-emerald-600 border-2 border-white shadow-md flex items-center justify-center text-white font-bold text-xs ${isTransit ? 'transit-pulse-emerald' : ''}">
               A
             </div>
           </div>
@@ -683,6 +1176,7 @@ export default function TaxiMap({
 
       if (pickupMarkerRef.current && map.hasLayer(pickupMarkerRef.current)) {
         pickupMarkerRef.current.setLatLng([pickup.lat, pickup.lng]);
+        pickupMarkerRef.current.setIcon(pickupIcon);
       } else {
         pickupMarkerRef.current = L.marker([pickup.lat, pickup.lng], { icon: pickupIcon }).addTo(map);
       }
@@ -707,12 +1201,17 @@ export default function TaxiMap({
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
     if (destination && isValidCoords(destination.lat, destination.lng)) {
+      const isTransit = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
       const destIcon = L.divIcon({
         className: 'custom-pin-dest',
         html: `
           <div class="relative flex items-center justify-center">
-            <div class="absolute w-8 h-8 rounded-full bg-[#e2c18d]/30 animate-ping"></div>
-            <div class="relative w-7 h-7 rounded-full bg-[#e2c18d] border-2 border-white shadow-md flex items-center justify-center text-[#0e0a2b] font-black text-xs">
+            ${isTransit 
+              ? `<div class="absolute w-9 h-9 rounded-full bg-[#ffd385]/25 animate-pulse border border-[#ffd385]/40"></div>
+                 <div class="absolute w-12 h-12 rounded-full bg-[#ffd385]/10 animate-ping"></div>`
+              : `<div class="absolute w-8 h-8 rounded-full bg-[#ffd385]/30 animate-ping"></div>`
+            }
+            <div class="relative w-7 h-7 rounded-full bg-[#ffd385] border-2 border-white shadow-md flex items-center justify-center text-[#0a081d] font-black text-xs ${isTransit ? 'transit-pulse-gold' : ''}">
               B
             </div>
           </div>
@@ -723,6 +1222,7 @@ export default function TaxiMap({
 
       if (destMarkerRef.current && map.hasLayer(destMarkerRef.current)) {
         destMarkerRef.current.setLatLng([destination.lat, destination.lng]);
+        destMarkerRef.current.setIcon(destIcon);
       } else {
         destMarkerRef.current = L.marker([destination.lat, destination.lng], { icon: destIcon }).addTo(map);
       }
@@ -734,37 +1234,40 @@ export default function TaxiMap({
         destMarkerRef.current = null;
       }
     }
-  }, [destination]);
+  }, [destination, status]);
 
-  // Update Route Polyline & Fit Bounds
+  // Update Route Polylines & Fit Bounds
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
+    // Manage Driver Start Location for approach path animation
+    if (status === 'driver_found' && driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) {
+      if (!driverStartLocRef.current) {
+        driverStartLocRef.current = { lat: driverLocation.lat, lng: driverLocation.lng };
+      }
+    } else if (status === 'idle' || status === 'searching') {
+      driverStartLocRef.current = null;
+    }
+
+    // --- 1. Background Planned Trip Polyline (Pickup -> Destination) ---
     if (pickup && destination && isValidCoords(pickup.lat, pickup.lng) && isValidCoords(destination.lat, destination.lng)) {
-      const points: L.LatLngExpression[] = [
+      const mainPoints: L.LatLngExpression[] = [
         [pickup.lat, pickup.lng],
         [destination.lat, destination.lng]
       ];
 
       if (routeLineRef.current && map.hasLayer(routeLineRef.current)) {
-        routeLineRef.current.setLatLngs(points);
+        routeLineRef.current.setLatLngs(mainPoints);
       } else {
-        routeLineRef.current = L.polyline(points, {
-          color: '#e2c18d',
-          weight: 4,
-          opacity: 0.9,
-          dashArray: '10, 10',
+        routeLineRef.current = L.polyline(mainPoints, {
+          color: '#a39bc9', // faded brand-text-muted
+          weight: 3,
+          opacity: 0.35,
+          dashArray: '4, 8',
           lineJoin: 'round'
         }).addTo(map);
       }
-
-      // Fit map to show both markers nicely
-      const bounds = L.latLngBounds(points);
-      if (driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) {
-        bounds.extend([driverLocation.lat, driverLocation.lng]);
-      }
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15, animate: true });
     } else {
       if (routeLineRef.current) {
         if (map.hasLayer(routeLineRef.current)) {
@@ -773,7 +1276,106 @@ export default function TaxiMap({
         routeLineRef.current = null;
       }
     }
-  }, [pickup, destination, driverLocation]);
+
+    // --- 2. Active Progress/Completed Trail ---
+    // (a) In-progress ride: Draws itself from Pickup to Driver's current position
+    if (status === 'in_progress' && pickup && driverLocation && isValidCoords(pickup.lat, pickup.lng) && isValidCoords(driverLocation.lat, driverLocation.lng)) {
+      const activePoints: L.LatLngExpression[] = [
+        [pickup.lat, pickup.lng],
+        [driverLocation.lat, driverLocation.lng]
+      ];
+
+      if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
+        activeRouteLineRef.current.setLatLngs(activePoints);
+        activeRouteLineRef.current.setStyle({
+          color: '#ffd385', // brand-gold
+          weight: 5,
+          opacity: 1,
+          className: 'route-glow-animate route-flow-animate'
+        } as any);
+      } else {
+        activeRouteLineRef.current = L.polyline(activePoints, {
+          color: '#ffd385', // brand-gold
+          weight: 5,
+          opacity: 1,
+          lineJoin: 'round',
+          className: 'route-glow-animate route-flow-animate'
+        } as any).addTo(map);
+      }
+    }
+    // (b) Driver heading to pickup: Draws itself from Driver's starting point to current Driver position
+    else if ((status === 'driver_found' || status === 'arriving') && driverStartLocRef.current && driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) {
+      const approachTrailPoints: L.LatLngExpression[] = [
+        [driverStartLocRef.current.lat, driverStartLocRef.current.lng],
+        [driverLocation.lat, driverLocation.lng]
+      ];
+
+      if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
+        activeRouteLineRef.current.setLatLngs(approachTrailPoints);
+        activeRouteLineRef.current.setStyle({
+          color: '#38bdf8', // approach cyan
+          weight: 4,
+          opacity: 0.9,
+          className: 'route-glow-animate-blue'
+        } as any);
+      } else {
+        activeRouteLineRef.current = L.polyline(approachTrailPoints, {
+          color: '#38bdf8',
+          weight: 4,
+          opacity: 0.9,
+          lineJoin: 'round',
+          className: 'route-glow-animate-blue'
+        } as any).addTo(map);
+      }
+    } else {
+      if (activeRouteLineRef.current) {
+        if (map.hasLayer(activeRouteLineRef.current)) {
+          activeRouteLineRef.current.remove();
+        }
+        activeRouteLineRef.current = null;
+      }
+    }
+
+    // --- 3. Approach Path Remaining (Driver current position -> Pickup) ---
+    if (status === 'driver_found' && driverLocation && pickup && isValidCoords(driverLocation.lat, driverLocation.lng) && isValidCoords(pickup.lat, pickup.lng)) {
+      const remainingApproachPoints: L.LatLngExpression[] = [
+        [driverLocation.lat, driverLocation.lng],
+        [pickup.lat, pickup.lng]
+      ];
+
+      if (approachLineRef.current && map.hasLayer(approachLineRef.current)) {
+        approachLineRef.current.setLatLngs(remainingApproachPoints);
+      } else {
+        approachLineRef.current = L.polyline(remainingApproachPoints, {
+          color: '#38bdf8',
+          weight: 3.5,
+          opacity: 0.8,
+          lineJoin: 'round',
+          className: 'route-dash-animate-blue'
+        } as any).addTo(map);
+      }
+    } else {
+      if (approachLineRef.current) {
+        if (map.hasLayer(approachLineRef.current)) {
+          approachLineRef.current.remove();
+        }
+        approachLineRef.current = null;
+      }
+    }
+
+    // --- 4. Fit bounds smoothly to encompass relevant elements ---
+    if (!isZoomLocked) {
+      const boundsPoints: L.LatLngExpression[] = [];
+      if (pickup && isValidCoords(pickup.lat, pickup.lng)) boundsPoints.push([pickup.lat, pickup.lng]);
+      if (destination && isValidCoords(destination.lat, destination.lng)) boundsPoints.push([destination.lat, destination.lng]);
+      if (driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) boundsPoints.push([driverLocation.lat, driverLocation.lng]);
+
+      if (boundsPoints.length >= 2) {
+        const bounds = L.latLngBounds(boundsPoints);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15, animate: true });
+      }
+    }
+  }, [pickup, destination, driverLocation, status, isZoomLocked]);
 
   // Update Driver Marker
   useEffect(() => {
@@ -783,7 +1385,8 @@ export default function TaxiMap({
     if (driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) {
       // Choose emoji or icon based on vehicle type
       let vehicleSvg = '🚗';
-      let bgColor = 'bg-[#e2c18d]';
+      // Use brighter gold
+      let bgColor = 'bg-[#ffd385]';
       if (driverType === 'okada') {
         vehicleSvg = '🏍️';
         bgColor = 'bg-sky-500';
@@ -817,7 +1420,7 @@ export default function TaxiMap({
       }
 
       // If driver is active, let's keep map focused or panning smoothly
-      if (status === 'arriving' || status === 'in_progress') {
+      if (!isZoomLocked && (status === 'arriving' || status === 'in_progress')) {
         map.panTo([driverLocation.lat, driverLocation.lng], { animate: true });
       }
     } else {
@@ -828,7 +1431,7 @@ export default function TaxiMap({
         driverMarkerRef.current = null;
       }
     }
-  }, [driverLocation, driverType, status]);
+  }, [driverLocation, driverType, status, isZoomLocked]);
 
   // Render and update live physical GPS marker on the map
   useEffect(() => {
@@ -914,6 +1517,51 @@ export default function TaxiMap({
     );
   };
 
+  // Handler: Re-center on user's GPS position with smooth viewport transition animation
+  const handleRecenterGPS = () => {
+    if (!navigator.geolocation) {
+      setGpsError(slangMode ? "GPS non supporté" : "GPS not supported by device.");
+      return;
+    }
+
+    if (liveCoords && isValidCoords(liveCoords.lat, liveCoords.lng)) {
+      if (mapRef.current) {
+        mapRef.current.flyTo([liveCoords.lat, liveCoords.lng], 15, {
+          animate: true,
+          duration: 1.3
+        });
+      }
+    } else {
+      setIsResolving(true);
+      setGpsError(null);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const coords = { lat: latitude, lng: longitude };
+          setLiveCoords(coords);
+          setIsResolving(false);
+          
+          if (mapRef.current) {
+            mapRef.current.flyTo([latitude, longitude], 15, {
+              animate: true,
+              duration: 1.3
+            });
+          }
+
+          if (role === 'driver' && onSetDriverLoc) {
+            onSetDriverLoc(coords);
+          }
+        },
+        (error) => {
+          setIsResolving(false);
+          setGpsError(error.message || "GPS error");
+          console.warn("GPS re-center lookup error:", error);
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    }
+  };
+
   // Handler: Real-time dynamic watch position
   const toggleTracking = () => {
     if (isTracking) {
@@ -986,6 +1634,119 @@ export default function TaxiMap({
     });
   };
 
+  // --- TURN-BY-TURN ROUTING & NAVIGATION EFFECTS ---
+  
+  // Effect 1: Fetch Routing path & directions from OSRM driving profile
+  useEffect(() => {
+    if (status !== 'driver_found' && status !== 'arriving') {
+      setNavInstructions([]);
+      setCurrentStepIndex(0);
+      return;
+    }
+
+    if (!pickup || !driverLocation || !isValidCoords(pickup.lat, pickup.lng) || !isValidCoords(driverLocation.lat, driverLocation.lng)) {
+      return;
+    }
+
+    let isSubscribed = true;
+
+    const fetchOSRMRoute = async () => {
+      setIsLoadingRoute(true);
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation.lng},${driverLocation.lat};${pickup.lng},${pickup.lat}?overview=full&steps=true&geometries=geojson`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("OSRM routing server error");
+        const data = await res.json();
+        
+        if (!isSubscribed) return;
+
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          const legs = route.legs[0] || {};
+          const rawSteps = legs.steps || [];
+          
+          const steps = rawSteps.map((s: any) => ({
+            instruction: s.maneuver?.instruction || "Continue on road",
+            distance: s.distance || 0,
+            duration: s.duration || 0,
+            type: s.maneuver?.type || "straight",
+            modifier: s.maneuver?.modifier || ""
+          }));
+
+          if (steps.length === 0) {
+            setNavInstructions(generateFallbackInstructions(driverLocation, pickup));
+          } else {
+            setNavInstructions(steps);
+          }
+
+          if (route.geometry && route.geometry.coordinates && mapRef.current) {
+            const pathLatLngs = route.geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
+            
+            if (activeRouteLineRef.current && mapRef.current.hasLayer(activeRouteLineRef.current)) {
+              activeRouteLineRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
+            } else {
+              activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                color: '#ffd385', // brand-gold
+                weight: 5,
+                opacity: 1,
+                lineJoin: 'round',
+                className: 'route-glow-animate route-flow-animate'
+              } as any).addTo(mapRef.current);
+            }
+          }
+        } else {
+          setNavInstructions(generateFallbackInstructions(driverLocation, pickup));
+        }
+      } catch (err) {
+        console.warn("OSRM API error, using local fallback:", err);
+        if (isSubscribed) {
+          setNavInstructions(generateFallbackInstructions(driverLocation, pickup));
+        }
+      } finally {
+        if (isSubscribed) {
+          setIsLoadingRoute(false);
+        }
+      }
+    };
+
+    fetchOSRMRoute();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [pickup, status]);
+
+  // Effect 2: Update navigation progress based on driver movement (live state updates)
+  useEffect(() => {
+    if (!pickup || !driverLocation || !isValidCoords(pickup.lat, pickup.lng) || !isValidCoords(driverLocation.lat, driverLocation.lng)) {
+      return;
+    }
+
+    if (status !== 'driver_found' && status !== 'arriving') return;
+
+    const distMeters = getHaversineDistanceInMeters(driverLocation, pickup);
+    setTotalDistanceRemaining(distMeters);
+    setTotalDurationRemaining(Math.round(distMeters / 8.3));
+
+    if (navInstructions.length > 0) {
+      // Divide total average distance (1.5 km) dynamically to trace index
+      const initialDist = 1500; 
+      const ratio = Math.min(1, Math.max(0, distMeters / initialDist));
+      const stepIndex = Math.min(
+        navInstructions.length - 1,
+        Math.floor((1 - ratio) * navInstructions.length)
+      );
+      
+      setCurrentStepIndex(stepIndex);
+    }
+  }, [driverLocation, pickup, navInstructions, status]);
+
+  // Effect 3: Voice synthesizer voice guide
+  useEffect(() => {
+    // Disabled as requested: No voice guidance
+    return;
+  }, [currentStepIndex, isVoiceMuted, navInstructions, slangMode]);
+
   return (
     <div className="w-full h-full relative overflow-hidden" id="taxi-map-wrapper">
       {/* Decorative gradient overlay */}
@@ -993,7 +1754,393 @@ export default function TaxiMap({
       <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-brand-midnight/80 to-transparent pointer-events-none z-[1000]"></div>
       
       {/* Map container */}
-      <div ref={mapContainerRef} className="w-full h-full" id="map-element" />
+      <div 
+        ref={mapContainerRef} 
+        className="w-full h-full" 
+        id="map-element"
+        style={{
+          transform: isTilted === 'isometric'
+            ? 'perspective(1200px) rotateX(45deg) rotateZ(-1deg) scale(1.26) translateY(-4%)'
+            : (isTilted === true || isTilted === 'tilted')
+              ? 'perspective(1200px) rotateX(54deg) rotateZ(-2deg) scale(1.38) translateY(-6%)'
+              : 'perspective(1200px) rotateX(0deg) rotateZ(0deg) scale(1) translateY(0)',
+          transformOrigin: 'bottom center',
+          transition: 'transform 1.1s cubic-bezier(0.25, 1, 0.3, 1), filter 1.1s cubic-bezier(0.25, 1, 0.3, 1), opacity 1.1s cubic-bezier(0.25, 1, 0.3, 1)',
+          opacity: (isTilted === 'isometric' || isTilted === true || isTilted === 'tilted') ? 0.98 : 1,
+          filter: (isTilted === 'isometric' || isTilted === true || isTilted === 'tilted')
+            ? 'contrast(1.04) saturate(1.02) brightness(0.96)'
+            : 'contrast(1) saturate(1) brightness(1)',
+          willChange: 'transform, filter, opacity',
+        }}
+      />
+
+      {/* Map Detail Mode Adaptive Badge */}
+      <div 
+        id="map-detail-badge"
+        className="absolute top-4 left-4 z-[1010] flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-brand-midnight/95 backdrop-blur-md border border-brand-input/40 shadow-2xl transition-all duration-300 pointer-events-auto"
+      >
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+            mapDetailMode === 'clean' 
+              ? 'bg-emerald-400' 
+              : mapDetailMode === 'moderate' 
+                ? 'bg-sky-400' 
+                : 'bg-brand-gold/80'
+          }`}></span>
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${
+            mapDetailMode === 'clean' 
+              ? 'bg-emerald-500' 
+              : mapDetailMode === 'moderate' 
+                ? 'bg-sky-500' 
+                : 'bg-brand-gold'
+          }`}></span>
+        </span>
+        <div className="flex flex-col">
+          <span className="text-[7.5px] font-extrabold uppercase tracking-widest text-white leading-none">
+            {slangMode ? "Densité Détails" : "Label Density"}
+          </span>
+          <span className="text-[8.5px] font-bold text-brand-text-muted mt-0.5 leading-none">
+            {mapDetailMode === 'clean' 
+              ? (slangMode ? "Épuré (Zoom éloigné)" : "Minimal (High Speed)") 
+              : mapDetailMode === 'moderate'
+                ? (slangMode ? "Modéré (Rues principales)" : "Medium (Transit)")
+                : (slangMode ? "Complet (Arrêt/POI)" : "Full Detail (Approach)")
+            }
+          </span>
+        </div>
+      </div>
+
+      {/* Dynamic Custom Map Layer & Advanced Settings Controller */}
+      <div 
+        ref={layersMenuRef}
+        id="map-layers-settings-control"
+        className="absolute top-4 right-4 z-[1010] flex flex-col items-end pointer-events-auto"
+      >
+        {/* Toggle Floating Action Button */}
+        <button
+          onClick={() => setIsLayersMenuExpanded(prev => !prev)}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shadow-2xl border active:scale-95 cursor-pointer ${
+            isLayersMenuExpanded
+              ? 'bg-brand-gold text-brand-midnight border-brand-gold shadow-[0_0_12px_rgba(255,211,67,0.45)]'
+              : 'bg-brand-midnight/95 text-brand-text-muted hover:text-brand-gold border-brand-input/40'
+          }`}
+          title={slangMode ? "Calques et réglages avancés" : "Layers & Advanced Map Details"}
+        >
+          <Layers size={18} className={isLayersMenuExpanded ? "scale-110" : "group-hover:scale-110"} />
+        </button>
+
+        {/* Dropdown settings panel */}
+        {isLayersMenuExpanded && (
+          <div className="mt-2 w-64 bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/30 rounded-2xl shadow-2xl p-4 text-white text-xs space-y-3.5 animate-fade-in animate-duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-brand-input/40 pb-2">
+              <span className="font-extrabold uppercase text-[10px] tracking-wider text-brand-gold">
+                {slangMode ? "Calques de la carte" : "Map Layer & Theme"}
+              </span>
+              <span className="text-[9px] text-brand-text-muted font-mono uppercase">
+                {selectedBaseLayer}
+              </span>
+            </div>
+
+            {/* Base Layer Selection */}
+            <div className="space-y-1.5">
+              <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">
+                {slangMode ? "Style de Fond" : "Map Styles"}
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {/* Wanda Dark */}
+                <button
+                  onClick={() => setSelectedBaseLayer('dark')}
+                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                    selectedBaseLayer === 'dark'
+                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                  }`}
+                >
+                  <Layers size={11} />
+                  <span>Wanda Dark</span>
+                </button>
+
+                {/* OpenStreetMap */}
+                <button
+                  onClick={() => setSelectedBaseLayer('streets')}
+                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                    selectedBaseLayer === 'streets'
+                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                  }`}
+                >
+                  <MapIcon size={11} />
+                  <span>OSM Streets</span>
+                </button>
+
+                {/* Esri WorldImagery */}
+                <button
+                  onClick={() => setSelectedBaseLayer('satellite')}
+                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                    selectedBaseLayer === 'satellite'
+                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                  }`}
+                >
+                  <Globe size={11} />
+                  <span>Satellite</span>
+                </button>
+
+                {/* OpenTopoMap */}
+                <button
+                  onClick={() => setSelectedBaseLayer('terrain')}
+                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                    selectedBaseLayer === 'terrain'
+                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                  }`}
+                >
+                  <Mountain size={11} />
+                  <span>Terrain</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Overlays / Heatmap Toggle */}
+            <div className="flex items-center justify-between pt-1 border-t border-brand-input/35">
+              <div className="flex flex-col">
+                <span className="font-extrabold text-[10px] text-white">
+                  {slangMode ? "Surintensité (Zones)" : "Heatmap Overlay"}
+                </span>
+                <span className="text-[8.5px] text-brand-text-muted">
+                  {slangMode ? "Visualiser la forte demande" : "View active demand zones"}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowHeatmap(!showHeatmap)}
+                className={`w-8 h-4 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                  showHeatmap ? 'bg-brand-gold' : 'bg-brand-input/50'
+                }`}
+              >
+                <div className={`w-3 h-3 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                  showHeatmap ? 'translate-x-4' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* Advanced Settings Expandable Header */}
+            <div className="pt-2 border-t border-brand-input/35 space-y-2">
+              <button
+                onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                className="w-full flex items-center justify-between text-brand-text-muted hover:text-white font-extrabold uppercase text-[9px] tracking-wider cursor-pointer"
+              >
+                <span>{slangMode ? "Réglages Avancés" : "Advanced Map Settings"}</span>
+                {showAdvancedSettings ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+
+              {/* Advanced Settings Switch list */}
+              {showAdvancedSettings && (
+                <div className="space-y-2 pt-1.5 pl-0.5 animate-fade-in">
+                  {/* Road Names Toggle */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9.5px] text-brand-text-muted font-bold">
+                      {slangMode ? "Noms des routes" : "Road Names"}
+                    </span>
+                    <button
+                      onClick={() => setShowRoadNames(!showRoadNames)}
+                      className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                        showRoadNames ? 'bg-emerald-500' : 'bg-brand-input/50'
+                      }`}
+                    >
+                      <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                        showRoadNames ? 'translate-x-3.5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {/* Building POIs Toggle */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9.5px] text-brand-text-muted font-bold">
+                      {slangMode ? "Monuments / POI" : "Building POIs"}
+                    </span>
+                    <button
+                      onClick={() => setShowBuildingPois(!showBuildingPois)}
+                      className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                        showBuildingPois ? 'bg-emerald-500' : 'bg-brand-input/50'
+                      }`}
+                    >
+                      <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                        showBuildingPois ? 'translate-x-3.5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {/* Public Transit Icons Toggle */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9.5px] text-brand-text-muted font-bold">
+                      {slangMode ? "Icônes de Transport" : "Public Transit Icons"}
+                    </span>
+                    <button
+                      onClick={() => setShowPublicTransit(!showPublicTransit)}
+                      className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                        showPublicTransit ? 'bg-emerald-500' : 'bg-brand-input/50'
+                      }`}
+                    >
+                      <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                        showPublicTransit ? 'translate-x-3.5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Floating GPS Re-center Viewport Button */}
+      <button
+        onClick={handleRecenterGPS}
+        className="absolute top-[302px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white shadow-lg"
+        title={slangMode ? "Recentrer sur ma position GPS (Vol fluide)" : "Re-center Map on My GPS (Smooth fly)"}
+        id="map-recenter-gps-control"
+      >
+        <div className="relative">
+          <Locate size={14} className={`transition-transform duration-300 group-hover:scale-115 ${isResolving ? 'animate-spin text-brand-gold' : ''}`} />
+          {liveCoords && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
+          )}
+        </div>
+        <span className="text-[5.5px] font-black tracking-widest mt-0.5 leading-none uppercase font-mono">
+          {isResolving ? "Find" : "Gps"}
+        </span>
+      </button>
+
+      {/* FLOATING LIVE TURN-BY-TURN NAVIGATION HUD */}
+      {role === 'driver' && (status === 'driver_found' || status === 'arriving') && navInstructions.length > 0 && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1015] w-[90%] max-w-sm" id="driver-gps-nav-hud">
+          {isNavCompact ? (
+            /* COMPACT MINIMIZED NAV BAR (1/3 to 1/2 of full height) */
+            <div className="bg-emerald-600/95 backdrop-blur border border-emerald-500/40 text-white rounded-xl shadow-lg py-1.5 px-3 flex items-center gap-2.5 animate-fade-in">
+              {/* Direction Icon Wrapper (Compact scaled) */}
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+                <div className="scale-75 origin-center flex items-center justify-center">
+                  {getManeuverIcon(navInstructions[currentStepIndex]?.modifier || navInstructions[currentStepIndex]?.type)}
+                </div>
+              </div>
+
+              {/* Condensed Content on a single primary line + smaller instruction text */}
+              <div className="flex-1 min-w-0 flex flex-col justify-center leading-none">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-white whitespace-nowrap">
+                    {formatDistance(totalDistanceRemaining)}
+                  </span>
+                  <span className="text-emerald-300 font-black text-[10px]">•</span>
+                  <span className="text-xs font-black text-emerald-200 whitespace-nowrap">
+                    ETA: {formatDuration(totalDurationRemaining)}
+                  </span>
+                </div>
+                {/* Secondary smaller instructions text */}
+                <span className="text-[9.5px] text-emerald-100/90 font-medium truncate leading-snug mt-0.5">
+                  {navInstructions[currentStepIndex]?.instruction}
+                </span>
+              </div>
+
+              {/* Action controls (Voice Toggle & Expand Toggle) */}
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => setIsVoiceMuted(!isVoiceMuted)}
+                  className="p-1 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                  title={isVoiceMuted ? "Unmute GPS Voice" : "Mute GPS Voice"}
+                >
+                  {isVoiceMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                </button>
+                <button
+                  onClick={() => setIsNavCompact(false)}
+                  className="p-1 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                  title="Expand GPS Details"
+                >
+                  <ChevronDown size={14} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* FULL DETAILED NAVIGATION HUD */
+            <div className="bg-emerald-600/95 backdrop-blur border border-emerald-500/40 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3 animate-fade-in">
+              {/* Direction Icon Wrapper */}
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+                {getManeuverIcon(navInstructions[currentStepIndex]?.modifier || navInstructions[currentStepIndex]?.type)}
+              </div>
+              
+              {/* Instruction content */}
+              <div className="flex-1 min-w-0">
+                <span className="text-[9px] uppercase font-black text-emerald-200 tracking-wider">
+                  {slangMode ? "WANDA GUIDAGE GPS" : "WANDA GPS NAVIGATION"}
+                </span>
+                <h4 className="text-xs font-black leading-snug truncate">
+                  {navInstructions[currentStepIndex]?.instruction}
+                </h4>
+                <p className="text-[10px] text-emerald-100 font-bold flex items-center gap-1.5 mt-0.5">
+                  <span>{formatDistance(totalDistanceRemaining)}</span>
+                  <span className="opacity-50">•</span>
+                  <span>ETA: {formatDuration(totalDurationRemaining)}</span>
+                </p>
+              </div>
+              
+              {/* Action controls (Voice Toggle & List Toggle & Collapse Toggle) */}
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => setIsVoiceMuted(!isVoiceMuted)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                  title={isVoiceMuted ? "Unmute GPS Voice" : "Mute GPS Voice"}
+                >
+                  {isVoiceMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                </button>
+                <button
+                  onClick={() => setShowItinerary(!showItinerary)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                  title="View Full Itinerary"
+                >
+                  {showItinerary ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                </button>
+                <button
+                  onClick={() => setIsNavCompact(true)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                  title="Collapse to Compact View"
+                >
+                  <ChevronUp size={15} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Itinerary steps dropdown (Only available when expanded) */}
+          {!isNavCompact && showItinerary && (
+            <div className="mt-1.5 bg-brand-midnight/95 backdrop-blur border border-brand-card/85 rounded-2xl shadow-2xl p-3 max-h-48 overflow-y-auto space-y-2 text-xs scrollbar-thin">
+              <div className="flex justify-between items-center pb-1.5 border-b border-brand-input/40">
+                <span className="font-extrabold text-brand-gold uppercase text-[9px]">Full Route Steps</span>
+                <span className="text-[9px] text-brand-text-muted font-bold">
+                  {navInstructions.length} maneuvers
+                </span>
+              </div>
+              <div className="space-y-2 pt-1">
+                {navInstructions.map((step, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`flex items-start gap-2.5 p-1 rounded-lg transition ${
+                      idx === currentStepIndex ? 'bg-brand-gold/15 text-brand-gold font-bold' : 'text-brand-text-muted hover:text-white'
+                    }`}
+                  >
+                    <div className="mt-0.5 shrink-0">
+                      {getManeuverIconSmall(step.modifier || step.type, idx === currentStepIndex)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="leading-snug text-[11px]">{step.instruction}</p>
+                      <p className="text-[9px] opacity-70 mt-0.5">{formatDistance(step.distance)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* FLOATING GPS CONSOLE WIDGET */}
       <div className="absolute bottom-4 left-4 z-[1010] max-w-[285px] w-auto">
@@ -1142,81 +2289,126 @@ export default function TaxiMap({
         )}
       </div>
 
-      {/* FLOATING DEMAND HEATMAP LEGEND & TOGGLER */}
-      <div className="absolute top-4 right-4 z-[1010] flex flex-col items-end gap-2" id="demand-heatmap-overlay">
-        <div className="bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/35 p-3 rounded-2xl shadow-2xl text-white text-xs space-y-2 w-52">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-brand-input/40 pb-1.5">
-            <span className="font-extrabold text-brand-gold uppercase tracking-wider text-[9px] flex items-center gap-1">
-              <Flame size={12} className="text-red-500 animate-pulse fill-red-500" />
-              {slangMode ? "Wanda Zones Chaudes" : "Wanda Demand Heatmap"}
-            </span>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                checked={showHeatmap} 
-                onChange={(e) => setShowHeatmap(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-7 h-4 bg-brand-input rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-brand-gold"></div>
-            </label>
-          </div>
+      {/* PASSENGER RIDE STATUS & ETA HUD */}
+      {role === 'passenger' && (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && (
+        <div 
+          ref={etaCardRef}
+          onClick={handleToggleEtaCard}
+          onMouseEnter={handleCardInteraction}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-[1015] w-[90%] max-w-sm transition-all duration-300 ease-out cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none"
+          id="passenger-eta-hud"
+        >
+          <div className={`bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 text-white rounded-2xl shadow-2xl transition-all duration-300 ease-out overflow-hidden ${
+            isEtaCardExpanded ? 'p-4' : 'px-3 py-2.5 h-[56px] flex items-center justify-between'
+          }`}>
+            {!isEtaCardExpanded ? (
+              /* COLLAPSED COMPACT SLIM BAR (56px tall) */
+              <div className="flex items-center justify-between w-full gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  {/* Status Icon with pulsating outer circle */}
+                  <div className="w-8 h-8 rounded-full bg-brand-gold/15 border border-brand-gold/30 flex items-center justify-center shrink-0 relative">
+                    <span className="absolute inset-0 rounded-full bg-brand-gold/10 animate-ping"></span>
+                    {status === 'in_progress' ? (
+                      <Navigation size={14} className="text-brand-gold rotate-45" />
+                    ) : (
+                      <Clock size={14} className="text-brand-gold" />
+                    )}
+                  </div>
 
-          {/* Legend Items (Only show if heatmap is enabled) */}
-          {showHeatmap ? (
-            <div className="space-y-1.5 text-[9px]">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1 text-brand-text-muted">
-                  <span className="w-2.5 h-2.5 rounded bg-red-500/80 border border-red-500"></span>
-                  {slangMode ? "Critique" : "Critical Demand"}
-                </span>
-                <span className="font-mono text-red-400 font-bold">x1.6 - x2.0+</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1 text-brand-text-muted">
-                  <span className="w-2.5 h-2.5 rounded bg-orange-500/80 border border-orange-500"></span>
-                  {slangMode ? "Élevé" : "High Demand"}
-                </span>
-                <span className="font-mono text-orange-400 font-bold">x1.3 - x1.5</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1 text-brand-text-muted">
-                  <span className="w-2.5 h-2.5 rounded bg-amber-500/80 border border-amber-500"></span>
-                  {slangMode ? "Moyen" : "Medium Demand"}
-                </span>
-                <span className="font-mono text-amber-400 font-bold">x1.1 - x1.2</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1 text-brand-text-muted">
-                  <span className="w-2.5 h-2.5 rounded bg-emerald-500/80 border border-emerald-500"></span>
-                  {slangMode ? "Calme" : "Stable Demand"}
-                </span>
-                <span className="font-mono text-emerald-400 font-bold">x1.0</span>
-              </div>
-              <div className="text-[8px] text-brand-text-muted leading-tight border-t border-brand-input/30 pt-1.5 italic flex flex-col gap-1">
-                <div className="flex items-center gap-1 text-brand-gold font-semibold">
-                  <Activity size={10} className="text-brand-gold shrink-0 animate-pulse" />
-                  <span>{slangMode ? "Zones Chaudes D3 Live" : "D3 Live Heat Points"}</span>
+                  {/* Status text */}
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[8px] uppercase font-black text-brand-gold tracking-widest block leading-none mb-0.5">
+                      {status === 'in_progress' 
+                        ? (slangMode ? "EN ROUTE" : "TRIP ACTIVE")
+                        : (status === 'arriving'
+                            ? (slangMode ? "ARRIVÉ" : "ARRIVED")
+                            : (slangMode ? "CHAUFFEUR EN ROUTE" : "DRIVER EN ROUTE")
+                          )
+                      }
+                    </span>
+                    <p className="text-xs font-bold truncate text-white leading-tight">
+                      {getCollapsedText()}
+                    </p>
+                  </div>
                 </div>
-                <span>
-                  {slangMode 
-                    ? "Les cercles D3 palpitent en temps réel pour cibler le centre de la demande."
-                    : "Pulsing D3 circles track high-request centers with live activity waves."}
-                </span>
-                <span className="text-[7.5px] text-white/50 pt-0.5 border-t border-brand-input/20">
-                  {slangMode 
-                    ? "Cliquez sur une zone pour voir les statistiques !"
-                    : "Click any zone on the map to see real-time request statistics."}
-                </span>
+
+                {/* Tap to expand chevron indicator */}
+                <div className="shrink-0 text-brand-text-muted hover:text-white transition-colors duration-200 p-1">
+                  <ChevronDown size={14} />
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="text-[9px] text-brand-text-muted leading-tight py-1 text-center italic">
-              {slangMode ? "Activer pour voir les zones de forte demande" : "Enable to overlay high-demand sectors"}
-            </div>
-          )}
+            ) : (
+              /* EXPANDED DETAILED HUD CARD */
+              <div className="w-full space-y-3 animate-fade-in">
+                {/* Header block with icon, titles, and close/collapse button */}
+                <div className="flex items-start gap-3.5">
+                  {/* Status Icon */}
+                  <div className="w-10 h-10 rounded-full bg-brand-gold/15 border border-brand-gold/30 flex items-center justify-center shrink-0 relative mt-0.5">
+                    <span className="absolute inset-0 rounded-full bg-brand-gold/10 animate-ping"></span>
+                    {status === 'in_progress' ? (
+                      <Navigation size={18} className="text-brand-gold rotate-45" />
+                    ) : (
+                      <Clock size={18} className="text-brand-gold" />
+                    )}
+                  </div>
+
+                  {/* Content info */}
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[9px] uppercase font-black text-brand-gold tracking-widest block mb-0.5">
+                      {status === 'in_progress' 
+                        ? (slangMode ? "📍 EN ROUTE VERS DESTINATION" : "📍 TRACING ROUTE TO DESTINATION")
+                        : (slangMode ? "🚖 CHAUFFEUR EN ROUTE" : "🚖 DRIVER HEADING TO YOU")}
+                    </span>
+                    <h4 className="text-xs font-bold leading-tight text-brand-text-muted">
+                      {status === 'in_progress' ? (
+                        <>
+                          {slangMode ? "Dépôt :" : "Dropoff:"} <span className="text-white font-black">{destination?.name || 'Destination'}</span>
+                        </>
+                      ) : (
+                        <>
+                          {slangMode ? "Départ :" : "Pickup:"} <span className="text-white font-black">{pickup?.name || 'My Location'}</span>
+                        </>
+                      )}
+                    </h4>
+                    <div className="text-brand-gold font-black text-sm tracking-tight mt-1 flex items-center gap-1.5 font-mono">
+                      {status === 'arriving' ? (
+                        <span className="text-emerald-400 uppercase font-black animate-pulse text-xs">
+                          🎉 {slangMode ? "Le djo est là !" : "Driver is outside !"}
+                        </span>
+                      ) : status === 'in_progress' ? (
+                        <span>
+                          ⏱️ {etaMinutes === 0.5 ? "Less than 1 minute" : `${etaMinutes} minute${etaMinutes > 1 ? 's' : ''}`} to arrive
+                        </span>
+                      ) : (
+                        <span>
+                          ⏱️ {etaMinutes === 0.5 ? "Less than 1 minute" : `${etaMinutes} minute${etaMinutes > 1 ? 's' : ''}`} to you
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Collapse button */}
+                  <button 
+                    onClick={handleToggleEtaCard}
+                    className="shrink-0 text-brand-text-muted hover:text-white p-1 rounded-lg hover:bg-white/5 transition-all self-start mt-0.5"
+                  >
+                    <ChevronUp size={16} />
+                  </button>
+                </div>
+
+                {/* Extra helper details for passive expanded state */}
+                <div className="pt-2 border-t border-brand-input/30 text-[10px] text-brand-text-muted flex justify-between items-center font-semibold">
+                  <span>{slangMode ? "Service de course sécurisé" : "Secure Ride Tracking"}</span>
+                  <span className="text-[9px] text-brand-gold font-bold px-1.5 py-0.5 rounded bg-brand-gold/10">
+                    {slangMode ? "TAP POUR RÉDUIRE" : "TAP TO COLLAPSE"}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
     </div>
   );
 }

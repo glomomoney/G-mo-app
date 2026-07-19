@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Landmark, ArrowDownLeft, Smartphone, History, CheckCircle, Clock, AlertTriangle, Heart, Sparkles, TrendingUp, MessageSquare, Gift } from 'lucide-react';
+import { Landmark, ArrowDownLeft, Smartphone, History, CheckCircle, Clock, AlertTriangle, Heart, Sparkles, TrendingUp, MessageSquare, Gift, Eye, EyeOff } from 'lucide-react';
 import { PaymentMethod, HistoryItem } from '../types';
 
 interface DriverWalletProps {
@@ -22,6 +22,7 @@ export default function DriverWallet({
   rideHistory = [],
   slangMode = true
 }: DriverWalletProps) {
+  const [showBalance, setShowBalance] = useState<boolean>(false);
   const [amount, setAmount] = useState<string>('5000');
   const [provider, setProvider] = useState<'momo_mtn' | 'orange_money'>('momo_mtn');
   const [phone, setPhone] = useState(driverPhone || '');
@@ -128,14 +129,36 @@ export default function DriverWallet({
     <div className="bg-brand-card/40 border border-brand-card rounded-2xl p-4 space-y-4 shadow-md text-white font-sans" id="driver-wallet-component">
       
       {/* Earnings Summary Card */}
-      <div className="bg-gradient-to-br from-brand-card to-brand-midnight border border-brand-input p-4.5 rounded-2xl relative overflow-hidden shadow-inner">
+      <div 
+        onClick={() => setShowBalance(!showBalance)}
+        className="bg-gradient-to-br from-brand-card to-brand-midnight border border-brand-input p-4.5 rounded-2xl relative overflow-hidden shadow-inner cursor-pointer select-none hover:border-brand-gold/40 transition-colors group"
+        title={slangMode ? "Tapez pour afficher/masquer le solde" : "Tap to show/hide balance"}
+      >
         {/* Glow ambient decoration */}
         <div className="absolute right-[-20px] bottom-[-20px] w-28 h-28 rounded-full bg-brand-gold/5 blur-xl pointer-events-none"></div>
 
         <div className="flex justify-between items-start">
-          <div>
-            <span className="text-[10px] text-brand-text-muted font-black tracking-wider uppercase block">Driver Net Balance</span>
-            <h3 className="text-xl font-black text-white tracking-tight mt-1">{balance.toLocaleString('fr-FR')} FCFA</h3>
+          <div className="space-y-1">
+            <span className="text-[10px] text-brand-text-muted font-black tracking-wider uppercase block">
+              {slangMode ? "Mon Solde Chauffeur" : "Driver Net Balance"}
+            </span>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-black text-white tracking-tight mt-1 min-h-[1.75rem] flex items-center">
+                {showBalance ? (
+                  `${balance.toLocaleString('fr-FR')} FCFA`
+                ) : (
+                  <span className="text-brand-text-muted/60 tracking-widest">•••••• FCFA</span>
+                )}
+              </h3>
+              <div className="text-brand-text-muted group-hover:text-brand-gold transition-colors mt-1 shrink-0 p-1 rounded-md bg-brand-input/30">
+                {showBalance ? <EyeOff size={14} /> : <Eye size={14} />}
+              </div>
+            </div>
+            {!showBalance && (
+              <span className="text-[8px] text-brand-gold font-bold block mt-0.5 animate-pulse">
+                {slangMode ? "👉 Tapez pour voir votre argent" : "👉 Tap to view your money"}
+              </span>
+            )}
           </div>
           <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 text-[8px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase">
             Settled Net
@@ -334,10 +357,10 @@ export default function DriverWallet({
           <p className="text-[10px] text-brand-text-muted/60 italic text-center py-2 font-medium">No previous cashouts.</p>
         ) : (
           <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
-            {transactions.map((tx) => {
+            {transactions.map((tx, idx) => {
               const isPending = tx.status === 'pending';
               return (
-                <div key={tx.id} className="flex justify-between items-center text-[10px] bg-brand-input/30 p-2 rounded-lg border border-brand-card/50">
+                <div key={`${tx.id}-${idx}`} className="flex justify-between items-center text-[10px] bg-brand-input/30 p-2 rounded-lg border border-brand-card/50">
                   <div>
                     <span className="font-bold text-white block">Carrier Withdrawal</span>
                     <span className="text-brand-text-muted font-mono">{tx.date}</span>

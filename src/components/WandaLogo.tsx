@@ -18,15 +18,15 @@ export default function WandaLogo({ className = "w-10 h-10" }: WandaLogoProps) {
         {/* High-glow gold gradient for the winged W */}
         <linearGradient id="goldGrad" x1="250" y1="120" x2="250" y2="280" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#FFF4D0" />
-          <stop offset="30%" stopColor="#e2c18d" />
+          <stop offset="30%" stopColor="#ffd385" />
           <stop offset="70%" stopColor="#b8924e" />
           <stop offset="100%" stopColor="#614613" />
         </linearGradient>
 
         {/* Gold road center line glow */}
         <linearGradient id="roadLineGrad" x1="250" y1="280" x2="250" y2="480" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#e2c18d" stopOpacity="1" />
-          <stop offset="100%" stopColor="#e2c18d" stopOpacity="0.2" />
+          <stop offset="0%" stopColor="#ffd385" stopOpacity="1" />
+          <stop offset="100%" stopColor="#ffd385" stopOpacity="0.2" />
         </linearGradient>
 
         {/* Dark road asphalt gradient */}
@@ -45,7 +45,7 @@ export default function WandaLogo({ className = "w-10 h-10" }: WandaLogoProps) {
       <path
         d="M250,20 C125,20 25,120 25,245 C25,320 80,395 250,480 C420,395 475,320 475,245 C475,120 375,20 250,20 Z"
         fill="url(#pinGrad)"
-        stroke="#e2c18d"
+        stroke="#ffd385"
         strokeWidth="6"
         strokeLinejoin="round"
       />

@@ -249,9 +249,9 @@ export default function AdminDashboard({
                         {/* MTN Gold segment (45%) */}
                         <circle cx="100" cy="100" r="70" fill="transparent" stroke="#facc15" strokeWidth="25" strokeDasharray="198 440" strokeDashoffset="-242" />
                         {/* Center text overlay */}
-                        <circle cx="100" cy="100" r="45" fill="#0e0a2b" />
-                        <text x="100" y="95" textAnchor="middle" fill="#a39bc9" fontSize="10" fontWeight="bold">TOTAL API</text>
-                        <text x="100" y="115" textAnchor="middle" fill="#e2c18d" fontSize="13" fontWeight="900">MOMO</text>
+                        <circle cx="100" cy="100" r="45" fill="#0a081d" />
+                        <text x="100" y="95" textAnchor="middle" fill="#beb7e8" fontSize="10" fontWeight="bold">TOTAL API</text>
+                        <text x="100" y="115" textAnchor="middle" fill="#ffd385" fontSize="13" fontWeight="900">MOMO</text>
                       </svg>
                     </div>
 
@@ -275,28 +275,28 @@ export default function AdminDashboard({
                       {/* SVG line chart */}
                       <svg viewBox="0 0 500 150" className="w-full h-36">
                         {/* Grid lines */}
-                        <line x1="0" y1="20" x2="500" y2="20" stroke="#261f61" strokeWidth="0.5" strokeDasharray="5,5" />
-                        <line x1="0" y1="60" x2="500" y2="60" stroke="#261f61" strokeWidth="0.5" strokeDasharray="5,5" />
-                        <line x1="0" y1="100" x2="500" y2="100" stroke="#261f61" strokeWidth="0.5" strokeDasharray="5,5" />
-                        <line x1="0" y1="130" x2="500" y2="130" stroke="#261f61" strokeWidth="1" />
+                        <line x1="0" y1="20" x2="500" y2="20" stroke="#19143d" strokeWidth="0.5" strokeDasharray="5,5" />
+                        <line x1="0" y1="60" x2="500" y2="60" stroke="#19143d" strokeWidth="0.5" strokeDasharray="5,5" />
+                        <line x1="0" y1="100" x2="500" y2="100" stroke="#19143d" strokeWidth="0.5" strokeDasharray="5,5" />
+                        <line x1="0" y1="130" x2="500" y2="130" stroke="#19143d" strokeWidth="1" />
                         
                         {/* Line path representing traffic graph */}
                         <path
                           d="M 20 120 L 95 105 L 170 85 L 245 110 L 320 60 L 395 35 L 470 50"
                           fill="none"
-                          stroke="#e2c18d"
+                          stroke="#ffd385"
                           strokeWidth="3"
                           strokeLinecap="round"
                         />
 
                         {/* Node points */}
-                        <circle cx="20" cy="120" r="4.5" fill="#e2c18d" stroke="#0e0a2b" strokeWidth="2" />
-                        <circle cx="95" cy="105" r="4.5" fill="#e2c18d" stroke="#0e0a2b" strokeWidth="2" />
-                        <circle cx="170" cy="85" r="4.5" fill="#e2c18d" stroke="#0e0a2b" strokeWidth="2" />
-                        <circle cx="245" cy="110" r="4.5" fill="#e2c18d" stroke="#0e0a2b" strokeWidth="2" />
-                        <circle cx="320" cy="60" r="4.5" fill="#e2c18d" stroke="#0e0a2b" strokeWidth="2" />
-                        <circle cx="395" cy="35" r="4.5" fill="#e2c18d" stroke="#0e0a2b" strokeWidth="2" />
-                        <circle cx="470" cy="50" r="4.5" fill="#e2c18d" stroke="#0e0a2b" strokeWidth="2" />
+                        <circle cx="20" cy="120" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
+                        <circle cx="95" cy="105" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
+                        <circle cx="170" cy="85" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
+                        <circle cx="245" cy="110" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
+                        <circle cx="320" cy="60" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
+                        <circle cx="395" cy="35" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
+                        <circle cx="470" cy="50" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
                       </svg>
                       
                       {/* Timeline labels */}
@@ -325,7 +325,7 @@ export default function AdminDashboard({
                 className="space-y-4"
               >
                 <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-black text-white">Chauffeur Credentials Audit</h3>
+                  <h3 className="text-sm font-black text-white">Driver Credentials Audit</h3>
                   <div className="relative max-w-xs">
                     <input
                       type="text"
@@ -371,7 +371,7 @@ export default function AdminDashboard({
                                   onClick={() => onApproveDriver(driver.id)}
                                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] px-4 py-2 rounded-xl cursor-pointer shadow transition"
                                 >
-                                  Approve Chauffeur
+                                  Approve Driver
                                 </button>
                                 <button
                                   onClick={() => onRejectDriver(driver.id)}
@@ -421,12 +421,12 @@ export default function AdminDashboard({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-brand-input/50 font-medium">
-                      {transactions.map((tx) => {
+                      {transactions.map((tx, idx) => {
                         const isTopup = tx.type === 'topup';
                         const isPending = tx.status === 'pending';
                         
                         return (
-                          <tr key={tx.id} className="hover:bg-brand-card/20 transition">
+                          <tr key={`${tx.id}-${idx}`} className="hover:bg-brand-card/20 transition">
                             <td className="py-3.5 px-2 text-brand-text-muted font-mono">{tx.date}</td>
                             <td className="py-3.5 px-2 font-mono font-bold text-white">{tx.id}</td>
                             <td className="py-3.5 px-2">{tx.phone}</td>
