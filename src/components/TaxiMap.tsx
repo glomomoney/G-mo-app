@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import L from 'leaflet';
 import * as d3 from 'd3';
 import { Location, RideStatus } from '../types';
@@ -2061,6 +2062,27 @@ export default function TaxiMap({
     return;
   }, [currentStepIndex, isVoiceMuted, navInstructions, slangMode]);
 
+  // Distance to next turn/maneuver calculation
+  const getDistanceToNextManeuver = () => {
+    if (!driverLocation || navInstructions.length === 0) return 999;
+    const targetCoords = status === 'in_progress' ? destination : pickup;
+    if (!targetCoords) return 999;
+    
+    const distMeters = getHaversineDistanceInMeters(driverLocation, targetCoords);
+    const initialDist = status === 'in_progress' 
+      ? (pickup && destination ? getHaversineDistanceInMeters(pickup, destination) : 3000)
+      : 1500;
+    
+    // Each step spans initialDist / navInstructions.length.
+    // The end boundary of the current step in terms of total remaining distance is:
+    const endBoundaryOfStep = initialDist * (1 - (currentStepIndex + 1) / navInstructions.length);
+    const remaining = distMeters - endBoundaryOfStep;
+    return Math.max(0, remaining);
+  };
+  
+  const distanceToNextManeuver = getDistanceToNextManeuver();
+  const isTurnClose = distanceToNextManeuver < 50;
+
   return (
     <div className="w-full h-full relative overflow-hidden" id="taxi-map-wrapper">
       {/* Decorative gradient overlay */}
@@ -2378,134 +2400,170 @@ export default function TaxiMap({
       </button>
 
       {/* FLOATING LIVE TURN-BY-TURN NAVIGATION HUD */}
-      {role === 'driver' && (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && navInstructions.length > 0 && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1015] w-[90%] max-w-sm" id="driver-gps-nav-hud">
-          {isNavCompact ? (
-            /* COMPACT MINIMIZED NAV BAR (1/3 to 1/2 of full height) */
-            <div className="bg-emerald-600/95 backdrop-blur border border-emerald-500/40 text-white rounded-xl shadow-lg py-1.5 px-3 flex items-center gap-2.5 animate-fade-in">
-              {/* Direction Icon Wrapper (Compact scaled) */}
-              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
-                <div className="scale-75 origin-center flex items-center justify-center">
+      <AnimatePresence mode="wait">
+        {role === 'driver' && (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && navInstructions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -50, x: '-50%' }}
+            transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+            className="absolute top-4 left-1/2 z-[1015] w-[90%] max-w-sm"
+            id="driver-gps-nav-hud"
+          >
+            {isNavCompact ? (
+              /* COMPACT MINIMIZED NAV BAR (1/3 to 1/2 of full height) */
+              <div className={`backdrop-blur text-white rounded-xl shadow-lg py-1.5 px-3 flex items-center gap-2.5 transition-all duration-300 ${
+                isTurnClose 
+                  ? 'bg-rose-950/95 border-2 border-rose-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]' 
+                  : 'bg-emerald-600/95 border border-emerald-500/40 shadow-lg'
+              }`}>
+                {/* Direction Icon Wrapper (Compact scaled) */}
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-inner ${
+                  isTurnClose ? 'bg-rose-800 animate-pulse' : 'bg-white/20'
+                }`}>
+                  <div className="scale-75 origin-center flex items-center justify-center">
+                    {getManeuverIcon(navInstructions[currentStepIndex]?.modifier || navInstructions[currentStepIndex]?.type)}
+                  </div>
+                </div>
+
+                {/* Condensed Content on a single primary line + smaller instruction text */}
+                <div className="flex-1 min-w-0 flex flex-col justify-center leading-none">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs font-black text-white whitespace-nowrap ${isTurnClose ? 'text-rose-200' : ''}`}>
+                      {formatDistance(totalDistanceRemaining)}
+                    </span>
+                    <span className={`${isTurnClose ? 'text-rose-400' : 'text-emerald-300'} font-black text-[10px]`}>•</span>
+                    <span className={`text-xs font-black whitespace-nowrap ${isTurnClose ? 'text-rose-300' : 'text-emerald-200'}`}>
+                      ETA: {formatDuration(totalDurationRemaining)}
+                    </span>
+                    {isTurnClose && (
+                      <span className="text-[8px] font-black uppercase tracking-widest text-rose-400 px-1.5 py-0.5 rounded bg-rose-950 border border-rose-500/30 animate-pulse shrink-0">
+                        {slangMode ? "TOURNER" : "TURN"}
+                      </span>
+                    )}
+                  </div>
+                  {/* Secondary smaller instructions text */}
+                  <span className={`text-[9.5px] font-semibold truncate leading-snug mt-0.5 transition-all duration-300 ${
+                    isTurnClose 
+                      ? 'text-rose-100 font-extrabold animate-[pulse_1s_infinite] scale-[1.01]' 
+                      : 'text-emerald-100/90 font-medium'
+                  }`}>
+                    {navInstructions[currentStepIndex]?.instruction}
+                  </span>
+                </div>
+
+                {/* Action controls (Voice Toggle & Expand Toggle) */}
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => setIsVoiceMuted(!isVoiceMuted)}
+                    className="p-1 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                    title={isVoiceMuted ? "Unmute GPS Voice" : "Mute GPS Voice"}
+                  >
+                    {isVoiceMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                  </button>
+                  <button
+                    onClick={() => setIsNavCompact(false)}
+                    className="p-1 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                    title="Expand GPS Details"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* FULL DETAILED NAVIGATION HUD */
+              <div className={`backdrop-blur text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3 transition-all duration-300 ${
+                isTurnClose 
+                  ? 'bg-rose-950/95 border-2 border-rose-500 shadow-[0_0_20px_rgba(239,68,68,0.6)]' 
+                  : 'bg-emerald-600/95 border border-emerald-500/40 shadow-2xl'
+              }`}>
+                {/* Direction Icon Wrapper */}
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-inner transition-colors ${
+                  isTurnClose ? 'bg-rose-800 animate-pulse' : 'bg-white/20'
+                }`}>
                   {getManeuverIcon(navInstructions[currentStepIndex]?.modifier || navInstructions[currentStepIndex]?.type)}
                 </div>
-              </div>
-
-              {/* Condensed Content on a single primary line + smaller instruction text */}
-              <div className="flex-1 min-w-0 flex flex-col justify-center leading-none">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black text-white whitespace-nowrap">
-                    {formatDistance(totalDistanceRemaining)}
+                
+                {/* Instruction content */}
+                <div className="flex-1 min-w-0">
+                  <span className={`text-[9px] uppercase font-black tracking-wider ${isTurnClose ? 'text-rose-300 animate-pulse' : 'text-emerald-200'}`}>
+                    {isTurnClose 
+                      ? (slangMode ? "⚠️ RESTE MOINS DE 50M !" : "⚠️ LESS THAN 50M TO TURN !") 
+                      : (slangMode ? "WANDA GUIDAGE GPS" : "WANDA GPS NAVIGATION")}
                   </span>
-                  <span className="text-emerald-300 font-black text-[10px]">•</span>
-                  <span className="text-xs font-black text-emerald-200 whitespace-nowrap">
-                    ETA: {formatDuration(totalDurationRemaining)}
+                  <h4 className={`text-xs font-black leading-snug truncate transition-all duration-300 ${
+                    isTurnClose 
+                      ? 'text-rose-100 font-extrabold animate-[pulse_1s_infinite] scale-[1.02]' 
+                      : ''
+                  }`}>
+                    {navInstructions[currentStepIndex]?.instruction}
+                  </h4>
+                  <p className="text-[10px] font-bold flex items-center gap-1.5 mt-0.5">
+                    <span className={isTurnClose ? 'text-rose-200 font-black' : 'text-emerald-100'}>{formatDistance(totalDistanceRemaining)}</span>
+                    <span className="opacity-50">•</span>
+                    <span className={isTurnClose ? 'text-rose-300' : 'text-emerald-100'}>ETA: {formatDuration(totalDurationRemaining)}</span>
+                  </p>
+                </div>
+                
+                {/* Action controls (Voice Toggle & List Toggle & Collapse Toggle) */}
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => setIsVoiceMuted(!isVoiceMuted)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                    title={isVoiceMuted ? "Unmute GPS Voice" : "Mute GPS Voice"}
+                  >
+                    {isVoiceMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                  </button>
+                  <button
+                    onClick={() => setShowItinerary(!showItinerary)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                    title="View Full Itinerary"
+                  >
+                    {showItinerary ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  </button>
+                  <button
+                    onClick={() => setIsNavCompact(true)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
+                    title="Collapse to Compact View"
+                  >
+                    <ChevronUp size={15} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Itinerary steps dropdown (Only available when expanded) */}
+            {!isNavCompact && showItinerary && (
+              <div className="mt-1.5 bg-brand-midnight/95 backdrop-blur border border-brand-card/85 rounded-2xl shadow-2xl p-3 max-h-48 overflow-y-auto space-y-2 text-xs scrollbar-thin">
+                <div className="flex justify-between items-center pb-1.5 border-b border-brand-input/40">
+                  <span className="font-extrabold text-brand-gold uppercase text-[9px]">Full Route Steps</span>
+                  <span className="text-[9px] text-brand-text-muted font-bold">
+                    {navInstructions.length} maneuvers
                   </span>
                 </div>
-                {/* Secondary smaller instructions text */}
-                <span className="text-[9.5px] text-emerald-100/90 font-medium truncate leading-snug mt-0.5">
-                  {navInstructions[currentStepIndex]?.instruction}
-                </span>
-              </div>
-
-              {/* Action controls (Voice Toggle & Expand Toggle) */}
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={() => setIsVoiceMuted(!isVoiceMuted)}
-                  className="p-1 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
-                  title={isVoiceMuted ? "Unmute GPS Voice" : "Mute GPS Voice"}
-                >
-                  {isVoiceMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                </button>
-                <button
-                  onClick={() => setIsNavCompact(false)}
-                  className="p-1 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
-                  title="Expand GPS Details"
-                >
-                  <ChevronDown size={14} />
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* FULL DETAILED NAVIGATION HUD */
-            <div className="bg-emerald-600/95 backdrop-blur border border-emerald-500/40 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3 animate-fade-in">
-              {/* Direction Icon Wrapper */}
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
-                {getManeuverIcon(navInstructions[currentStepIndex]?.modifier || navInstructions[currentStepIndex]?.type)}
-              </div>
-              
-              {/* Instruction content */}
-              <div className="flex-1 min-w-0">
-                <span className="text-[9px] uppercase font-black text-emerald-200 tracking-wider">
-                  {slangMode ? "WANDA GUIDAGE GPS" : "WANDA GPS NAVIGATION"}
-                </span>
-                <h4 className="text-xs font-black leading-snug truncate">
-                  {navInstructions[currentStepIndex]?.instruction}
-                </h4>
-                <p className="text-[10px] text-emerald-100 font-bold flex items-center gap-1.5 mt-0.5">
-                  <span>{formatDistance(totalDistanceRemaining)}</span>
-                  <span className="opacity-50">•</span>
-                  <span>ETA: {formatDuration(totalDurationRemaining)}</span>
-                </p>
-              </div>
-              
-              {/* Action controls (Voice Toggle & List Toggle & Collapse Toggle) */}
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={() => setIsVoiceMuted(!isVoiceMuted)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
-                  title={isVoiceMuted ? "Unmute GPS Voice" : "Mute GPS Voice"}
-                >
-                  {isVoiceMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-                </button>
-                <button
-                  onClick={() => setShowItinerary(!showItinerary)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
-                  title="View Full Itinerary"
-                >
-                  {showItinerary ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                </button>
-                <button
-                  onClick={() => setIsNavCompact(true)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-white transition cursor-pointer"
-                  title="Collapse to Compact View"
-                >
-                  <ChevronUp size={15} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Itinerary steps dropdown (Only available when expanded) */}
-          {!isNavCompact && showItinerary && (
-            <div className="mt-1.5 bg-brand-midnight/95 backdrop-blur border border-brand-card/85 rounded-2xl shadow-2xl p-3 max-h-48 overflow-y-auto space-y-2 text-xs scrollbar-thin">
-              <div className="flex justify-between items-center pb-1.5 border-b border-brand-input/40">
-                <span className="font-extrabold text-brand-gold uppercase text-[9px]">Full Route Steps</span>
-                <span className="text-[9px] text-brand-text-muted font-bold">
-                  {navInstructions.length} maneuvers
-                </span>
-              </div>
-              <div className="space-y-2 pt-1">
-                {navInstructions.map((step, idx) => (
-                  <div 
-                    key={idx} 
-                    className={`flex items-start gap-2.5 p-1 rounded-lg transition ${
-                      idx === currentStepIndex ? 'bg-brand-gold/15 text-brand-gold font-bold' : 'text-brand-text-muted hover:text-white'
-                    }`}
-                  >
-                    <div className="mt-0.5 shrink-0">
-                      {getManeuverIconSmall(step.modifier || step.type, idx === currentStepIndex)}
+                <div className="space-y-2 pt-1">
+                  {navInstructions.map((step, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`flex items-start gap-2.5 p-1 rounded-lg transition ${
+                        idx === currentStepIndex ? 'bg-brand-gold/15 text-brand-gold font-bold' : 'text-brand-text-muted hover:text-white'
+                      }`}
+                    >
+                      <div className="mt-0.5 shrink-0">
+                        {getManeuverIconSmall(step.modifier || step.type, idx === currentStepIndex)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="leading-snug text-[11px]">{step.instruction}</p>
+                        <p className="text-[9px] opacity-70 mt-0.5">{formatDistance(step.distance)}</p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="leading-snug text-[11px]">{step.instruction}</p>
-                      <p className="text-[9px] opacity-70 mt-0.5">{formatDistance(step.distance)}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* FLOATING GPS CONSOLE WIDGET */}
       <div className="absolute bottom-4 left-4 z-[1010] max-w-[285px] w-auto">
