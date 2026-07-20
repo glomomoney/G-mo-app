@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   Bell,
   Sliders,
+  Flame,
   LogOut,
   SlidersHorizontal,
   PhoneCall,
@@ -317,6 +318,25 @@ export default function App() {
   const [isSettingLocationType, setIsSettingLocationType] = useState<'pickup' | 'destination' | null>(null);
 
   const [currentCity, setCurrentCity] = useState<string>('Yaoundé');
+  const [centerCoords, setCenterCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Live simulation of booking activity that drives the heatmap overlay
+  const [recentBookings, setRecentBookings] = useState<{
+    id: string;
+    zoneName: string;
+    rideClass: string;
+    timeAgo: string;
+    status: 'completed' | 'active' | 'cancelled';
+    fare: number;
+    city: 'Yaoundé' | 'Douala';
+  }[]>(() => [
+    { id: 'rb1', zoneName: 'Marché Central (Central Market)', rideClass: 'EcoRide', timeAgo: '2m ago', status: 'active', fare: 2400, city: 'Yaoundé' },
+    { id: 'rb2', zoneName: 'Bastos Embassy District', rideClass: 'VIP Sedan', timeAgo: '4m ago', status: 'completed', fare: 4800, city: 'Yaoundé' },
+    { id: 'rb3', zoneName: 'Mvan Bus Terminal (Gare)', rideClass: 'MotoRide', timeAgo: '7m ago', status: 'completed', fare: 1200, city: 'Yaoundé' },
+    { id: 'rb4', zoneName: 'Ndokoti Junction (Carrefour)', rideClass: 'EcoRide', timeAgo: '1m ago', status: 'active', fare: 1800, city: 'Douala' },
+    { id: 'rb5', zoneName: 'Akwa Palace & Blvd de la Liberté', rideClass: 'VIP Sedan', timeAgo: '5m ago', status: 'completed', fare: 5200, city: 'Douala' },
+    { id: 'rb6', zoneName: 'Deido Roundabout (Rond-point)', rideClass: 'Okada Express', timeAgo: '9m ago', status: 'cancelled', fare: 800, city: 'Douala' }
+  ]);
 
   // Dynamic city presets based on currentCity rather than crude distance calculation
   const activeCityLocations = React.useMemo(() => {
@@ -340,6 +360,67 @@ export default function App() {
     }
   }, [pickup]);
 
+  // Simulate incoming background bookings to keep the demand feed fully alive and dynamic
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const cities: ('Yaoundé' | 'Douala')[] = ['Yaoundé', 'Douala'];
+      const randomCity = cities[Math.floor(Math.random() * cities.length)];
+      
+      const yaoundeZones = [
+        'Bastos Embassy District',
+        'Marché Central (Central Market)',
+        'Poste Centrale & Blvd 20 Mai',
+        'Ngoa-Ekelle University Area',
+        'Mvan Bus Terminal (Gare)',
+        'Omnisports Stadium Area',
+        'Mokolo Market (Marché Mokolo)'
+      ];
+      const doualaZones = [
+        'Akwa Palace & Blvd de la Liberté',
+        'Bonanjo Administrative Center',
+        'Deido Roundabout (Rond-point)',
+        'Ndokoti Junction (Carrefour)',
+        'Bonamoussadi Market (Marché)',
+        'Douala Grand Mall & Airport Zone',
+        'Logbessou Campus Area'
+      ];
+      
+      const zoneList = randomCity === 'Yaoundé' ? yaoundeZones : doualaZones;
+      const randomZone = zoneList[Math.floor(Math.random() * zoneList.length)];
+      const classes = ['EcoRide', 'VIP Sedan', 'MotoRide', 'Okada Express'];
+      const randomClass = classes[Math.floor(Math.random() * classes.length)];
+      const statuses: ('completed' | 'active' | 'cancelled')[] = ['completed', 'active', 'completed', 'cancelled'];
+      const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+      const fares = [1200, 1500, 2200, 3100, 4500, 800, 1800];
+      const randomFare = fares[Math.floor(Math.random() * fares.length)];
+      
+      const newBooking = {
+        id: `rb_sim_${Date.now()}`,
+        zoneName: randomZone,
+        rideClass: randomClass,
+        timeAgo: 'Just now',
+        status: randomStatus,
+        fare: randomFare,
+        city: randomCity
+      };
+      
+      setRecentBookings(prev => {
+        // Update old 'Just now' to '1m ago', etc.
+        const updated = prev.map(b => {
+          if (b.timeAgo === 'Just now') return { ...b, timeAgo: '1m ago' };
+          if (b.timeAgo.endsWith('m ago')) {
+            const mins = parseInt(b.timeAgo) + 1;
+            return { ...b, timeAgo: `${mins}m ago` };
+          }
+          return b;
+        });
+        return [newBooking, ...updated].slice(0, 12);
+      });
+    }, 12000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
   // 7. Booking Status and Simulation Engines
   const [rideStatus, setRideStatus] = useState<RideStatus>('idle');
   const [activeDriver, setActiveDriver] = useState<Driver | null>(null);
@@ -361,6 +442,7 @@ export default function App() {
   const [callState, setCallState] = useState<'idle' | 'outgoing' | 'incoming' | 'active'>('idle');
   const [callSender, setCallSender] = useState<'passenger' | 'driver'>('passenger');
   const [callDuration, setCallDuration] = useState(0);
+  const [showCallDropdown, setShowCallDropdown] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -1136,6 +1218,15 @@ export default function App() {
     setCallState('outgoing');
     setIsMuted(false);
     setIsSpeaker(false);
+    setShowCallDropdown(false);
+  };
+
+  const receiveInAppCall = (sender: 'passenger' | 'driver') => {
+    setCallSender(sender);
+    setCallState('incoming');
+    setIsMuted(false);
+    setIsSpeaker(false);
+    setShowCallDropdown(false);
   };
 
   const answerInAppCall = () => {
@@ -3803,12 +3894,50 @@ export default function App() {
                         >
                           Cancel Booking
                         </button>
-                        <button
-                          onClick={() => startInAppCall('passenger')}
-                          className="px-4 bg-brand-input hover:bg-brand-input/80 text-brand-gold border border-brand-card rounded-xl flex items-center justify-center font-bold text-xs cursor-pointer shadow gap-1"
-                        >
-                          📞 In-App Call
-                        </button>
+                        <div className="relative flex shrink-0">
+                          <button
+                            onClick={() => setShowCallDropdown(!showCallDropdown)}
+                            className="px-3.5 py-3 bg-brand-input hover:bg-brand-input/80 text-brand-gold border border-brand-card rounded-xl flex items-center justify-center font-bold text-xs cursor-pointer shadow gap-1.5 transition active:scale-95"
+                          >
+                            <span>📞 {slangMode ? "Appeler" : "Call"}</span>
+                            <ChevronDown size={12} className={`transition-transform duration-200 ${showCallDropdown ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          <AnimatePresence>
+                            {showCallDropdown && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                className="absolute bottom-full right-0 mb-2 w-56 bg-brand-midnight/95 backdrop-blur-md border border-brand-card/80 p-2 rounded-2xl shadow-2xl z-50 space-y-1"
+                              >
+                                <div className="px-2.5 py-1.5 text-[9px] text-brand-text-muted font-black uppercase tracking-wider border-b border-brand-card/40">
+                                  {slangMode ? "OPTIONS D'APPEL" : "CALL OPTIONS"}
+                                </div>
+                                <button
+                                  onClick={() => startInAppCall('passenger')}
+                                  className="w-full text-left px-2.5 py-2 hover:bg-brand-card rounded-xl text-xs font-black text-white flex items-center gap-2 transition cursor-pointer group"
+                                >
+                                  <span className="text-base group-hover:scale-110 transition">📞</span>
+                                  <div>
+                                    <p className="font-extrabold">{slangMode ? "Appeler le chauffeur" : "Call Driver"}</p>
+                                    <p className="text-[9px] text-brand-text-muted font-semibold">{slangMode ? "Lancer un appel sortant" : "Start outgoing call"}</p>
+                                  </div>
+                                </button>
+                                <button
+                                  onClick={() => receiveInAppCall('driver')}
+                                  className="w-full text-left px-2.5 py-2 hover:bg-brand-card rounded-xl text-xs font-black text-brand-gold flex items-center gap-2 transition cursor-pointer group"
+                                >
+                                  <span className="text-base group-hover:scale-110 transition">🔔</span>
+                                  <div>
+                                    <p className="font-extrabold">{slangMode ? "Simuler un appel entrant" : "Simulate Incoming Call"}</p>
+                                    <p className="text-[9px] text-brand-text-muted font-semibold">{slangMode ? "Recevoir l'appel du chauffeur" : "Driver calling you"}</p>
+                                  </div>
+                                </button>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
                       </div>
 
                     </div>
@@ -4168,12 +4297,50 @@ export default function App() {
                         >
                           Cancel Active Order
                         </button>
-                        <button
-                          onClick={() => startInAppCall('driver')}
-                          className="px-4 bg-brand-input hover:bg-brand-input/80 text-brand-gold border border-brand-card rounded-xl flex items-center justify-center font-bold text-xs cursor-pointer shadow gap-1"
-                        >
-                          📞 In-App Call
-                        </button>
+                        <div className="relative flex shrink-0">
+                          <button
+                            onClick={() => setShowCallDropdown(!showCallDropdown)}
+                            className="px-3.5 py-3 bg-brand-input hover:bg-brand-input/80 text-brand-gold border border-brand-card rounded-xl flex items-center justify-center font-bold text-xs cursor-pointer shadow gap-1.5 transition active:scale-95"
+                          >
+                            <span>📞 {slangMode ? "Appeler" : "Call"}</span>
+                            <ChevronDown size={12} className={`transition-transform duration-200 ${showCallDropdown ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          <AnimatePresence>
+                            {showCallDropdown && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                className="absolute bottom-full right-0 mb-2 w-56 bg-brand-midnight/95 backdrop-blur-md border border-brand-card/80 p-2 rounded-2xl shadow-2xl z-50 space-y-1"
+                              >
+                                <div className="px-2.5 py-1.5 text-[9px] text-brand-text-muted font-black uppercase tracking-wider border-b border-brand-card/40">
+                                  {slangMode ? "OPTIONS D'APPEL" : "CALL OPTIONS"}
+                                </div>
+                                <button
+                                  onClick={() => startInAppCall('driver')}
+                                  className="w-full text-left px-2.5 py-2 hover:bg-brand-card rounded-xl text-xs font-black text-white flex items-center gap-2 transition cursor-pointer group"
+                                >
+                                  <span className="text-base group-hover:scale-110 transition">📞</span>
+                                  <div>
+                                    <p className="font-extrabold">{slangMode ? "Appeler le client" : "Call Passenger"}</p>
+                                    <p className="text-[9px] text-brand-text-muted font-semibold">{slangMode ? "Lancer un appel sortant" : "Start outgoing call"}</p>
+                                  </div>
+                                </button>
+                                <button
+                                  onClick={() => receiveInAppCall('passenger')}
+                                  className="w-full text-left px-2.5 py-2 hover:bg-brand-card rounded-xl text-xs font-black text-brand-gold flex items-center gap-2 transition cursor-pointer group"
+                                >
+                                  <span className="text-base group-hover:scale-110 transition">🔔</span>
+                                  <div>
+                                    <p className="font-extrabold">{slangMode ? "Simuler un appel entrant" : "Simulate Incoming Call"}</p>
+                                    <p className="text-[9px] text-brand-text-muted font-semibold">{slangMode ? "Recevoir l'appel du client" : "Passenger calling you"}</p>
+                                  </div>
+                                </button>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
                       </div>
                     </div>
                   ) : driverRideRequest ? (
@@ -4266,31 +4433,161 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-4 flex-1 flex flex-col justify-between">
+                    <div className="space-y-4 flex-1 flex flex-col justify-between overflow-y-auto max-h-[calc(100vh-220px)] pr-1 scrollbar-thin">
                       
-                      <div className="text-center py-6 space-y-2 border border-dashed border-brand-input rounded-2xl bg-brand-card/30">
-                        <span className="text-2xl animate-pulse block">📡</span>
-                        <h5 className="text-xs font-extrabold text-white">Monitoring Central Dispatch Hub</h5>
-                        <p className="text-[11px] text-brand-text-muted max-w-xs mx-auto leading-relaxed font-medium px-2">
-                          {slangMode ? (
-                            `En attente. Les demandes d'appels à ${currentCity} vont s'afficher ici.`
-                          ) : (
-                            `Standing by. Simulated passenger dispatches across ${currentCity} will trigger automatically.`
-                          )}
-                        </p>
+                      {/* Radar Scanning Header Card */}
+                      <div className="bg-gradient-to-r from-brand-card to-brand-midnight border border-brand-card/60 p-4 rounded-2xl relative overflow-hidden shadow-lg">
+                        {/* Radar pulse background animation */}
+                        <div className="absolute right-3 top-3 w-10 h-10 rounded-full border border-emerald-500/30 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-full border border-emerald-500/40 animate-ping absolute"></div>
+                          <div className="w-4 h-4 rounded-full bg-emerald-500/20 animate-pulse absolute"></div>
+                          <span className="text-emerald-400 text-xs font-black select-none z-10">📡</span>
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[9px] font-black text-emerald-400 uppercase tracking-widest animate-pulse">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                            {slangMode ? "Heatmap Active" : "Heatmap Active"}
+                          </span>
+                          <h4 className="text-xs font-black text-white">
+                            {slangMode ? "Radar de Demande en Temps Réel" : "Real-Time Demand Radar"}
+                          </h4>
+                          <p className="text-[10px] text-brand-text-muted leading-relaxed font-medium max-w-[80%]">
+                            {slangMode ? (
+                              `Les zones de forte affluence à ${currentCity} s'affichent en surbrillance sur votre carte.`
+                            ) : (
+                              `High-traffic passenger zones across ${currentCity} are highlighted as glowing overlays on your map.`
+                            )}
+                          </p>
+                        </div>
                         
                         {/* Instant Simulation button */}
-                        <div className="pt-2">
+                        <div className="pt-3 border-t border-brand-input/30 mt-3 flex items-center justify-between gap-2">
                           <button
                             onClick={triggerIncomingSimulatedRequest}
-                            className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/30 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wide cursor-pointer transition animate-pulse"
+                            className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/30 px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wide cursor-pointer transition flex items-center gap-1.5"
                           >
-                            ⚡ {slangMode ? "Simuler un Appel Client" : "Simulate Incoming Ride"}
+                            ⚡ {slangMode ? "Simuler un Appel" : "Simulate Ride"}
                           </button>
+                          
+                          {driverLoc && (
+                            <button
+                              onClick={() => setCenterCoords({ lat: driverLoc.lat, lng: driverLoc.lng })}
+                              className="bg-brand-input hover:bg-brand-card text-brand-text-muted hover:text-white border border-brand-card px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition"
+                            >
+                              📍 {slangMode ? "Ma Position" : "Center Map"}
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      <div className="text-[10px] text-brand-text-muted text-center leading-normal font-semibold">
+                      {/* HIGH TRAFFIC ZONES LIST (HEATMAP DATA SOURCE) */}
+                      <div className="space-y-2">
+                        <span className="text-[9px] text-brand-text-muted font-black tracking-wider uppercase flex items-center gap-1.5">
+                          <Flame size={12} className="text-orange-500 animate-pulse" />
+                          <span>{slangMode ? "ZONES DE FORTE DEMANDE (CLIQUEZ POUR VOIR)" : "HIGH-TRAFFIC HOTSPOTS (CLICK TO RE-CENTER)"}</span>
+                        </span>
+                        
+                        <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
+                          {[
+                            { name: 'Bastos Embassy District', lat: 3.8910, lng: 11.5130, city: 'Yaoundé', multiplier: '1.5x', level: 'High', color: 'text-orange-400 bg-orange-400/10' },
+                            { name: 'Marché Central (Central Market)', lat: 3.8655, lng: 11.5190, city: 'Yaoundé', multiplier: '1.8x', level: 'Critical', color: 'text-rose-400 bg-rose-400/10' },
+                            { name: 'Poste Centrale & Blvd 20 Mai', lat: 3.8640, lng: 11.5205, city: 'Yaoundé', multiplier: '1.9x', level: 'Critical', color: 'text-rose-400 bg-rose-400/10' },
+                            { name: 'Ngoa-Ekelle University Area', lat: 3.8490, lng: 11.5030, city: 'Yaoundé', multiplier: '1.2x', level: 'Medium', color: 'text-amber-400 bg-amber-400/10' },
+                            { name: 'Mvan Bus Terminal (Gare)', lat: 3.8290, lng: 11.5180, city: 'Yaoundé', multiplier: '1.6x', level: 'High', color: 'text-orange-400 bg-orange-400/10' },
+                            { name: 'Mokolo Market (Marché Mokolo)', lat: 3.8710, lng: 11.4980, city: 'Yaoundé', multiplier: '1.7x', level: 'Critical', color: 'text-rose-400 bg-rose-400/10' },
+                            
+                            { name: 'Akwa Palace & Blvd de la Liberté', lat: 4.0485, lng: 9.6974, city: 'Douala', multiplier: '1.9x', level: 'Critical', color: 'text-rose-400 bg-rose-400/10' },
+                            { name: 'Bonanjo Administrative Center', lat: 4.0435, lng: 9.6895, city: 'Douala', multiplier: '1.4x', level: 'High', color: 'text-orange-400 bg-orange-400/10' },
+                            { name: 'Deido Roundabout (Rond-point)', lat: 4.0620, lng: 9.7090, city: 'Douala', multiplier: '1.7x', level: 'Critical', color: 'text-rose-400 bg-rose-400/10' },
+                            { name: 'Ndokoti Junction (Carrefour)', lat: 4.0415, lng: 9.7420, city: 'Douala', multiplier: '2.1x', level: 'Critical', color: 'text-rose-400 bg-rose-400/10' },
+                            { name: 'Bonamoussadi Market (Marché)', lat: 4.0825, lng: 9.7405, city: 'Douala', multiplier: '1.2x', level: 'Medium', color: 'text-amber-400 bg-amber-400/10' },
+                            { name: 'Douala Grand Mall & Airport Zone', lat: 4.0152, lng: 9.7360, city: 'Douala', multiplier: '1.5x', level: 'High', color: 'text-orange-400 bg-orange-400/10' }
+                          ]
+                            .filter(zone => zone.city === currentCity)
+                            .map((zone, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => setCenterCoords({ lat: zone.lat, lng: zone.lng })}
+                                className="w-full text-left bg-brand-card/40 hover:bg-brand-card border border-brand-card hover:border-brand-input p-2.5 rounded-xl flex items-center justify-between transition group active:scale-98"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-base group-hover:scale-110 transition shrink-0">🔥</span>
+                                  <div className="min-w-0">
+                                    <h5 className="text-[11px] font-black text-white truncate group-hover:text-brand-gold transition">
+                                      {zone.name}
+                                    </h5>
+                                    <p className="text-[9px] text-brand-text-muted font-bold">
+                                      {slangMode ? "Zone à forte affluence" : "High-density calling zone"}
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`text-[8.5px] font-black px-1.5 py-0.5 rounded-lg uppercase tracking-wider ${zone.color}`}>
+                                    {zone.level}
+                                  </span>
+                                  <span className="text-[10px] font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/20 px-1.5 py-0.5 rounded-lg">
+                                    {zone.multiplier}
+                                  </span>
+                                </div>
+                              </button>
+                            ))
+                          }
+                        </div>
+                      </div>
+
+                      {/* LIVE BOOKINGS ACTIVITY FEED */}
+                      <div className="space-y-2">
+                        <span className="text-[9px] text-brand-text-muted font-black tracking-wider uppercase flex items-center gap-1.5">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-gold opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-gold"></span>
+                          </span>
+                          <span>{slangMode ? "FLUX D'ACTIVITÉ RÉCENT (RÉSERVATIONS)" : "RECENT BOOKING EVENTS FEED"}</span>
+                        </span>
+                        
+                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1 scrollbar-thin">
+                          {recentBookings
+                            .filter(booking => booking.city === currentCity)
+                            .map((booking) => (
+                              <div 
+                                key={booking.id} 
+                                className="bg-brand-input/30 border border-brand-card/50 p-2.5 rounded-xl flex items-center justify-between text-[11px] relative overflow-hidden"
+                              >
+                                <div className="flex items-start gap-2 min-w-0">
+                                  <div className="w-6 h-6 rounded-lg bg-brand-card/60 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs shadow-inner">
+                                    {booking.rideClass.includes('VIP') ? '⭐' : booking.rideClass.includes('Moto') || booking.rideClass.includes('Okada') ? '🏍️' : '🚗'}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-extrabold text-white truncate max-w-[130px]">
+                                        {booking.zoneName.split('(')[0].trim()}
+                                      </span>
+                                      <span className="text-[8px] text-brand-text-muted font-black">• {booking.timeAgo}</span>
+                                    </div>
+                                    <p className="text-[9.5px] text-brand-text-muted font-bold">
+                                      {booking.rideClass} • <span className="text-brand-gold">{booking.fare.toLocaleString('fr-FR')} FCFA</span>
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md shrink-0 uppercase tracking-wider ${
+                                  booking.status === 'completed' 
+                                    ? 'bg-emerald-500/15 text-emerald-400' 
+                                    : booking.status === 'active' 
+                                      ? 'bg-brand-gold/15 text-brand-gold animate-pulse' 
+                                      : 'bg-rose-500/15 text-rose-400'
+                                }`}>
+                                  {booking.status}
+                                </span>
+                              </div>
+                            ))
+                          }
+                        </div>
+                      </div>
+
+                      <div className="text-[10px] text-brand-text-muted text-center leading-normal font-semibold border-t border-brand-card/40 pt-3">
                         💡 **Wanda Pro Tip:** Maintain a high rating above 4.7 to receive higher volume VIP class bookings!
                       </div>
                     </div>
@@ -4907,6 +5204,7 @@ export default function App() {
             isZoomLocked={isZoomLocked}
             onZoomChange={setMapZoom}
             showMapGrid={showMapGrid}
+            centerCoords={centerCoords}
           />
 
           {/* Floating Dynamic Distance Ruler */}
@@ -5731,8 +6029,12 @@ export default function App() {
 
                   <div className="relative w-24 h-24 rounded-full bg-brand-deep border-4 border-brand-gold p-1 flex items-center justify-center shadow-2xl shadow-brand-gold/20">
                     <img
-                      src="/wanda_logo.jpg"
-                      alt="Wanda Mobile"
+                      src={
+                        role === 'passenger'
+                          ? (activeDriver?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150')
+                          : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150'
+                      }
+                      alt="Avatar"
                       className="w-full h-full rounded-full object-cover"
                       referrerPolicy="no-referrer"
                     />
@@ -5741,14 +6043,14 @@ export default function App() {
 
                 <div className="text-center">
                   <h4 className="text-lg font-black text-white uppercase tracking-tight">
-                    {callSender === 'passenger' 
-                      ? (role === 'passenger' ? (activeDriver ? activeDriver.name : (language === 'fr' ? 'Chauffeur Wanda' : 'Wanda Driver')) : 'Passenger Client')
-                      : (role === 'driver' ? 'Passenger Client' : (activeDriver ? activeDriver.name : (language === 'fr' ? 'Chauffeur Wanda' : 'Wanda Driver')))}
+                    {role === 'passenger'
+                      ? (activeDriver?.name || (language === 'fr' ? 'Chauffeur Wanda' : 'Wanda Driver'))
+                      : (driverRideRequest?.passengerName || user?.name || 'Passenger Client')}
                   </h4>
                   <p className="text-xs text-brand-text-muted font-bold mt-1">
-                    {callSender === 'passenger'
-                      ? (role === 'passenger' ? `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})` : 'Client')
-                      : (role === 'driver' ? 'Client' : `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})`)}
+                    {role === 'passenger'
+                      ? `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})`
+                      : (slangMode ? 'Client Passager' : 'Passenger Client')}
                   </p>
                 </div>
 

@@ -204,6 +204,7 @@ interface TaxiMapProps {
   isZoomLocked?: boolean;
   onZoomChange?: (zoom: number) => void;
   showMapGrid?: boolean;
+  centerCoords?: { lat: number; lng: number } | null;
 }
 
 export default function TaxiMap({
@@ -222,7 +223,8 @@ export default function TaxiMap({
   isTilted = false,
   isZoomLocked = false,
   onZoomChange,
-  showMapGrid = false
+  showMapGrid = false,
+  centerCoords = null
 }: TaxiMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -728,6 +730,15 @@ export default function TaxiMap({
     };
   }, []);
 
+  // Sync map center to centerCoords prop
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !(map as any)._loaded || !map.getContainer()) return;
+    if (centerCoords && isValidCoords(centerCoords.lat, centerCoords.lng)) {
+      map.setView([centerCoords.lat, centerCoords.lng], 14, { animate: true });
+    }
+  }, [centerCoords]);
+
   // Dynamic Map Detail Control Effect (Toggles road names & POIs based on Zoom & Status)
   useEffect(() => {
     const map = mapRef.current;
@@ -850,7 +861,7 @@ export default function TaxiMap({
     const map = mapRef.current;
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
-    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+    const isRideActive = (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && role !== 'driver';
 
     // Clear everything if heatmap is hidden or a ride is active
     if (!showHeatmap || isRideActive) {
@@ -947,7 +958,7 @@ export default function TaxiMap({
     const overlayPane = map.getPanes().overlayPane;
     if (!overlayPane) return;
 
-    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+    const isRideActive = (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && role !== 'driver';
 
     // If heatmap is disabled or a ride is active, clear any existing D3 overlays and return
     if (!showHeatmap || isRideActive) {
