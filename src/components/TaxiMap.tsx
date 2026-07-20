@@ -150,6 +150,28 @@ const formatDuration = (s: number) => {
   return `${Math.ceil(s / 60)} min`;
 };
 
+const animatePolylineDraw = (poly: L.Polyline | null, duration: number = 1800) => {
+  if (!poly) return;
+  setTimeout(() => {
+    try {
+      const path = poly.getElement() as SVGPathElement | null;
+      if (path && typeof path.getTotalLength === 'function') {
+        const length = path.getTotalLength();
+        if (length && length > 0) {
+          path.style.strokeDasharray = `${length}`;
+          path.style.strokeDashoffset = `${length}`;
+          // Force layout reflow
+          path.getBoundingClientRect();
+          path.style.transition = `stroke-dashoffset ${duration}ms cubic-bezier(0.16, 1, 0.3, 1)`;
+          path.style.strokeDashoffset = '0';
+        }
+      }
+    } catch (e) {
+      console.warn("Polyline animation error:", e);
+    }
+  }, 40);
+};
+
 const TILE_PROVIDERS = {
   dark: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png',
   streets: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -1311,6 +1333,7 @@ export default function TaxiMap({
             lineJoin: 'round',
             className: 'route-discovery-glow-bg'
           } as any).addTo(map);
+          animatePolylineDraw(routeLineBgRef.current, 2800);
         }
 
         // Layer 2. Middle vibrant brand-gold layer
@@ -1324,6 +1347,7 @@ export default function TaxiMap({
             lineJoin: 'round',
             className: 'route-discovery-glow-mid'
           } as any).addTo(map);
+          animatePolylineDraw(routeLineMidRef.current, 2200);
         }
 
         // Layer 3. Core hot white highlight laser line
@@ -1343,6 +1367,7 @@ export default function TaxiMap({
             lineJoin: 'round',
             className: 'route-discovery-glow-core'
           } as any).addTo(map);
+          animatePolylineDraw(routeLineRef.current, 1600);
         }
       } else {
         // Standard Faded/Dashed Planned Trip Polyline
@@ -1405,48 +1430,40 @@ export default function TaxiMap({
 
       if (role === 'passenger') {
         if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
-          activeRouteLineBgRef.current.setLatLngs(activePoints);
-          activeRouteLineBgRef.current.setStyle({ color: '#ff9d00', className: 'route-discovery-glow-bg' } as any);
-        } else {
-          activeRouteLineBgRef.current = L.polyline(activePoints, {
-            color: '#ff9d00',
-            weight: 12,
-            opacity: 0.35,
-            lineJoin: 'round',
-            className: 'route-discovery-glow-bg'
-          } as any).addTo(map);
+          activeRouteLineBgRef.current.remove();
         }
+        activeRouteLineBgRef.current = L.polyline(activePoints, {
+          color: '#ff9d00',
+          weight: 12,
+          opacity: 0.35,
+          lineJoin: 'round',
+          className: 'route-discovery-glow-bg'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineBgRef.current, 1500);
 
         if (activeRouteLineMidRef.current && map.hasLayer(activeRouteLineMidRef.current)) {
-          activeRouteLineMidRef.current.setLatLngs(activePoints);
-          activeRouteLineMidRef.current.setStyle({ color: '#ffd385', className: 'route-discovery-glow-mid' } as any);
-        } else {
-          activeRouteLineMidRef.current = L.polyline(activePoints, {
-            color: '#ffd385',
-            weight: 6,
-            opacity: 0.7,
-            lineJoin: 'round',
-            className: 'route-discovery-glow-mid'
-          } as any).addTo(map);
+          activeRouteLineMidRef.current.remove();
         }
+        activeRouteLineMidRef.current = L.polyline(activePoints, {
+          color: '#ffd385',
+          weight: 6,
+          opacity: 0.7,
+          lineJoin: 'round',
+          className: 'route-discovery-glow-mid'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineMidRef.current, 1200);
 
         if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
-          activeRouteLineRef.current.setLatLngs(activePoints);
-          activeRouteLineRef.current.setStyle({
-            color: '#ffffff',
-            weight: 2,
-            opacity: 0.95,
-            className: 'route-discovery-glow-core'
-          } as any);
-        } else {
-          activeRouteLineRef.current = L.polyline(activePoints, {
-            color: '#ffffff',
-            weight: 2,
-            opacity: 0.95,
-            lineJoin: 'round',
-            className: 'route-discovery-glow-core'
-          } as any).addTo(map);
+          activeRouteLineRef.current.remove();
         }
+        activeRouteLineRef.current = L.polyline(activePoints, {
+          color: '#ffffff',
+          weight: 2,
+          opacity: 0.95,
+          lineJoin: 'round',
+          className: 'route-discovery-glow-core'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineRef.current, 900);
       } else {
         if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
           activeRouteLineBgRef.current.remove();
@@ -1458,22 +1475,16 @@ export default function TaxiMap({
         activeRouteLineMidRef.current = null;
 
         if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
-          activeRouteLineRef.current.setLatLngs(activePoints);
-          activeRouteLineRef.current.setStyle({
-            color: '#ffd385', // brand-gold
-            weight: 5,
-            opacity: 1,
-            className: 'route-glow-animate route-flow-animate'
-          } as any);
-        } else {
-          activeRouteLineRef.current = L.polyline(activePoints, {
-            color: '#ffd385', // brand-gold
-            weight: 5,
-            opacity: 1,
-            lineJoin: 'round',
-            className: 'route-glow-animate route-flow-animate'
-          } as any).addTo(map);
+          activeRouteLineRef.current.remove();
         }
+        activeRouteLineRef.current = L.polyline(activePoints, {
+          color: '#ffd385', // brand-gold
+          weight: 5,
+          opacity: 1,
+          lineJoin: 'round',
+          className: 'route-glow-animate route-flow-animate'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineRef.current, 1200);
       }
     }
     // (b) Driver heading to pickup: Draws itself from Driver's starting point to current Driver position
@@ -1485,48 +1496,40 @@ export default function TaxiMap({
 
       if (role === 'passenger') {
         if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
-          activeRouteLineBgRef.current.setLatLngs(approachTrailPoints);
-          activeRouteLineBgRef.current.setStyle({ color: '#0ea5e9', className: 'route-discovery-glow-bg-blue' } as any);
-        } else {
-          activeRouteLineBgRef.current = L.polyline(approachTrailPoints, {
-            color: '#0ea5e9',
-            weight: 12,
-            opacity: 0.35,
-            lineJoin: 'round',
-            className: 'route-discovery-glow-bg-blue'
-          } as any).addTo(map);
+          activeRouteLineBgRef.current.remove();
         }
+        activeRouteLineBgRef.current = L.polyline(approachTrailPoints, {
+          color: '#0ea5e9',
+          weight: 12,
+          opacity: 0.35,
+          lineJoin: 'round',
+          className: 'route-discovery-glow-bg-blue'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineBgRef.current, 1500);
 
         if (activeRouteLineMidRef.current && map.hasLayer(activeRouteLineMidRef.current)) {
-          activeRouteLineMidRef.current.setLatLngs(approachTrailPoints);
-          activeRouteLineMidRef.current.setStyle({ color: '#38bdf8', className: 'route-discovery-glow-mid-blue' } as any);
-        } else {
-          activeRouteLineMidRef.current = L.polyline(approachTrailPoints, {
-            color: '#38bdf8',
-            weight: 6,
-            opacity: 0.7,
-            lineJoin: 'round',
-            className: 'route-discovery-glow-mid-blue'
-          } as any).addTo(map);
+          activeRouteLineMidRef.current.remove();
         }
+        activeRouteLineMidRef.current = L.polyline(approachTrailPoints, {
+          color: '#38bdf8',
+          weight: 6,
+          opacity: 0.7,
+          lineJoin: 'round',
+          className: 'route-discovery-glow-mid-blue'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineMidRef.current, 1200);
 
         if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
-          activeRouteLineRef.current.setLatLngs(approachTrailPoints);
-          activeRouteLineRef.current.setStyle({
-            color: '#ffffff',
-            weight: 2,
-            opacity: 0.95,
-            className: 'route-discovery-glow-core-blue'
-          } as any);
-        } else {
-          activeRouteLineRef.current = L.polyline(approachTrailPoints, {
-            color: '#ffffff',
-            weight: 2,
-            opacity: 0.95,
-            lineJoin: 'round',
-            className: 'route-discovery-glow-core-blue'
-          } as any).addTo(map);
+          activeRouteLineRef.current.remove();
         }
+        activeRouteLineRef.current = L.polyline(approachTrailPoints, {
+          color: '#ffffff',
+          weight: 2,
+          opacity: 0.95,
+          lineJoin: 'round',
+          className: 'route-discovery-glow-core-blue'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineRef.current, 900);
       } else {
         if (activeRouteLineBgRef.current && map.hasLayer(activeRouteLineBgRef.current)) {
           activeRouteLineBgRef.current.remove();
@@ -1538,22 +1541,16 @@ export default function TaxiMap({
         activeRouteLineMidRef.current = null;
 
         if (activeRouteLineRef.current && map.hasLayer(activeRouteLineRef.current)) {
-          activeRouteLineRef.current.setLatLngs(approachTrailPoints);
-          activeRouteLineRef.current.setStyle({
-            color: '#38bdf8', // approach cyan
-            weight: 4,
-            opacity: 0.9,
-            className: 'route-glow-animate-blue'
-          } as any);
-        } else {
-          activeRouteLineRef.current = L.polyline(approachTrailPoints, {
-            color: '#38bdf8',
-            weight: 4,
-            opacity: 0.9,
-            lineJoin: 'round',
-            className: 'route-glow-animate-blue'
-          } as any).addTo(map);
+          activeRouteLineRef.current.remove();
         }
+        activeRouteLineRef.current = L.polyline(approachTrailPoints, {
+          color: '#38bdf8',
+          weight: 4,
+          opacity: 0.9,
+          lineJoin: 'round',
+          className: 'route-glow-animate-blue'
+        } as any).addTo(map);
+        animatePolylineDraw(activeRouteLineRef.current, 1200);
       }
     } else {
       if (activeRouteLineRef.current) {
@@ -1584,16 +1581,16 @@ export default function TaxiMap({
       ];
 
       if (approachLineRef.current && map.hasLayer(approachLineRef.current)) {
-        approachLineRef.current.setLatLngs(remainingApproachPoints);
-      } else {
-        approachLineRef.current = L.polyline(remainingApproachPoints, {
-          color: '#38bdf8',
-          weight: 3.5,
-          opacity: 0.8,
-          lineJoin: 'round',
-          className: 'route-dash-animate-blue'
-        } as any).addTo(map);
+        approachLineRef.current.remove();
       }
+      approachLineRef.current = L.polyline(remainingApproachPoints, {
+        color: '#38bdf8',
+        weight: 3.5,
+        opacity: 0.8,
+        lineJoin: 'round',
+        className: 'route-dash-animate-blue'
+      } as any).addTo(map);
+      animatePolylineDraw(approachLineRef.current, 1200);
     } else {
       if (approachLineRef.current) {
         if (map.hasLayer(approachLineRef.current)) {
@@ -1931,55 +1928,47 @@ export default function TaxiMap({
               const glowClass = status === 'in_progress' ? 'route-discovery-glow-bg' : 'route-discovery-glow-bg-blue';
 
               if (activeRouteLineBgRef.current && mapRef.current.hasLayer(activeRouteLineBgRef.current)) {
-                activeRouteLineBgRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
-                activeRouteLineBgRef.current.setStyle({ color: glowColor, className: glowClass } as any);
-              } else {
-                activeRouteLineBgRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
-                  color: glowColor,
-                  weight: 12,
-                  opacity: 0.35,
-                  lineJoin: 'round',
-                  className: glowClass
-                } as any).addTo(mapRef.current);
+                activeRouteLineBgRef.current.remove();
               }
+              activeRouteLineBgRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                color: glowColor,
+                weight: 12,
+                opacity: 0.35,
+                lineJoin: 'round',
+                className: glowClass
+              } as any).addTo(mapRef.current);
+              animatePolylineDraw(activeRouteLineBgRef.current, 1500);
 
               // 2. Middle Vivid Layer (cyan or gold with flow dash)
               const midColor = status === 'in_progress' ? '#ffd385' : '#38bdf8';
               const midClass = status === 'in_progress' ? 'route-discovery-glow-mid' : 'route-discovery-glow-mid-blue';
 
               if (activeRouteLineMidRef.current && mapRef.current.hasLayer(activeRouteLineMidRef.current)) {
-                activeRouteLineMidRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
-                activeRouteLineMidRef.current.setStyle({ color: midColor, className: midClass } as any);
-              } else {
-                activeRouteLineMidRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
-                  color: midColor,
-                  weight: 6,
-                  opacity: 0.7,
-                  lineJoin: 'round',
-                  className: midClass
-                } as any).addTo(mapRef.current);
+                activeRouteLineMidRef.current.remove();
               }
+              activeRouteLineMidRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                color: midColor,
+                weight: 6,
+                opacity: 0.7,
+                lineJoin: 'round',
+                className: midClass
+              } as any).addTo(mapRef.current);
+              animatePolylineDraw(activeRouteLineMidRef.current, 1200);
 
               // 3. Core Laser Layer (bright white highlight)
               const coreClass = status === 'in_progress' ? 'route-discovery-glow-core' : 'route-discovery-glow-core-blue';
 
               if (activeRouteLineRef.current && mapRef.current.hasLayer(activeRouteLineRef.current)) {
-                activeRouteLineRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
-                activeRouteLineRef.current.setStyle({
-                  color: '#ffffff',
-                  weight: 2,
-                  opacity: 0.95,
-                  className: coreClass
-                } as any);
-              } else {
-                activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
-                  color: '#ffffff',
-                  weight: 2,
-                  opacity: 0.95,
-                  lineJoin: 'round',
-                  className: coreClass
-                } as any).addTo(mapRef.current);
+                activeRouteLineRef.current.remove();
               }
+              activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                color: '#ffffff',
+                weight: 2,
+                opacity: 0.95,
+                lineJoin: 'round',
+                className: coreClass
+              } as any).addTo(mapRef.current);
+              animatePolylineDraw(activeRouteLineRef.current, 900);
             } else {
               // Standard driver path
               if (activeRouteLineBgRef.current && mapRef.current.hasLayer(activeRouteLineBgRef.current)) {
@@ -1993,22 +1982,16 @@ export default function TaxiMap({
               activeRouteLineMidRef.current = null;
 
               if (activeRouteLineRef.current && mapRef.current.hasLayer(activeRouteLineRef.current)) {
-                activeRouteLineRef.current.setLatLngs(pathLatLngs as L.LatLngExpression[]);
-                activeRouteLineRef.current.setStyle({
-                  color: status === 'in_progress' ? '#ffd385' : '#38bdf8',
-                  weight: 5,
-                  opacity: 1,
-                  className: status === 'in_progress' ? 'route-glow-animate route-flow-animate' : 'route-glow-animate-blue'
-                } as any);
-              } else {
-                activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
-                  color: status === 'in_progress' ? '#ffd385' : '#38bdf8',
-                  weight: 5,
-                  opacity: 1,
-                  lineJoin: 'round',
-                  className: status === 'in_progress' ? 'route-glow-animate route-flow-animate' : 'route-glow-animate-blue'
-                } as any).addTo(mapRef.current);
+                activeRouteLineRef.current.remove();
               }
+              activeRouteLineRef.current = L.polyline(pathLatLngs as L.LatLngExpression[], {
+                color: status === 'in_progress' ? '#ffd385' : '#38bdf8',
+                weight: 5,
+                opacity: 1,
+                lineJoin: 'round',
+                className: status === 'in_progress' ? 'route-glow-animate route-flow-animate' : 'route-glow-animate-blue'
+              } as any).addTo(mapRef.current);
+              animatePolylineDraw(activeRouteLineRef.current, 1200);
             }
           }
         } else {
