@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Smartphone, Plus, CreditCard, ArrowUpRight, History, Shield, Info, Sparkles, Award, Eye, EyeOff } from 'lucide-react';
+import { Smartphone, Plus, CreditCard, ArrowUpRight, History, Shield, Info, Sparkles, Award, Eye, EyeOff, WifiOff, Database } from 'lucide-react';
 import { PaymentMethod } from '../types';
 
 interface WalletCardProps {
@@ -11,6 +11,7 @@ interface WalletCardProps {
   topupPromoRate?: number;
   slangMode?: boolean;
   passengerPoints?: number;
+  isOffline?: boolean;
 }
 
 export default function WalletCard({ 
@@ -20,7 +21,8 @@ export default function WalletCard({
   topupPromoActive = false,
   topupPromoRate = 0,
   slangMode = false,
-  passengerPoints = 0
+  passengerPoints = 0,
+  isOffline = false
 }: WalletCardProps) {
   const [showBalance, setShowBalance] = useState<boolean>(false);
   const [amount, setAmount] = useState<string>('5000');
@@ -40,6 +42,28 @@ export default function WalletCard({
   return (
     <div className="bg-brand-card/40 border border-brand-card rounded-2xl p-4 space-y-4 shadow-md text-white font-sans" id="passenger-wallet-component">
       
+      {/* Offline Service Worker Cache Badge */}
+      {isOffline && (
+        <div className="bg-amber-950/40 border border-amber-500/30 rounded-xl p-2.5 flex items-center gap-2 text-amber-200 text-[10px] font-bold shadow-sm animate-fade-in">
+          <div className="p-1 rounded-md bg-amber-500/20 text-amber-400 shrink-0">
+            <WifiOff size={13} />
+          </div>
+          <div className="flex-1 leading-tight">
+            <span className="block font-black uppercase text-[9px] text-amber-400 tracking-wider">
+              {slangMode ? "Mode Hors Ligne (Service Worker)" : "Offline Mode (Service Worker)"}
+            </span>
+            <span className="text-[9.5px] font-semibold opacity-90">
+              {slangMode
+                ? "Solde wallet accessible via le cache hors ligne local."
+                : "Wallet balance served from local Service Worker offline cache."}
+            </span>
+          </div>
+          <span className="bg-amber-500/20 text-amber-300 text-[8px] font-mono font-black px-1.5 py-0.5 rounded border border-amber-500/30 shrink-0">
+            CACHED
+          </span>
+        </div>
+      )}
+
       {/* Mini Wallet Header Card */}
       <div 
         onClick={() => setShowBalance(!showBalance)}

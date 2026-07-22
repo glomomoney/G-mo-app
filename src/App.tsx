@@ -57,7 +57,8 @@ import {
   Eye,
   Lock,
   Unlock,
-  Grid
+  Grid,
+  WifiOff
 } from 'lucide-react';
 
 // Subcomponents
@@ -70,8 +71,15 @@ import AdminDashboard from './components/AdminDashboard';
 import WalletCard from './components/WalletCard';
 import DriverWallet from './components/DriverWallet';
 import WandaLogo from './components/WandaLogo';
+import { LiveCountdownTimer } from './components/LiveCountdownTimer';
 import { ParticleExplosion } from './components/ParticleExplosion';
 import { getSmartProposals } from './utils/autocomplete';
+import { 
+  syncWalletToOfflineCache, 
+  syncHistoryToOfflineCache, 
+  getCachedWalletData, 
+  getCachedRideHistory 
+} from './utils/offlineCache';
 
 // Data and helpers
 import { 
@@ -745,6 +753,45 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_HISTORY;
   });
   const [historySortOrder, setHistorySortOrder] = useState<'recent' | 'oldest'>('recent');
+
+  // Online / Offline Service Worker tracking
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial cache sync check on boot
+    getCachedWalletData().then(cachedWallet => {
+      if (cachedWallet && !localStorage.getItem('wanda_passenger_wallet')) {
+        setPassengerWallet(cachedWallet.passengerWallet);
+        setDriverWallet(cachedWallet.driverWallet);
+      }
+    });
+
+    getCachedRideHistory().then(cachedHist => {
+      if (cachedHist && cachedHist.history?.length > 0 && !localStorage.getItem('wanda_ride_history')) {
+        setHistory(cachedHist.history);
+      }
+    });
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Synchronize passengerWallet, driverWallet, and history to Service Worker offline cache
+  useEffect(() => {
+    syncWalletToOfflineCache(passengerWallet, driverWallet);
+  }, [passengerWallet, driverWallet]);
+
+  useEffect(() => {
+    syncHistoryToOfflineCache(history);
+  }, [history]);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [isMapTilted, setIsMapTilted] = useState<boolean | 'flat' | 'isometric' | 'tilted'>(false);
   const [mapZoom, setMapZoom] = useState<number>(12);
@@ -2614,6 +2661,23 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-brand-midnight text-white select-none overflow-hidden" id="app-root-container">
       
+      {/* Global Offline Service Worker Mode Banner */}
+      {!isOnline && (
+        <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 text-brand-midnight py-1.5 px-3 font-extrabold text-[10px] sm:text-[11px] flex items-center justify-between shadow-lg z-[2000] border-b border-amber-300/40 animate-fade-in shrink-0">
+          <div className="flex items-center gap-2">
+            <WifiOff size={14} className="shrink-0 animate-pulse text-brand-midnight" />
+            <span>
+              {slangMode
+                ? "⚡ Mode Hors Ligne Actif (Service Worker) — Historique & Solde Wallet entièrement disponibles hors connexion."
+                : "⚡ Offline Mode Active (Service Worker) — Past ride history & Wallet balances served from offline cache."}
+            </span>
+          </div>
+          <span className="bg-brand-midnight text-amber-300 text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 border border-amber-400/30">
+            SW CACHE
+          </span>
+        </div>
+      )}
+
       {/* Header bar */}
       <header className="bg-brand-deep border-b border-brand-card/80 px-3 sm:px-4 py-2.5 sm:py-3 shrink-0 z-50 flex items-center justify-between shadow-md">
         
@@ -3404,7 +3468,14 @@ export default function App() {
                                   >
                                     <Clock size={16} className="text-brand-gold animate-pulse shrink-0" /> 
                                     <span className="text-brand-gold font-mono font-black text-xl tracking-tight">
-                                      {etaMinutes === 0.5 ? (slangMode ? "< 1 min away" : "< 1 min away") : `${etaMinutes} min${etaMinutes > 1 ? 's' : ''} away`}
+                                      <LiveCountdownTimer
+                                        driverLoc={driverLoc}
+                                        targetLoc={pickup}
+                                        etaMinutes={etaMinutes}
+                                        slangMode={slangMode}
+                                        size="lg"
+                                        showLabel={false}
+                                      />
                                     </span>
                                   </motion.div>
 
@@ -3620,7 +3691,14 @@ export default function App() {
                                       {slangMode ? "ETA Estimé" : "ETA"}
                                     </span>
                                     <span className="text-[10px] text-white font-mono font-black block leading-none">
-                                      {etaMinutes === 0.5 ? (slangMode ? "< 1 min" : "< 1 min") : `${etaMinutes} min`}
+                                      <LiveCountdownTimer
+                                        driverLoc={driverLoc}
+                                        targetLoc={rideStatus === 'driver_found' ? pickup : destination}
+                                        etaMinutes={etaMinutes}
+                                        slangMode={slangMode}
+                                        size="sm"
+                                        showLabel={false}
+                                      />
                                     </span>
                                     <span className="text-[6.5px] text-brand-text-muted font-bold block leading-none whitespace-normal px-0.5 mt-0.5">
                                       {etaStatusText || (slangMode ? "Trafic normal" : "Normal traffic")}
@@ -3956,12 +4034,35 @@ export default function App() {
                   topupPromoRate={systemSettings.topupPromoRate}
                   slangMode={slangMode}
                   passengerPoints={passengerPoints}
+                  isOffline={!isOnline}
                 />
               )}
 
               {/* PAST RIDE HISTORY */}
               {activeTab === 'history' && (
                 <div className="space-y-3 flex-1 overflow-y-auto">
+                  {/* Service Worker Offline History Badge */}
+                  {!isOnline && (
+                    <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-3 flex items-center gap-2.5 text-amber-200 text-[10px] font-bold shadow-sm animate-fade-in">
+                      <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+                        <WifiOff size={15} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="block font-black uppercase text-[9px] text-amber-400 tracking-wider">
+                          {slangMode ? "Mode Hors Ligne (Service Worker)" : "Offline Mode (Service Worker)"}
+                        </span>
+                        <span className="text-[9.5px] font-semibold text-amber-100/90 block leading-tight">
+                          {slangMode
+                            ? `Consultation disponible : Vos ${history.length} trajets passés sont enregistrés en toute sécurité.`
+                            : `Offline access active: Your ${history.length} past rides are stored securely in local Service Worker cache.`}
+                        </span>
+                      </div>
+                      <span className="bg-amber-500/20 text-amber-300 text-[8px] font-mono font-black px-2 py-0.5 rounded border border-amber-500/30 shrink-0">
+                        SW CACHE
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center bg-brand-card/20 p-2 rounded-xl border border-brand-input/30">
                     <h3 className="text-[10px] font-black uppercase text-brand-text-muted tracking-wider">
                       {slangMode ? "Journal des Trajets" : "Ride Ledger Logs"}
@@ -4607,6 +4708,7 @@ export default function App() {
                     driverPhone={user?.phone}
                     rideHistory={history}
                     slangMode={slangMode}
+                    isOffline={!isOnline}
                   />
 
                   {/* Waiting logs ledger */}

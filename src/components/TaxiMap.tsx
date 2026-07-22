@@ -5,6 +5,7 @@ import * as d3 from 'd3';
 import { Location, RideStatus } from '../types';
 import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, ChevronUp, RefreshCw, Flame, Info, CornerUpLeft, CornerUpRight, ArrowUp, Volume2, VolumeX, Clock, Layers, Map as MapIcon, Mountain, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LAGOS_LOCATIONS as DOUALA_LOCATIONS, YAOUNDE_LOCATIONS } from '../data';
+import { LiveCountdownTimer } from './LiveCountdownTimer';
 
 export interface DemandZone {
   id: string;
@@ -2750,7 +2751,20 @@ export default function TaxiMap({
                       }
                     </span>
                     <p className="text-xs font-bold truncate text-white leading-tight">
-                      {getCollapsedText()}
+                      {status === 'driver_found' ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-brand-text-muted font-normal">{slangMode ? "Arrivée dans" : "Pickup in"}</span>
+                          <LiveCountdownTimer
+                            driverLoc={driverLocation}
+                            targetLoc={pickup}
+                            etaMinutes={etaMinutes}
+                            slangMode={slangMode}
+                            size="sm"
+                          />
+                        </span>
+                      ) : (
+                        getCollapsedText()
+                      )}
                     </p>
                   </div>
                 </div>
@@ -2803,9 +2817,14 @@ export default function TaxiMap({
                           ⏱️ {etaMinutes === 0.5 ? "Less than 1 minute" : `${etaMinutes} minute${etaMinutes > 1 ? 's' : ''}`} to arrive
                         </span>
                       ) : (
-                        <span>
-                          ⏱️ {etaMinutes === 0.5 ? "Less than 1 minute" : `${etaMinutes} minute${etaMinutes > 1 ? 's' : ''}`} to you
-                        </span>
+                        <LiveCountdownTimer
+                          driverLoc={driverLocation}
+                          targetLoc={pickup}
+                          etaMinutes={etaMinutes}
+                          slangMode={slangMode}
+                          size="md"
+                          showLabel={true}
+                        />
                       )}
                     </div>
                   </div>
