@@ -70,6 +70,7 @@ import AdminDashboard from './components/AdminDashboard';
 import WalletCard from './components/WalletCard';
 import DriverWallet from './components/DriverWallet';
 import WandaLogo from './components/WandaLogo';
+import { ParticleExplosion } from './components/ParticleExplosion';
 import { getSmartProposals } from './utils/autocomplete';
 
 // Data and helpers
@@ -5405,6 +5406,7 @@ export default function App() {
       <AnimatePresence>
         {showReceipt && pickup && destination && activeDriver && (
           <div className="fixed inset-0 bg-brand-midnight/80 backdrop-blur-sm z-[2000] flex items-center justify-center p-4" id="receipt-modal">
+            <ParticleExplosion />
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
