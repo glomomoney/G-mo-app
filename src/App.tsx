@@ -1617,6 +1617,13 @@ export default function App() {
     doc.text('Have a safe and premium journey next time.', 15, 241);
 
     doc.save(`Wanda_Receipt_${hist.id}.pdf`);
+
+    setTimeout(() => {
+      alert(slangMode 
+        ? `📄 Reçu PDF Officiel Wanda (N° WND-${hist.id.replace('hist_', '')}) téléchargé avec succès !` 
+        : `📄 Official Wanda PDF Business Receipt (ID: WND-${hist.id.replace('hist_', '')}) downloaded successfully!`
+      );
+    }, 100);
   };
 
   // Distance calculations
@@ -5653,13 +5660,42 @@ export default function App() {
                   />
                 </div>
 
-                <button
-                  onClick={handleSubmitRating}
-                  className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-3 rounded-2xl text-xs transition cursor-pointer shadow-lg shadow-brand-gold/25"
-                  id="submit-rating-btn"
-                >
-                  Confirm & Close Receipt
-                </button>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pickup && destination && activeDriver) {
+                        const finalFareToCharge = Math.max(0, activeFareToCharge - (ridePointsRedeemed * 10)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0);
+                        const currentHist: HistoryItem = {
+                          id: transactionId || `hist_${Date.now()}`,
+                          date: new Date().toLocaleString(),
+                          pickupName: pickup.name,
+                          destName: destination.name,
+                          fare: finalFareToCharge,
+                          driverName: activeDriver.name,
+                          vehicleClass: activeDriver.vehicleType ? activeDriver.vehicleType.toUpperCase() : 'COMFORT VIP',
+                          paymentMethod: paymentMethod,
+                          tipAmount: tipAmount,
+                          status: 'completed'
+                        };
+                        downloadPDFReceipt(currentHist);
+                      }
+                    }}
+                    className="w-full bg-slate-900/90 hover:bg-slate-800 text-brand-gold font-extrabold py-2.5 rounded-2xl text-xs border border-brand-gold/30 flex items-center justify-center gap-2 transition cursor-pointer active:scale-95 shadow-md"
+                    id="download-receipt-modal-btn"
+                  >
+                    <Download size={14} className="text-brand-gold" />
+                    <span>{slangMode ? "Télécharger Reçu PDF Officiel" : "Download Official PDF Invoice"}</span>
+                  </button>
+
+                  <button
+                    onClick={handleSubmitRating}
+                    className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-3 rounded-2xl text-xs transition cursor-pointer shadow-lg shadow-brand-gold/25"
+                    id="submit-rating-btn"
+                  >
+                    Confirm & Close Receipt
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
