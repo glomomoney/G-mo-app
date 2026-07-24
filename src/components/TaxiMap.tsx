@@ -7,6 +7,16 @@ import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, Chev
 import { LAGOS_LOCATIONS as DOUALA_LOCATIONS, YAOUNDE_LOCATIONS } from '../data';
 import { LiveCountdownTimer } from './LiveCountdownTimer';
 
+export interface BookingItem {
+  id: string;
+  zoneName: string;
+  rideClass: string;
+  timeAgo: string;
+  status: 'completed' | 'active' | 'cancelled';
+  fare: number;
+  city: 'Yaoundé' | 'Douala';
+}
+
 export interface DemandZone {
   id: string;
   name: string;
@@ -16,6 +26,11 @@ export interface DemandZone {
   demandLevel: 'critical' | 'high' | 'medium' | 'stable';
   activeRequests: number;
   surgeMultiplier: number;
+  baseRequests?: number;
+  recentBookingsCount?: number;
+  activeBookingsCount?: number;
+  recentTotalFare?: number;
+  matchedBookings?: BookingItem[];
 }
 
 function generateIrregularPolygon(centerLat: number, centerLng: number, numSides: number = 6, baseRadius: number = 0.005): [number, number][] {
@@ -207,6 +222,8 @@ interface TaxiMapProps {
   onZoomChange?: (zoom: number) => void;
   showMapGrid?: boolean;
   centerCoords?: { lat: number; lng: number } | null;
+  recentBookings?: BookingItem[];
+  onSelectZoneTarget?: (zone: DemandZone) => void;
 }
 
 export default function TaxiMap({
@@ -226,11 +243,16 @@ export default function TaxiMap({
   isZoomLocked = false,
   onZoomChange,
   showMapGrid = false,
-  centerCoords = null
+  centerCoords = null,
+  recentBookings = [],
+  onSelectZoneTarget
 }: TaxiMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   
+  // Selected Heatmap Zone state for interactive details modal
+  const [selectedZone, setSelectedZone] = useState<DemandZone | null>(null);
+
   // Geolocation States
   const [liveCoords, setLiveCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [isTracking, setIsTracking] = useState(false);
@@ -798,65 +820,92 @@ export default function TaxiMap({
     }
   }, [showHeatmap]);
 
-  // 1. Initialize stable demand zones with organic polygon vertices
+  // Helper function to match booking zone name to demand zone name
+  const isBookingInZone = (bookingZoneName: string, demandZoneName: string): boolean => {
+    if (!bookingZoneName || !demandZoneName) return false;
+    const bLower = bookingZoneName.toLowerCase();
+    const dLower = demandZoneName.toLowerCase();
+
+    if (bLower.includes(dLower) || dLower.includes(bLower)) return true;
+
+    const keywords = dLower
+      .replace(/[\(\)\,\&\-\.]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 3 && !['area', 'center', 'zone', 'district', 'du', 'de', 'la', 'le', 'les', 'and'].includes(w));
+
+    return keywords.some(kw => bLower.includes(kw));
+  };
+
+  // 1. Initialize stable demand zones with organic polygon vertices and base requests
   useEffect(() => {
     const yaoundeZones: DemandZone[] = [
-      { id: 'y1', name: 'Bastos Embassy District', city: 'Yaoundé', center: [3.8910, 11.5130], vertices: generateIrregularPolygon(3.8910, 11.5130, 6, 0.006), demandLevel: 'high', activeRequests: 42, surgeMultiplier: 1.5 },
-      { id: 'y2', name: 'Marché Central (Central Market)', city: 'Yaoundé', center: [3.8655, 11.5190], vertices: generateIrregularPolygon(3.8655, 11.5190, 7, 0.005), demandLevel: 'critical', activeRequests: 87, surgeMultiplier: 1.8 },
-      { id: 'y3', name: 'Poste Centrale & Blvd 20 Mai', city: 'Yaoundé', center: [3.8640, 11.5205], vertices: generateIrregularPolygon(3.8640, 11.5205, 5, 0.004), demandLevel: 'critical', activeRequests: 95, surgeMultiplier: 1.9 },
-      { id: 'y4', name: 'Ngoa-Ekelle University Area', city: 'Yaoundé', center: [3.8490, 11.5030], vertices: generateIrregularPolygon(3.8490, 11.5030, 6, 0.007), demandLevel: 'medium', activeRequests: 28, surgeMultiplier: 1.2 },
-      { id: 'y5', name: 'Mvan Bus Terminal (Gare)', city: 'Yaoundé', center: [3.8290, 11.5180], vertices: generateIrregularPolygon(3.8290, 11.5180, 6, 0.0055), demandLevel: 'high', activeRequests: 56, surgeMultiplier: 1.6 },
-      { id: 'y6', name: 'Omnisports Stadium Area', city: 'Yaoundé', center: [3.8855, 11.5395], vertices: generateIrregularPolygon(3.8855, 11.5395, 6, 0.0065), demandLevel: 'stable', activeRequests: 14, surgeMultiplier: 1.0 },
-      { id: 'y7', name: 'Mokolo Market (Marché Mokolo)', city: 'Yaoundé', center: [3.8710, 11.4980], vertices: generateIrregularPolygon(3.8710, 11.4980, 7, 0.005), demandLevel: 'critical', activeRequests: 78, surgeMultiplier: 1.7 }
+      { id: 'y1', name: 'Bastos Embassy District', city: 'Yaoundé', center: [3.8910, 11.5130], vertices: generateIrregularPolygon(3.8910, 11.5130, 6, 0.006), demandLevel: 'high', activeRequests: 42, surgeMultiplier: 1.5, baseRequests: 25 },
+      { id: 'y2', name: 'Marché Central (Central Market)', city: 'Yaoundé', center: [3.8655, 11.5190], vertices: generateIrregularPolygon(3.8655, 11.5190, 7, 0.005), demandLevel: 'critical', activeRequests: 87, surgeMultiplier: 1.8, baseRequests: 45 },
+      { id: 'y3', name: 'Poste Centrale & Blvd 20 Mai', city: 'Yaoundé', center: [3.8640, 11.5205], vertices: generateIrregularPolygon(3.8640, 11.5205, 5, 0.004), demandLevel: 'critical', activeRequests: 95, surgeMultiplier: 1.9, baseRequests: 50 },
+      { id: 'y4', name: 'Ngoa-Ekelle University Area', city: 'Yaoundé', center: [3.8490, 11.5030], vertices: generateIrregularPolygon(3.8490, 11.5030, 6, 0.007), demandLevel: 'medium', activeRequests: 28, surgeMultiplier: 1.2, baseRequests: 15 },
+      { id: 'y5', name: 'Mvan Bus Terminal (Gare)', city: 'Yaoundé', center: [3.8290, 11.5180], vertices: generateIrregularPolygon(3.8290, 11.5180, 6, 0.0055), demandLevel: 'high', activeRequests: 56, surgeMultiplier: 1.6, baseRequests: 30 },
+      { id: 'y6', name: 'Omnisports Stadium Area', city: 'Yaoundé', center: [3.8855, 11.5395], vertices: generateIrregularPolygon(3.8855, 11.5395, 6, 0.0065), demandLevel: 'stable', activeRequests: 14, surgeMultiplier: 1.0, baseRequests: 10 },
+      { id: 'y7', name: 'Mokolo Market (Marché Mokolo)', city: 'Yaoundé', center: [3.8710, 11.4980], vertices: generateIrregularPolygon(3.8710, 11.4980, 7, 0.005), demandLevel: 'critical', activeRequests: 78, surgeMultiplier: 1.7, baseRequests: 40 }
     ];
 
     const doualaZones: DemandZone[] = [
-      { id: 'd1', name: 'Akwa Palace & Blvd de la Liberté', city: 'Douala', center: [4.0485, 9.6974], vertices: generateIrregularPolygon(4.0485, 9.6974, 6, 0.0055), demandLevel: 'critical', activeRequests: 91, surgeMultiplier: 1.9 },
-      { id: 'd2', name: 'Bonanjo Administrative Center', city: 'Douala', center: [4.0435, 9.6895], vertices: generateIrregularPolygon(4.0435, 9.6895, 6, 0.006), demandLevel: 'high', activeRequests: 48, surgeMultiplier: 1.4 },
-      { id: 'd3', name: 'Deido Roundabout (Rond-point)', city: 'Douala', center: [4.0620, 9.7090], vertices: generateIrregularPolygon(4.0620, 9.7090, 7, 0.005), demandLevel: 'critical', activeRequests: 84, surgeMultiplier: 1.7 },
-      { id: 'd4', name: 'Ndokoti Junction (Carrefour)', city: 'Douala', center: [4.0415, 9.7420], vertices: generateIrregularPolygon(4.0415, 9.7420, 6, 0.0065), demandLevel: 'critical', activeRequests: 112, surgeMultiplier: 2.1 },
-      { id: 'd5', name: 'Bonamoussadi Market (Marché)', city: 'Douala', center: [4.0825, 9.7405], vertices: generateIrregularPolygon(4.0825, 9.7405, 5, 0.005), demandLevel: 'medium', activeRequests: 32, surgeMultiplier: 1.2 },
-      { id: 'd6', name: 'Douala Grand Mall & Airport Zone', city: 'Douala', center: [4.0152, 9.7360], vertices: generateIrregularPolygon(4.0152, 9.7360, 6, 0.007), demandLevel: 'high', activeRequests: 65, surgeMultiplier: 1.5 },
-      { id: 'd7', name: 'Logbessou Campus Area', city: 'Douala', center: [4.0780, 9.7710], vertices: generateIrregularPolygon(4.0780, 9.7710, 6, 0.006), demandLevel: 'stable', activeRequests: 19, surgeMultiplier: 1.0 }
+      { id: 'd1', name: 'Akwa Palace & Blvd de la Liberté', city: 'Douala', center: [4.0485, 9.6974], vertices: generateIrregularPolygon(4.0485, 9.6974, 6, 0.0055), demandLevel: 'critical', activeRequests: 91, surgeMultiplier: 1.9, baseRequests: 50 },
+      { id: 'd2', name: 'Bonanjo Administrative Center', city: 'Douala', center: [4.0435, 9.6895], vertices: generateIrregularPolygon(4.0435, 9.6895, 6, 0.006), demandLevel: 'high', activeRequests: 48, surgeMultiplier: 1.4, baseRequests: 25 },
+      { id: 'd3', name: 'Deido Roundabout (Rond-point)', city: 'Douala', center: [4.0620, 9.7090], vertices: generateIrregularPolygon(4.0620, 9.7090, 7, 0.005), demandLevel: 'critical', activeRequests: 84, surgeMultiplier: 1.7, baseRequests: 45 },
+      { id: 'd4', name: 'Ndokoti Junction (Carrefour)', city: 'Douala', center: [4.0415, 9.7420], vertices: generateIrregularPolygon(4.0415, 9.7420, 6, 0.0065), demandLevel: 'critical', activeRequests: 112, surgeMultiplier: 2.1, baseRequests: 60 },
+      { id: 'd5', name: 'Bonamoussadi Market (Marché)', city: 'Douala', center: [4.0825, 9.7405], vertices: generateIrregularPolygon(4.0825, 9.7405, 5, 0.005), demandLevel: 'medium', activeRequests: 32, surgeMultiplier: 1.2, baseRequests: 18 },
+      { id: 'd6', name: 'Douala Grand Mall & Airport Zone', city: 'Douala', center: [4.0152, 9.7360], vertices: generateIrregularPolygon(4.0152, 9.7360, 6, 0.007), demandLevel: 'high', activeRequests: 65, surgeMultiplier: 1.5, baseRequests: 35 },
+      { id: 'd7', name: 'Logbessou Campus Area', city: 'Douala', center: [4.0780, 9.7710], vertices: generateIrregularPolygon(4.0780, 9.7710, 6, 0.006), demandLevel: 'stable', activeRequests: 19, surgeMultiplier: 1.0, baseRequests: 12 }
     ];
 
     setDemandZones([...yaoundeZones, ...doualaZones]);
   }, []);
 
-  // 2. Real-time dynamic simulation updates for demand density (subtle fluctuations)
+  // 2. Dynamic synchronization effect driven directly by recentBookings
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      setDemandZones(prevZones => prevZones.map(zone => {
-        const delta = Math.floor(Math.random() * 9) - 4; // -4 to +4 change
-        const nextRequests = Math.max(2, zone.activeRequests + delta);
-        
+    if (!recentBookings || recentBookings.length === 0) return;
+
+    setDemandZones(prevZones => {
+      if (!prevZones || prevZones.length === 0) return prevZones;
+
+      return prevZones.map(zone => {
+        const matchedBookings = recentBookings.filter(b =>
+          b.city === zone.city && isBookingInZone(b.zoneName, zone.name)
+        );
+
+        const activeCount = matchedBookings.filter(b => b.status === 'active').length;
+        const recentCount = matchedBookings.length;
+        const totalFare = matchedBookings.reduce((sum, b) => sum + b.fare, 0);
+
+        const base = zone.baseRequests || 20;
+        const calculatedActiveRequests = Math.max(10, base + (activeCount * 32) + (recentCount * 10));
+
         let demandLevel: 'critical' | 'high' | 'medium' | 'stable' = 'stable';
-        let surgeMultiplier = 1.0;
-        if (nextRequests >= 70) {
+        if (calculatedActiveRequests >= 70 || activeCount >= 2) {
           demandLevel = 'critical';
-          surgeMultiplier = parseFloat((1.6 + Math.random() * 0.4).toFixed(1));
-        } else if (nextRequests >= 40) {
+        } else if (calculatedActiveRequests >= 40 || activeCount >= 1) {
           demandLevel = 'high';
-          surgeMultiplier = parseFloat((1.3 + Math.random() * 0.3).toFixed(1));
-        } else if (nextRequests >= 15) {
+        } else if (calculatedActiveRequests >= 22) {
           demandLevel = 'medium';
-          surgeMultiplier = parseFloat((1.1 + Math.random() * 0.2).toFixed(1));
         } else {
           demandLevel = 'stable';
-          surgeMultiplier = 1.0;
         }
+
+        const surgeMultiplier = parseFloat((1.0 + Math.min(1.4, (calculatedActiveRequests / 75) + (activeCount * 0.25))).toFixed(1));
 
         return {
           ...zone,
-          activeRequests: nextRequests,
+          activeRequests: calculatedActiveRequests,
           demandLevel,
-          surgeMultiplier
+          surgeMultiplier,
+          recentBookingsCount: recentCount,
+          activeBookingsCount: activeCount,
+          recentTotalFare: totalFare,
+          matchedBookings
         };
-      }));
-    }, 6000);
-
-    return () => clearInterval(intervalId);
-  }, []);
+      });
+    });
+  }, [recentBookings]);
 
   // 3. Render and update Heatmap Polygons dynamically on the map
   useEffect(() => {
@@ -898,20 +947,20 @@ export default function TaxiMap({
     activeZones.forEach(zone => {
       let color = '#10b981'; // stable
       let weight = 1.5;
-      let fillOpacity = 0.14;
+      let fillOpacity = 0.16;
       
       if (zone.demandLevel === 'critical') {
         color = '#ef4444'; // critical (red)
-        weight = 2.5;
-        fillOpacity = 0.35;
+        weight = 3.0;
+        fillOpacity = 0.42;
       } else if (zone.demandLevel === 'high') {
         color = '#f97316'; // high (orange)
-        weight = 2.0;
-        fillOpacity = 0.28;
+        weight = 2.2;
+        fillOpacity = 0.32;
       } else if (zone.demandLevel === 'medium') {
         color = '#f59e0b'; // medium (amber)
         weight = 1.8;
-        fillOpacity = 0.22;
+        fillOpacity = 0.24;
       }
 
       if (polygonLayersRef.current[zone.id]) {
@@ -929,14 +978,23 @@ export default function TaxiMap({
           fillColor: color,
           fillOpacity,
           lineJoin: 'round',
-          className: 'transition-all duration-300'
+          className: 'transition-all duration-300 cursor-pointer'
         }).addTo(map);
+
+        // Click handler to select zone for interactive demand detail card
+        poly.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          setSelectedZone(zone);
+          if (mapRef.current) {
+            mapRef.current.flyTo(zone.center, Math.max(14, mapRef.current.getZoom()), { duration: 0.8 });
+          }
+        });
 
         // Hover feedback
         poly.on('mouseover', () => {
           poly.setStyle({
-            fillOpacity: Math.min(0.6, fillOpacity + 0.15),
-            weight: weight + 1
+            fillOpacity: Math.min(0.65, fillOpacity + 0.18),
+            weight: weight + 1.2
           });
         });
         poly.on('mouseout', () => {
@@ -2980,6 +3038,108 @@ export default function TaxiMap({
           )}
         </div>
       )}
+
+      {/* FLOATING INTERACTIVE DEMAND ZONE DETAIL CARD (Real-Time Heatmap Inspector) */}
+      <AnimatePresence>
+        {selectedZone && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 30 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 30 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 25 }}
+            className="absolute bottom-6 right-4 z-[1025] w-80 max-w-[92vw] bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 rounded-2xl p-4 shadow-2xl text-white space-y-3"
+            id="heatmap-zone-modal"
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-brand-input/40 pb-2">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-sm text-white">{selectedZone.name}</span>
+                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-brand-card border border-brand-card/80 text-brand-gold">
+                    {selectedZone.city}
+                  </span>
+                </div>
+                <p className="text-[10px] text-brand-text-muted font-bold mt-0.5 flex items-center gap-1">
+                  <Flame size={11} className={selectedZone.demandLevel === 'critical' ? 'text-rose-500 animate-pulse' : 'text-amber-400'} />
+                  <span>{slangMode ? "Haute Demande (Flux de Réservations Live)" : "Real-Time Demand Heatmap"}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedZone(null)}
+                className="text-brand-text-muted hover:text-white p-1 rounded-lg hover:bg-brand-card transition cursor-pointer"
+                title="Close"
+              >
+                <ChevronDown size={16} />
+              </button>
+            </div>
+
+            {/* Metric Grid */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-brand-input/30 border border-brand-card/60 p-2.5 rounded-xl text-center space-y-0.5">
+                <span className="text-[9px] uppercase font-bold text-brand-text-muted block">{slangMode ? "Surge Multiplicateur" : "Surge Multiplier"}</span>
+                <span className="text-base font-mono font-black text-brand-gold flex items-center justify-center gap-1">
+                  ⚡ {selectedZone.surgeMultiplier}x
+                </span>
+              </div>
+
+              <div className="bg-brand-input/30 border border-brand-card/60 p-2.5 rounded-xl text-center space-y-0.5">
+                <span className="text-[9px] uppercase font-bold text-brand-text-muted block">{slangMode ? "Niveau de Demande" : "Demand Level"}</span>
+                <span className={`text-xs font-black uppercase tracking-wider block mt-0.5 ${
+                  selectedZone.demandLevel === 'critical' ? 'text-rose-400' : selectedZone.demandLevel === 'high' ? 'text-orange-400' : 'text-amber-300'
+                }`}>
+                  {selectedZone.demandLevel === 'critical' ? "🔥 CRITIQUE" : selectedZone.demandLevel === 'high' ? "⚡ ÉLEVÉE" : "MODÉRÉE"}
+                </span>
+              </div>
+            </div>
+
+            {/* Live Bookings Feed in Zone */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-brand-text-muted font-bold">
+                <span>{slangMode ? "Activité Réservations Récentes:" : "Recent Bookings Feed:"}</span>
+                <span className="text-brand-gold font-mono">{(selectedZone.matchedBookings || []).length} events</span>
+              </div>
+
+              <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+                {(!selectedZone.matchedBookings || selectedZone.matchedBookings.length === 0) ? (
+                  <p className="text-[10px] text-brand-text-muted italic py-1">
+                    {slangMode ? "Aucune réservation récente détectée." : "No recent booking activity in this area."}
+                  </p>
+                ) : (
+                  selectedZone.matchedBookings.map(b => (
+                    <div key={b.id} className="bg-brand-card/50 border border-brand-card/80 p-2 rounded-xl flex items-center justify-between text-[10.5px]">
+                      <div>
+                        <span className="font-bold text-white block">{b.rideClass}</span>
+                        <span className="text-[9px] text-brand-text-muted font-bold">{b.timeAgo} • {b.fare.toLocaleString('fr-FR')} FCFA</span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                        b.status === 'active' ? 'bg-brand-gold/20 text-brand-gold animate-pulse' : 'bg-emerald-500/20 text-emerald-400'
+                      }`}>
+                        {b.status}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Target Action Button */}
+            <button
+              onClick={() => {
+                if (onSelectZoneTarget) {
+                  onSelectZoneTarget(selectedZone);
+                }
+                if (mapRef.current) {
+                  mapRef.current.flyTo(selectedZone.center, 15, { duration: 1.2 });
+                }
+              }}
+              className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-lg active:scale-95"
+            >
+              <Navigation size={13} />
+              <span>{slangMode ? "Mettre Cap sur cette Zone" : "Route to High-Demand Area"}</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

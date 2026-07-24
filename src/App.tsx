@@ -2648,6 +2648,7 @@ export default function App() {
             isTilted={isMapTilted}
             isZoomLocked={isZoomLocked}
             showMapGrid={showMapGrid}
+            recentBookings={recentBookings}
           />
         </div>
       </div>
@@ -5315,6 +5316,14 @@ export default function App() {
             onZoomChange={setMapZoom}
             showMapGrid={showMapGrid}
             centerCoords={centerCoords}
+            recentBookings={recentBookings}
+            onSelectZoneTarget={(zone) => {
+              if (role === 'driver') {
+                setDriverLoc({ lat: zone.center[0], lng: zone.center[1] });
+              } else {
+                setPickup({ name: zone.name, lat: zone.center[0], lng: zone.center[1] });
+              }
+            }}
           />
 
           {/* Floating Dynamic Distance Ruler */}
