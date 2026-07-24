@@ -5523,22 +5523,46 @@ export default function App() {
       {/* ========================================================================= */}
       <AnimatePresence>
         {showReceipt && pickup && destination && activeDriver && (
-          <div className="fixed inset-0 bg-brand-midnight/80 backdrop-blur-sm z-[2000] flex items-center justify-center p-4" id="receipt-modal">
-            <ParticleExplosion />
+          <div className="fixed inset-0 bg-brand-midnight/80 backdrop-blur-md z-[2000] flex items-center justify-center p-4" id="receipt-modal">
+            <ParticleExplosion particleCount={75} />
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-brand-deep border border-brand-card rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl text-white font-sans"
+              initial={{ scale: 0.65, opacity: 0, y: 50, rotateX: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0, rotateX: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 30 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+              className="bg-brand-deep border border-brand-gold/30 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl text-white font-sans relative z-[2001]"
             >
-              <div className="p-5 text-center border-b border-brand-input/40 bg-brand-gold/5 space-y-2">
-                <div className="w-11 h-11 bg-brand-gold text-brand-midnight rounded-full flex items-center justify-center mx-auto shadow-lg shadow-brand-gold/25">
-                  <Check size={22} className="stroke-[3]" />
+              <div className="p-5 text-center border-b border-brand-input/40 bg-gradient-to-b from-brand-gold/15 via-emerald-500/10 to-transparent space-y-2 relative overflow-hidden">
+                <div className="relative mx-auto w-14 h-14 flex items-center justify-center">
+                  <motion.div
+                    animate={{ scale: [1, 1.45, 1], opacity: [0.6, 0.2, 0.6] }}
+                    transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                    className="absolute inset-0 rounded-full bg-brand-gold/30 blur-md"
+                  />
+                  <motion.div
+                    initial={{ scale: 0, rotate: -180 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 18, delay: 0.15 }}
+                    className="w-12 h-12 bg-gradient-to-tr from-brand-gold via-amber-400 to-yellow-300 text-brand-midnight rounded-full flex items-center justify-center shadow-xl shadow-brand-gold/40 relative z-10"
+                  >
+                    <Check size={26} className="stroke-[3.5] text-brand-midnight" />
+                  </motion.div>
                 </div>
-                <h3 className="text-base font-black tracking-wide">{slangMode ? "Course Terminée !" : "Ride Complete!"}</h3>
-                <p className="text-[10px] text-brand-gold font-mono font-bold uppercase">
-                  {transactionId}
-                </p>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25, duration: 0.35 }}
+                >
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full mb-1 tracking-wider shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span>{slangMode ? "🎉 Trajet Réussi & Terminé !" : "🎉 Trip Completed Successfully!"}</span>
+                  </div>
+                  <h3 className="text-base font-black tracking-wide text-white">{slangMode ? "Reçu Officiel Wanda" : "Official Wanda Receipt"}</h3>
+                  <p className="text-[10px] text-brand-gold font-mono font-bold uppercase tracking-wider">
+                    {transactionId}
+                  </p>
+                </motion.div>
               </div>
 
               {/* Receipt Body */}

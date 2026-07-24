@@ -1332,23 +1332,33 @@ export default function TaxiMap({
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
     if (destination && isValidCoords(destination.lat, destination.lng)) {
+      const isCompleted = status === 'completed';
       const isTransit = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
       const destIcon = L.divIcon({
         className: 'custom-pin-dest',
         html: `
           <div class="relative flex items-center justify-center">
-            ${isTransit 
+            ${isCompleted
+              ? `<div class="absolute w-12 h-12 rounded-full bg-emerald-500/40 animate-ping"></div>
+                 <div class="absolute w-16 h-16 rounded-full bg-amber-400/30 animate-pulse border-2 border-amber-400/60"></div>
+                 <div class="relative w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-500 via-teal-400 to-amber-300 border-2 border-white shadow-2xl flex items-center justify-center text-white font-black text-sm animate-bounce">
+                   ✓
+                 </div>`
+              : isTransit 
               ? `<div class="absolute w-9 h-9 rounded-full bg-[#ffd385]/25 animate-pulse border border-[#ffd385]/40"></div>
-                 <div class="absolute w-12 h-12 rounded-full bg-[#ffd385]/10 animate-ping"></div>`
-              : `<div class="absolute w-8 h-8 rounded-full bg-[#ffd385]/30 animate-ping"></div>`
+                 <div class="absolute w-12 h-12 rounded-full bg-[#ffd385]/10 animate-ping"></div>
+                 <div class="relative w-7 h-7 rounded-full bg-[#ffd385] border-2 border-white shadow-md flex items-center justify-center text-[#0a081d] font-black text-xs transit-pulse-gold">
+                   B
+                 </div>`
+              : `<div class="absolute w-8 h-8 rounded-full bg-[#ffd385]/30 animate-ping"></div>
+                 <div class="relative w-7 h-7 rounded-full bg-[#ffd385] border-2 border-white shadow-md flex items-center justify-center text-[#0a081d] font-black text-xs">
+                   B
+                 </div>`
             }
-            <div class="relative w-7 h-7 rounded-full bg-[#ffd385] border-2 border-white shadow-md flex items-center justify-center text-[#0a081d] font-black text-xs ${isTransit ? 'transit-pulse-gold' : ''}">
-              B
-            </div>
           </div>
         `,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15]
+        iconSize: isCompleted ? [40, 40] : [30, 30],
+        iconAnchor: isCompleted ? [20, 20] : [15, 15]
       });
 
       if (destMarkerRef.current && map.hasLayer(destMarkerRef.current)) {
@@ -2770,6 +2780,52 @@ export default function TaxiMap({
           </div>
         )}
       </div>
+
+      {/* CELEBRATORY COMPLETED RIDE MAP BANNER OVERLAY */}
+      <AnimatePresence>
+        {status === 'completed' && (
+          <motion.div
+            initial={{ y: -80, opacity: 0, scale: 0.88 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: -60, opacity: 0, scale: 0.9 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-[1020] w-[92%] max-w-sm bg-gradient-to-r from-emerald-950/95 via-brand-midnight/95 to-emerald-950/95 border-2 border-emerald-400/70 rounded-2xl p-3.5 shadow-2xl backdrop-blur-md text-white flex items-center justify-between gap-3 select-none"
+            id="map-completed-celebration-banner"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <motion.div
+                  animate={{ scale: [1, 1.6, 1], opacity: [0.6, 0.1, 0.6] }}
+                  transition={{ repeat: Infinity, duration: 1.8 }}
+                  className="absolute inset-0 rounded-full bg-emerald-400/50 blur-sm"
+                />
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-300 text-brand-midnight flex items-center justify-center font-black shadow-lg shadow-emerald-500/40 relative z-10">
+                  <Check size={22} className="stroke-[3.5]" />
+                </div>
+              </div>
+
+              <div className="text-left min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">
+                    {slangMode ? "🎉 COURSE TERMINÉE !" : "🎉 RIDE COMPLETED!"}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-white truncate">
+                  {destination ? destination.name : (slangMode ? "Arrivée à destination !" : "Arrived at destination!")}
+                </p>
+              </div>
+            </div>
+
+            <motion.div
+              animate={{ rotate: [0, 15, -15, 0], scale: [1, 1.25, 1] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="text-lg shrink-0 px-2.5 py-1 bg-emerald-500/20 border border-emerald-500/30 rounded-xl"
+            >
+              🏁
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* PASSENGER RIDE STATUS & ETA HUD */}
       {role === 'passenger' && (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && (
