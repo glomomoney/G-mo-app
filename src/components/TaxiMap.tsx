@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import L from 'leaflet';
 import * as d3 from 'd3';
 import { Location, RideStatus } from '../types';
-import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, ChevronUp, RefreshCw, Flame, Info, CornerUpLeft, CornerUpRight, ArrowUp, Volume2, VolumeX, Clock, Layers, Map as MapIcon, Mountain, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Compass, MapPin, Navigation, Locate, Activity, Check, ChevronDown, ChevronUp, RefreshCw, Flame, Info, CornerUpLeft, CornerUpRight, ArrowUp, Volume2, VolumeX, Clock, Layers, Map as MapIcon, Mountain, Globe, ChevronLeft, ChevronRight, Ruler } from 'lucide-react';
 import { LAGOS_LOCATIONS as DOUALA_LOCATIONS, YAOUNDE_LOCATIONS } from '../data';
 import { LiveCountdownTimer } from './LiveCountdownTimer';
 
@@ -224,6 +224,8 @@ interface TaxiMapProps {
   centerCoords?: { lat: number; lng: number } | null;
   recentBookings?: BookingItem[];
   onSelectZoneTarget?: (zone: DemandZone) => void;
+  summaryMetricMode?: 'time' | 'distance';
+  onToggleSummaryMetricMode?: (mode: 'time' | 'distance') => void;
 }
 
 export default function TaxiMap({
@@ -245,7 +247,9 @@ export default function TaxiMap({
   showMapGrid = false,
   centerCoords = null,
   recentBookings = [],
-  onSelectZoneTarget
+  onSelectZoneTarget,
+  summaryMetricMode,
+  onToggleSummaryMetricMode
 }: TaxiMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -273,6 +277,18 @@ export default function TaxiMap({
   const [showItinerary, setShowItinerary] = useState(false);
   const [isNavCompact, setIsNavCompact] = useState(true);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+
+  // Ride Summary Display Metric State (Time vs Distance)
+  const [internalMetricMode, setInternalMetricMode] = useState<'time' | 'distance'>('time');
+  const currentMetricMode = summaryMetricMode ?? internalMetricMode;
+
+  const handleMetricToggle = (mode: 'time' | 'distance') => {
+    if (onToggleSummaryMetricMode) {
+      onToggleSummaryMetricMode(mode);
+    } else {
+      setInternalMetricMode(mode);
+    }
+  };
 
   // New Tactical Navigation Overlay States
   const [isTacticalOverlayMinimized, setIsTacticalOverlayMinimized] = useState(() => {
@@ -2926,10 +2942,35 @@ export default function TaxiMap({
                         <span className="text-emerald-400 uppercase font-black animate-pulse text-xs">
                           🎉 {slangMode ? "Le djo est là !" : "Driver is outside !"}
                         </span>
+                      ) : currentMetricMode === 'distance' ? (
+                        <motion.div 
+                          key="hud-distance"
+                          initial={{ opacity: 0, x: -6 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="flex items-center gap-1.5 text-xs text-brand-gold"
+                        >
+                          <Ruler size={14} className="text-brand-gold shrink-0" />
+                          <span>
+                            {status === 'in_progress' && destination && driverLocation
+                              ? `${(getHaversineDistanceInMeters(driverLocation, destination) / 1000).toFixed(1)} km ${slangMode ? "restant" : "remaining"}`
+                              : pickup && driverLocation
+                                ? `${(getHaversineDistanceInMeters(driverLocation, pickup) / 1000).toFixed(1)} km ${slangMode ? "restant" : "remaining"}`
+                                : `${(totalDistanceRemaining / 1000).toFixed(1)} km remaining`
+                            }
+                          </span>
+                        </motion.div>
                       ) : status === 'in_progress' ? (
-                        <span>
-                          ⏱️ {etaMinutes === 0.5 ? "Less than 1 minute" : `${etaMinutes} minute${etaMinutes > 1 ? 's' : ''}`} to arrive
-                        </span>
+                        <motion.div
+                          key="hud-time"
+                          initial={{ opacity: 0, x: -6 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="flex items-center gap-1.5 text-xs text-brand-gold"
+                        >
+                          <Clock size={14} className="text-brand-gold animate-pulse shrink-0" />
+                          <span>
+                            ⏱️ {etaMinutes === 0.5 ? "Less than 1 minute" : `${etaMinutes} minute${etaMinutes > 1 ? 's' : ''}`} to arrive
+                          </span>
+                        </motion.div>
                       ) : (
                         <LiveCountdownTimer
                           driverLoc={driverLocation}
@@ -2952,12 +2993,61 @@ export default function TaxiMap({
                   </button>
                 </div>
 
-                {/* Extra helper details for passive expanded state */}
-                <div className="pt-2 border-t border-brand-input/30 text-[10px] text-brand-text-muted flex justify-between items-center font-semibold">
-                  <span>{slangMode ? "Service de course sécurisé" : "Secure Ride Tracking"}</span>
-                  <span className="text-[9px] text-brand-gold font-bold px-1.5 py-0.5 rounded bg-brand-gold/10">
-                    {slangMode ? "TAP POUR RÉDIVE" : "TAP TO COLLAPSE"}
+                {/* Visual Segmented Metric Toggle Control */}
+                <div 
+                  className="pt-2 border-t border-brand-input/30 flex items-center justify-between gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-[9px] font-black uppercase text-brand-text-muted tracking-wider flex items-center gap-1">
+                    {slangMode ? "AFFICHER :" : "DISPLAY MODE:"}
                   </span>
+                  <div className="flex bg-brand-deep/90 p-0.5 rounded-lg border border-brand-card/80 relative">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMetricToggle('time');
+                      }}
+                      className={`relative px-2.5 py-1 text-[10px] font-extrabold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                        currentMetricMode === 'time'
+                          ? 'text-brand-midnight font-black'
+                          : 'text-brand-text-muted hover:text-white'
+                      }`}
+                    >
+                      {currentMetricMode === 'time' && (
+                        <motion.div
+                          layoutId="hudMetricPill"
+                          className="absolute inset-0 bg-brand-gold rounded-md shadow-sm -z-10"
+                          transition={{ type: "spring", stiffness: 400, damping: 28 }}
+                        />
+                      )}
+                      <Clock size={11} className={currentMetricMode === 'time' ? 'stroke-[2.5]' : ''} />
+                      <span>{slangMode ? "Temps Estimé" : "Est. Time"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMetricToggle('distance');
+                      }}
+                      className={`relative px-2.5 py-1 text-[10px] font-extrabold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                        currentMetricMode === 'distance'
+                          ? 'text-brand-midnight font-black'
+                          : 'text-brand-text-muted hover:text-white'
+                      }`}
+                    >
+                      {currentMetricMode === 'distance' && (
+                        <motion.div
+                          layoutId="hudMetricPill"
+                          className="absolute inset-0 bg-brand-gold rounded-md shadow-sm -z-10"
+                          transition={{ type: "spring", stiffness: 400, damping: 28 }}
+                        />
+                      )}
+                      <Ruler size={11} className={currentMetricMode === 'distance' ? 'stroke-[2.5]' : ''} />
+                      <span>{slangMode ? "Distance Estimée" : "Est. Distance"}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

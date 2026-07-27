@@ -436,6 +436,7 @@ export default function App() {
   const [driverLoc, setDriverLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [etaMinutes, setEtaMinutes] = useState<number>(3);
   const [etaStatusText, setEtaStatusText] = useState<string>('');
+  const [summaryMetricMode, setSummaryMetricMode] = useState<'time' | 'distance'>('time');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet'); // defaults to wallet as requested!
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [transactionId, setTransactionId] = useState<string | null>(null);
@@ -3765,16 +3766,107 @@ export default function App() {
                             return null;
                           }
 
+                          // Calculate estimated time in minutes & arrival clock time
+                          const calculatedTimeMin = etaMinutes ?? (remainingKm > 0 ? Math.max(1, Math.round(remainingKm * 2.5)) : 1);
+                          const now = new Date();
+                          const arrivalDate = new Date(now.getTime() + Math.round(calculatedTimeMin * 60 * 1000));
+                          const formattedArrivalTime = arrivalDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          const totalKm = getDistanceKm(pickup.lat, pickup.lng, destination ? destination.lat : pickup.lat) || 1;
+
                           return (
-                            <div className="bg-brand-input border border-brand-card/80 p-3.5 rounded-xl space-y-2.5 mt-2" id="passenger-trip-progress">
-                              <div className="flex justify-between items-center text-[10px]">
-                                <span className="text-brand-text-muted font-black uppercase tracking-wider flex items-center gap-1">
-                                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-gold animate-ping" />
-                                  {label}
-                                </span>
-                                <span className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/20 px-2 py-0.5 rounded-md text-[10px] shadow-sm">
-                                  {remainingKm.toFixed(1)} km {slangMode ? "restant" : "remaining"}
-                                </span>
+                            <div className="bg-brand-input border border-brand-card/80 p-3.5 rounded-xl space-y-3 mt-2 shadow-lg" id="passenger-trip-progress">
+                              <div className="flex flex-col gap-2">
+                                <div className="flex justify-between items-center text-[10px]">
+                                  <span className="text-brand-text-muted font-black uppercase tracking-wider flex items-center gap-1.5">
+                                    <span className="inline-block w-2 h-2 rounded-full bg-brand-gold animate-ping" />
+                                    {label}
+                                  </span>
+
+                                  {/* Value Badge that smoothly animates between Estimated Time and Estimated Distance */}
+                                  <AnimatePresence mode="wait">
+                                    {summaryMetricMode === 'time' ? (
+                                      <motion.div
+                                        key="time-value"
+                                        initial={{ opacity: 0, y: -4, scale: 0.92 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 4, scale: 0.92 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/30 px-2.5 py-1 rounded-lg text-[10px] shadow-sm flex items-center gap-1.5"
+                                      >
+                                        <Clock size={12} className="text-brand-gold animate-pulse shrink-0" />
+                                        <span>
+                                          {calculatedTimeMin <= 0.5
+                                            ? (slangMode ? "< 1 min (Arrivée)" : "< 1 min (Arriving)")
+                                            : `${calculatedTimeMin} min ${slangMode ? "estimé" : "ETA"}`}
+                                        </span>
+                                        <span className="text-[9px] text-brand-text-muted font-normal border-l border-brand-gold/20 pl-1.5">
+                                          ~{formattedArrivalTime}
+                                        </span>
+                                      </motion.div>
+                                    ) : (
+                                      <motion.div
+                                        key="distance-value"
+                                        initial={{ opacity: 0, y: -4, scale: 0.92 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 4, scale: 0.92 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/30 px-2.5 py-1 rounded-lg text-[10px] shadow-sm flex items-center gap-1.5"
+                                      >
+                                        <Ruler size={12} className="text-brand-gold shrink-0" />
+                                        <span>
+                                          {remainingKm.toFixed(1)} km {slangMode ? "restant" : "remaining"}
+                                        </span>
+                                        <span className="text-[9px] text-brand-text-muted font-normal border-l border-brand-gold/20 pl-1.5">
+                                          {(totalKm - remainingKm > 0 ? (totalKm - remainingKm).toFixed(1) : '0.0')}/{totalKm.toFixed(1)} km
+                                        </span>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+
+                                {/* Visual Segmented Toggle Switch for Time vs Distance */}
+                                <div className="flex items-center justify-between bg-brand-midnight/80 p-1 rounded-lg border border-brand-card/80">
+                                  <span className="text-[9px] font-black uppercase text-brand-text-muted px-1.5 flex items-center gap-1 tracking-wider">
+                                    {slangMode ? "AFFICHAGE :" : "SUMMARY METRIC:"}
+                                  </span>
+                                  <div className="flex bg-brand-deep p-0.5 rounded-md border border-brand-input/40 relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSummaryMetricMode('time')}
+                                      className={`relative px-2 py-0.5 text-[9.5px] font-extrabold rounded flex items-center gap-1 transition-all z-10 cursor-pointer ${
+                                        summaryMetricMode === 'time' ? 'text-brand-midnight font-black' : 'text-brand-text-muted hover:text-white'
+                                      }`}
+                                    >
+                                      {summaryMetricMode === 'time' && (
+                                        <motion.div
+                                          layoutId="activeSummaryMetricPill"
+                                          className="absolute inset-0 bg-brand-gold rounded shadow-sm -z-10"
+                                          transition={{ type: "spring", stiffness: 450, damping: 30 }}
+                                        />
+                                      )}
+                                      <Clock size={10} className={summaryMetricMode === 'time' ? 'stroke-[2.5]' : ''} />
+                                      <span>{slangMode ? "Temps Estimé" : "Est. Time"}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setSummaryMetricMode('distance')}
+                                      className={`relative px-2 py-0.5 text-[9.5px] font-extrabold rounded flex items-center gap-1 transition-all z-10 cursor-pointer ${
+                                        summaryMetricMode === 'distance' ? 'text-brand-midnight font-black' : 'text-brand-text-muted hover:text-white'
+                                      }`}
+                                    >
+                                      {summaryMetricMode === 'distance' && (
+                                        <motion.div
+                                          layoutId="activeSummaryMetricPill"
+                                          className="absolute inset-0 bg-brand-gold rounded shadow-sm -z-10"
+                                          transition={{ type: "spring", stiffness: 450, damping: 30 }}
+                                        />
+                                      )}
+                                      <Ruler size={10} className={summaryMetricMode === 'distance' ? 'stroke-[2.5]' : ''} />
+                                      <span>{slangMode ? "Distance Estimée" : "Est. Distance"}</span>
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
 
                               {/* Progress bar track */}
