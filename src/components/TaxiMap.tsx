@@ -293,6 +293,7 @@ export default function TaxiMap({
   // Zoom Level State for Floating Indicator in #map-viewport
   const [currentZoom, setCurrentZoom] = useState<number>(12);
   const [isIntegerGlow, setIsIntegerGlow] = useState<boolean>(false);
+  const [isTiltSnapping, setIsTiltSnapping] = useState<boolean>(false);
 
   // New Tactical Navigation Overlay States
   const [isTacticalOverlayMinimized, setIsTacticalOverlayMinimized] = useState(() => {
@@ -782,6 +783,54 @@ export default function TaxiMap({
       map.setView([centerCoords.lat, centerCoords.lng], 14, { animate: true });
     }
   }, [centerCoords]);
+
+  // Visual & Vertical Viewport Snapping Effect on 2D / 3D Tilt Toggle
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Trigger snapping visual effect overlay in #map-viewport
+    setIsTiltSnapping(true);
+    const snapTimeout = setTimeout(() => {
+      setIsTiltSnapping(false);
+    }, 1250);
+
+    // Identify target coordinate to auto-center map view vertically
+    let targetLat: number | undefined;
+    let targetLng: number | undefined;
+
+    if (driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) {
+      targetLat = driverLocation.lat;
+      targetLng = driverLocation.lng;
+    } else if (pickup && isValidCoords(pickup.lat, pickup.lng)) {
+      targetLat = pickup.lat;
+      targetLng = pickup.lng;
+    } else if (centerCoords && isValidCoords(centerCoords.lat, centerCoords.lng)) {
+      targetLat = centerCoords.lat;
+      targetLng = centerCoords.lng;
+    }
+
+    if (targetLat !== undefined && targetLng !== undefined) {
+      map.invalidateSize({ animate: true });
+      map.panTo([targetLat, targetLng], {
+        animate: true,
+        duration: 0.85,
+        easeLinearity: 0.25,
+      });
+    } else {
+      const currentCenter = map.getCenter();
+      map.invalidateSize({ animate: true });
+      map.panTo(currentCenter, {
+        animate: true,
+        duration: 0.85,
+        easeLinearity: 0.25,
+      });
+    }
+
+    return () => {
+      clearTimeout(snapTimeout);
+    };
+  }, [isTilted]);
 
   // Dynamic Map Detail Control Effect (Toggles road names & POIs based on Zoom & Status)
   useEffect(() => {
@@ -2267,6 +2316,46 @@ export default function TaxiMap({
         </div>
       )}
 
+      {/* 2D / 3D Perspective Visual Snapping Effect Overlay */}
+      <AnimatePresence>
+        {isTiltSnapping && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 pointer-events-none z-[990] flex flex-col items-center justify-center overflow-hidden"
+            id="map-viewport-snap-overlay"
+          >
+            {/* Animated Vertical Center Alignment Axis */}
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-gradient-to-b from-transparent via-brand-gold to-transparent shadow-[0_0_16px_#ffd343] animate-pulse" />
+            
+            {/* Horizontal Crosshair Reference */}
+            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[1px] bg-gradient-to-r from-transparent via-brand-gold/60 to-transparent" />
+
+            {/* Central Target Snapping Ring & Reticle */}
+            <div className="relative flex items-center justify-center">
+              <div className="absolute w-32 h-32 rounded-full border-2 border-brand-gold/50 animate-ping opacity-60" />
+              <div className="w-20 h-20 rounded-full border-2 border-brand-gold bg-brand-midnight/80 backdrop-blur-md flex items-center justify-center shadow-[0_0_30px_rgba(255,211,67,0.6)]">
+                <div className="w-3 h-3 rounded-full bg-brand-gold animate-bounce shadow-[0_0_10px_#ffd343]" />
+              </div>
+            </div>
+
+            {/* Vertical Snapping Mode Badge */}
+            <div className="mt-6 bg-brand-midnight/95 border-2 border-brand-gold/90 px-3.5 py-1.5 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.8)] shadow-brand-gold/20 flex items-center gap-2 backdrop-blur-md">
+              <span className="w-2 h-2 rounded-full bg-brand-gold animate-ping" />
+              <p className="text-[10px] font-black tracking-widest text-brand-gold uppercase font-mono">
+                {isTilted === 'isometric' 
+                  ? (slangMode ? "🎯 VUE 3D ISOMÉTRIQUE CENTRÉE (45°)" : "🎯 45° ISOMETRIC VIEW CENTERED")
+                  : (isTilted === true || isTilted === 'tilted')
+                    ? (slangMode ? "🎯 VUE 3D PERSPECTIVE CENTRÉE (54°)" : "🎯 54° PERSPECTIVE VIEW CENTERED")
+                    : (slangMode ? "🎯 VUE 2D PLATE CENTRÉE (0°)" : "🎯 2D FLAT VIEW CENTERED")}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Map Detail Mode Adaptive Badge */}
       <div 
         id="map-detail-badge"
@@ -2505,41 +2594,32 @@ export default function TaxiMap({
         </span>
       </button>
 
-      {/* FLOATING DYNAMIC ZOOM LEVEL INDICATOR IN MAP VIEWPORT */}
+      {/* FLOATING METALLIC GOLD ZOOM LEVEL CHIP OVERLAY IN MAP VIEWPORT */}
       <motion.div
         id="map-zoom-indicator"
         key={`zoom-ind-${currentZoom}`}
-        initial={{ scale: 0.95 }}
+        initial={{ scale: 0.92, opacity: 0 }}
         animate={{ 
-          scale: isIntegerGlow ? [1, 1.25, 1.1, 1] : [1, 1.06, 1],
+          scale: isIntegerGlow ? [1, 1.15, 1.05, 1] : 1,
+          opacity: 1,
           boxShadow: isIntegerGlow
-            ? [
-                "0 0 0px rgba(255,211,67,0)",
-                "0 0 25px rgba(255,211,67,0.9)",
-                "0 0 10px rgba(255,211,67,0.4)"
-              ]
-            : "0 10px 25px -5px rgba(0, 0, 0, 0.5)"
+            ? "0 0 25px rgba(255,211,67,0.85)"
+            : "0 6px 20px rgba(0, 0, 0, 0.45)"
         }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-        className={`absolute z-[1010] flex items-center gap-2 px-3 py-1.5 rounded-xl border backdrop-blur-md select-none transition-all duration-300 ${
-          isConsoleExpanded ? 'bottom-[225px] left-4' : 'bottom-4 left-20'
-        } ${
-          isIntegerGlow
-            ? 'bg-brand-midnight/95 border-brand-gold text-brand-gold shadow-[0_0_22px_rgba(255,211,67,0.85)] ring-2 ring-brand-gold/70'
-            : 'bg-brand-midnight/90 border-brand-gold/35 text-white hover:border-brand-gold/60 shadow-xl'
-        }`}
-        title={slangMode ? "Niveau de Zoom Actuel (Échelle Visuelle)" : "Current Map Visual Zoom Scale"}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="absolute top-3.5 left-3.5 z-[1010] flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-200/90 bg-gradient-to-r from-amber-300 via-brand-gold to-yellow-500 text-brand-midnight shadow-[0_4px_16px_rgba(255,211,67,0.4)] select-none transition-all duration-300 backdrop-blur-md"
+        title={slangMode ? "Niveau de Zoom Leaflet Actuel (Échelle Visuelle)" : "Current Leaflet Map Visual Zoom Scale"}
       >
         <div className="relative flex items-center justify-center">
-          <span className={`w-2 h-2 rounded-full ${isIntegerGlow ? 'bg-brand-gold animate-ping' : 'bg-brand-gold/80'}`} />
-          <span className="w-1.5 h-1.5 rounded-full bg-brand-gold absolute" />
+          <span className={`w-2 h-2 rounded-full ${isIntegerGlow ? 'bg-brand-midnight animate-ping' : 'bg-brand-midnight/90'}`} />
+          <span className="w-1.5 h-1.5 rounded-full bg-brand-midnight absolute" />
         </div>
 
         <div className="flex items-center gap-1 font-mono">
-          <span className="text-[9px] font-black uppercase tracking-wider text-brand-text-muted font-sans">
+          <span className="text-[9px] font-black uppercase tracking-wider text-brand-midnight/80 font-sans">
             {slangMode ? "ZOOM" : "ZOOM"}
           </span>
-          <strong className={`text-xs font-black tracking-tight ${isIntegerGlow ? 'text-brand-gold scale-105' : 'text-white'}`}>
+          <strong className="text-xs font-black tracking-tight text-brand-midnight">
             {currentZoom.toFixed(1)}x
           </strong>
         </div>
@@ -2548,9 +2628,9 @@ export default function TaxiMap({
         {isIntegerGlow && (
           <motion.span
             initial={{ scale: 0.8, opacity: 1 }}
-            animate={{ scale: 1.45, opacity: 0 }}
-            transition={{ duration: 0.65, ease: "easeOut" }}
-            className="absolute inset-0 rounded-xl border-2 border-brand-gold pointer-events-none"
+            animate={{ scale: 1.5, opacity: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="absolute inset-0 rounded-full border-2 border-brand-midnight pointer-events-none"
           />
         )}
       </motion.div>
