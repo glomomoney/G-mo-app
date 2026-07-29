@@ -1,21 +1,25 @@
 {
   "short_name": "Wanda",
-  "name": "Wanda Taxi Booking",
+  "name": "Wanda Taxi",
   "icons": [
     {
       "src": "/wanda_logo.jpg",
       "type": "image/jpeg",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
       "src": "/wanda_logo.jpg",
       "type": "image/jpeg",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
   "start_url": "/",
   "background_color": "#070514",
-  "theme_color": "#e2c18d",
+  "theme_color": "#ffd343",
   "display": "standalone",
-  "orientation": "portrait"
+  "orientation": "portrait",
+  "categories": ["travel", "transportation"],
+  "description": "Application mobile de transport urbain Wanda."
 }

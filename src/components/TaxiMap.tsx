@@ -290,6 +290,10 @@ export default function TaxiMap({
     }
   };
 
+  // Zoom Level State for Floating Indicator in #map-viewport
+  const [currentZoom, setCurrentZoom] = useState<number>(12);
+  const [isIntegerGlow, setIsIntegerGlow] = useState<boolean>(false);
+
   // New Tactical Navigation Overlay States
   const [isTacticalOverlayMinimized, setIsTacticalOverlayMinimized] = useState(() => {
     const saved = localStorage.getItem('wanda_nav_overlay_minimized');
@@ -784,9 +788,23 @@ export default function TaxiMap({
     const map = mapRef.current;
     if (!map) return;
 
+    let glowTimeout: any = null;
+
     const handleZoomOrStatusChange = () => {
       const zoom = map.getZoom();
-      
+      const roundedZoom = Math.round(zoom * 10) / 10;
+      setCurrentZoom(roundedZoom);
+
+      // Trigger integer zoom glow when close to exact integer zoom level
+      const distToInteger = Math.abs(zoom - Math.round(zoom));
+      if (distToInteger < 0.08) {
+        setIsIntegerGlow(true);
+        if (glowTimeout) clearTimeout(glowTimeout);
+        glowTimeout = setTimeout(() => {
+          setIsIntegerGlow(false);
+        }, 750);
+      }
+
       let opacity = 1.0;
       let mode: 'clean' | 'moderate' | 'full' = 'full';
 
@@ -816,11 +834,14 @@ export default function TaxiMap({
     // Run immediately to sync on status change
     handleZoomOrStatusChange();
 
-    // Bind event listeners
+    // Bind event listeners for real-time and end of zoom gestures
+    map.on('zoom', handleZoomOrStatusChange);
     map.on('zoomend', handleZoomOrStatusChange);
 
     return () => {
+      map.off('zoom', handleZoomOrStatusChange);
       map.off('zoomend', handleZoomOrStatusChange);
+      if (glowTimeout) clearTimeout(glowTimeout);
     };
   }, [status, showRoadNames]);
 
@@ -2483,6 +2504,56 @@ export default function TaxiMap({
           {isResolving ? "Find" : "Gps"}
         </span>
       </button>
+
+      {/* FLOATING DYNAMIC ZOOM LEVEL INDICATOR IN MAP VIEWPORT */}
+      <motion.div
+        id="map-zoom-indicator"
+        key={`zoom-ind-${currentZoom}`}
+        initial={{ scale: 0.95 }}
+        animate={{ 
+          scale: isIntegerGlow ? [1, 1.25, 1.1, 1] : [1, 1.06, 1],
+          boxShadow: isIntegerGlow
+            ? [
+                "0 0 0px rgba(255,211,67,0)",
+                "0 0 25px rgba(255,211,67,0.9)",
+                "0 0 10px rgba(255,211,67,0.4)"
+              ]
+            : "0 10px 25px -5px rgba(0, 0, 0, 0.5)"
+        }}
+        transition={{ duration: 0.35, ease: "easeOut" }}
+        className={`absolute z-[1010] flex items-center gap-2 px-3 py-1.5 rounded-xl border backdrop-blur-md select-none transition-all duration-300 ${
+          isConsoleExpanded ? 'bottom-[225px] left-4' : 'bottom-4 left-20'
+        } ${
+          isIntegerGlow
+            ? 'bg-brand-midnight/95 border-brand-gold text-brand-gold shadow-[0_0_22px_rgba(255,211,67,0.85)] ring-2 ring-brand-gold/70'
+            : 'bg-brand-midnight/90 border-brand-gold/35 text-white hover:border-brand-gold/60 shadow-xl'
+        }`}
+        title={slangMode ? "Niveau de Zoom Actuel (Échelle Visuelle)" : "Current Map Visual Zoom Scale"}
+      >
+        <div className="relative flex items-center justify-center">
+          <span className={`w-2 h-2 rounded-full ${isIntegerGlow ? 'bg-brand-gold animate-ping' : 'bg-brand-gold/80'}`} />
+          <span className="w-1.5 h-1.5 rounded-full bg-brand-gold absolute" />
+        </div>
+
+        <div className="flex items-center gap-1 font-mono">
+          <span className="text-[9px] font-black uppercase tracking-wider text-brand-text-muted font-sans">
+            {slangMode ? "ZOOM" : "ZOOM"}
+          </span>
+          <strong className={`text-xs font-black tracking-tight ${isIntegerGlow ? 'text-brand-gold scale-105' : 'text-white'}`}>
+            {currentZoom.toFixed(1)}x
+          </strong>
+        </div>
+
+        {/* Momentary Integer Zoom Pulse Ring Effect */}
+        {isIntegerGlow && (
+          <motion.span
+            initial={{ scale: 0.8, opacity: 1 }}
+            animate={{ scale: 1.45, opacity: 0 }}
+            transition={{ duration: 0.65, ease: "easeOut" }}
+            className="absolute inset-0 rounded-xl border-2 border-brand-gold pointer-events-none"
+          />
+        )}
+      </motion.div>
 
       {/* FLOATING LIVE TURN-BY-TURN NAVIGATION HUD */}
       <AnimatePresence mode="wait">

@@ -2711,6 +2711,18 @@ export default function App() {
         {/* Global Toolbar and Dashboard controllers */}
         <div className="flex items-center gap-1.5 sm:gap-3">
           
+          {/* Header PWA Install App Launcher Button */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-pwa-install'))}
+            className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/40 px-2 py-1 rounded-xl text-[9px] sm:text-[10px] font-black tracking-wide flex items-center gap-1 cursor-pointer transition shadow-sm shrink-0"
+            id="pwa-header-install-btn"
+            title={language === 'fr' ? "Installer l'application Wanda sur écran d'accueil (iOS & Android)" : "Install Wanda app on home screen (iOS & Android)"}
+          >
+            <img src="/wanda_logo.jpg" alt="Wanda icon" className="w-3.5 h-3.5 rounded object-cover border border-brand-gold/60 shrink-0" />
+            <span className="hidden xs:inline">{language === 'fr' ? "App Mobile" : "Install App"}</span>
+            <Download size={11} className="text-brand-gold animate-pulse shrink-0" />
+          </button>
+
           {/* Admin Switch (Independent URL Link) */}
           <button
             onClick={() => setIsAdminOpen(true)}
@@ -3771,7 +3783,7 @@ export default function App() {
                           const now = new Date();
                           const arrivalDate = new Date(now.getTime() + Math.round(calculatedTimeMin * 60 * 1000));
                           const formattedArrivalTime = arrivalDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                          const totalKm = getDistanceKm(pickup.lat, pickup.lng, destination ? destination.lat : pickup.lat) || 1;
+                          const totalKm = getDistanceKm(pickup.lat, pickup.lng, destination ? destination.lat : pickup.lat, destination ? destination.lng : pickup.lng) || 1;
 
                           return (
                             <div className="bg-brand-input border border-brand-card/80 p-3.5 rounded-xl space-y-3 mt-2 shadow-lg" id="passenger-trip-progress">
@@ -5409,6 +5421,8 @@ export default function App() {
             showMapGrid={showMapGrid}
             centerCoords={centerCoords}
             recentBookings={recentBookings}
+            summaryMetricMode={summaryMetricMode}
+            onToggleSummaryMetricMode={setSummaryMetricMode}
             onSelectZoneTarget={(zone) => {
               if (role === 'driver') {
                 setDriverLoc({ lat: zone.center[0], lng: zone.center[1] });
@@ -6246,7 +6260,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Progressive Web App prompt */}
-      <InstallPrompt />
+      <InstallPrompt language={language} />
 
       {/* IN-APP CALL OVERLAY */}
       <AnimatePresence>

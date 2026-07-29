@@ -1,34 +1,46 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Download, X, Smartphone, ArrowUpToLine, HelpCircle, ShieldCheck } from 'lucide-react';
+import { Download, X, Smartphone, ArrowUpToLine, ShieldCheck, Copy, Check, Share2, Sparkles } from 'lucide-react';
 
-export default function InstallPrompt() {
+interface InstallPromptProps {
+  language?: 'en' | 'fr';
+}
+
+export default function InstallPrompt({ language: propLanguage }: InstallPromptProps) {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [deviceOS, setDeviceOS] = useState<'ios' | 'android' | 'other'>('other');
+  const [activeTab, setActiveTab] = useState<'ios' | 'android'>('ios');
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Determine current language ('fr' or 'en')
+  const currentLang = propLanguage || (localStorage.getItem('wanda_language') as 'en' | 'fr') || 'fr';
+  const isFr = currentLang === 'fr';
 
   useEffect(() => {
     // Detect OS
     const userAgent = window.navigator.userAgent.toLowerCase();
     if (/iphone|ipad|ipod/.test(userAgent)) {
       setDeviceOS('ios');
+      setActiveTab('ios');
     } else if (/android/.test(userAgent)) {
       setDeviceOS('android');
+      setActiveTab('android');
     } else {
       setDeviceOS('other');
+      setActiveTab('ios');
     }
 
-    // Detect if app is already launched as a standalone PWA
+    // Check standalone mode strictly
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          (window.navigator as any).standalone === true;
     
     if (isStandalone) {
       setIsInstalled(true);
-      return;
     } else {
-      // Auto-show persistent installation banner for testers if not standalone and not dismissed
+      // Auto-show banner if not dismissed
       const isDismissed = sessionStorage.getItem('pwa-prompt-dismissed') === 'true';
       if (!isDismissed) {
         setShowPrompt(true);
@@ -36,18 +48,20 @@ export default function InstallPrompt() {
     }
 
     const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent browser default behavior
       e.preventDefault();
-      // Save prompt event
       setDeferredPrompt(e);
-      // Auto-show banner to invite installation
       const isDismissed = sessionStorage.getItem('pwa-prompt-dismissed') === 'true';
       if (!isDismissed) {
         setShowPrompt(true);
       }
     };
 
+    const handleCustomOpenTrigger = () => {
+      setShowInstructions(true);
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('open-pwa-install', handleCustomOpenTrigger);
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
@@ -59,69 +73,79 @@ export default function InstallPrompt() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('open-pwa-install', handleCustomOpenTrigger);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
-      // Show native install prompt
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      console.log(`PWA install prompt user choice outcome: ${outcome}`);
+      console.log(`PWA install prompt choice: ${outcome}`);
       setDeferredPrompt(null);
       setShowPrompt(false);
     } else {
-      // No native prompt available (e.g. inside an iframe, or on iOS Safari), show visual guides
       setShowInstructions(true);
     }
   };
 
-  if (isInstalled) return null;
+  const handleCopyAppUrl = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
 
   return (
     <>
-      {/* Floating launcher trigger - ALWAYS visible at the bottom right to facilitate easy mobile installation */}
-      <div className="fixed bottom-24 right-4 z-[999] flex flex-col items-end" id="pwa-floating-trigger">
+      {/* Floating launcher trigger - ALWAYS VISIBLE AT HIGH Z-INDEX (z-[10000]) */}
+      <div className="fixed bottom-20 right-3 sm:bottom-24 sm:right-4 z-[10000] flex flex-col items-end" id="pwa-floating-trigger">
         <motion.button
           onClick={() => setShowInstructions(true)}
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className="relative flex items-center gap-2.5 bg-brand-deep border border-brand-gold/30 hover:border-brand-gold/80 text-white px-3 py-2 rounded-2xl shadow-xl shadow-brand-gold/10 transition cursor-pointer group"
+          className="relative flex items-center gap-2.5 bg-brand-midnight/95 backdrop-blur-md border-2 border-brand-gold/60 hover:border-brand-gold text-white px-3 py-2 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.6)] shadow-brand-gold/20 transition cursor-pointer group active:scale-95"
+          id="pwa-install-floating-btn"
+          title={isFr ? "Installer Wanda sur écran d'accueil (iOS & Android)" : "Install Wanda on home screen (iOS & Android)"}
         >
-          {/* Pulsing indicator */}
-          <span className="absolute -top-1 -right-1 flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-gold opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-gold"></span>
+          {/* Glowing indicator */}
+          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-gold opacity-80"></span>
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-brand-gold border-2 border-brand-midnight"></span>
           </span>
 
           {/* App Logo */}
           <img 
             src="/wanda_logo.jpg" 
-            alt="Wanda Logo" 
-            className="w-8 h-8 rounded-lg object-cover border border-brand-gold shrink-0 shadow-sm"
+            alt="Wanda App Icon" 
+            className="w-8 h-8 rounded-xl object-cover border border-brand-gold/80 shrink-0 shadow-sm"
             referrerPolicy="no-referrer"
           />
 
           <div className="text-left">
-            <p className="text-[10px] font-black tracking-widest text-brand-gold leading-none uppercase">Install App</p>
-            <p className="text-[9px] text-brand-text-muted mt-0.5 leading-none font-semibold">Télécharger Wanda</p>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-black tracking-widest text-brand-gold leading-none uppercase">
+                {isFr ? "INSTALLER APPLI" : "INSTALL APP"}
+              </span>
+              <Download size={10} className="text-brand-gold animate-bounce" />
+            </div>
+            <p className="text-[9px] text-brand-text-muted mt-0.5 leading-none font-extrabold">Wanda Mobile</p>
           </div>
         </motion.button>
       </div>
 
       <AnimatePresence>
         {/* Banner prompt shown dynamically on load if not installed (non-standalone mode) */}
-        {showPrompt && !showInstructions && (
-          <div className="fixed bottom-0 left-0 right-0 md:left-auto md:right-4 md:bottom-4 z-[1500] w-full md:max-w-md p-0 md:p-2">
+        {showPrompt && !showInstructions && !isInstalled && (
+          <div className="fixed bottom-0 left-0 right-0 md:left-auto md:right-4 md:bottom-4 z-[9990] w-full md:max-w-md p-0 md:p-2">
             <motion.div
               initial={{ opacity: 0, y: 100 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 100 }}
               transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-              className="bg-brand-deep/95 backdrop-blur-lg border-t md:border border-brand-gold/30 rounded-t-3xl md:rounded-2xl p-5 shadow-2xl flex flex-col gap-4 relative text-white pb-8 md:pb-5"
+              className="bg-brand-deep/95 backdrop-blur-lg border-t md:border border-brand-gold/40 rounded-t-3xl md:rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col gap-3 relative text-white pb-8 md:pb-5"
               id="pwa-install-banner"
             >
               {/* Close Button */}
@@ -131,155 +155,251 @@ export default function InstallPrompt() {
                   sessionStorage.setItem('pwa-prompt-dismissed', 'true');
                 }}
                 className="absolute top-3.5 right-3.5 text-brand-text-muted hover:text-brand-gold p-1.5 rounded-full hover:bg-brand-input cursor-pointer transition"
-                title="Dismiss"
+                title={isFr ? "Masquer" : "Dismiss"}
               >
                 <X size={18} />
               </button>
 
-              <div className="flex items-start gap-4 pr-6">
+              <div className="flex items-start gap-3.5 pr-6">
                 <img 
                   src="/wanda_logo.jpg" 
                   alt="Wanda Logo" 
-                  className="w-14 h-14 rounded-xl object-cover border-2 border-brand-gold shadow-gold-glow shrink-0"
+                  className="w-13 h-13 rounded-xl object-cover border-2 border-brand-gold shadow-gold-glow shrink-0"
                   referrerPolicy="no-referrer"
                 />
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="bg-brand-gold/10 border border-brand-gold/30 text-brand-gold text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded">
-                      PWA App
+                    <span className="bg-brand-gold/15 border border-brand-gold/40 text-brand-gold text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded">
+                      {isFr ? "Application PWA" : "PWA Application"}
                     </span>
-                    <p className="text-sm font-black text-white leading-none">Installer Wanda</p>
+                    <p className="text-sm font-black text-white leading-none">
+                      {isFr ? "Installer Wanda Taxi" : "Install Wanda Taxi"}
+                    </p>
                   </div>
                   <p className="text-xs text-brand-text-muted leading-relaxed font-semibold">
-                    Ajoutez Wanda à votre écran d'accueil pour l'utiliser comme une vraie appli mobile (suivi en direct, rapidité, fluidité).
+                    {isFr 
+                      ? "Installez Wanda directement sur votre tableau de bord iOS ou Android (icône dédiée, rapidité, accès hors ligne)."
+                      : "Install Wanda directly on your iOS or Android home screen (dedicated icon, fast speed, offline support)."
+                    }
                   </p>
                 </div>
               </div>
 
-              <div className="flex gap-2.5 mt-1">
+              <div className="flex gap-2 mt-1">
                 <button
                   onClick={handleInstallClick}
-                  className="flex-1 bg-brand-gold hover:bg-brand-gold/95 text-brand-midnight text-xs py-3 px-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-lg shadow-brand-gold/20 cursor-pointer active:scale-95 transition"
+                  className="flex-1 bg-brand-gold hover:bg-brand-gold/95 text-brand-midnight text-xs py-2.5 px-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-lg shadow-brand-gold/20 cursor-pointer active:scale-95 transition"
                 >
                   <Download size={15} className="stroke-[2.5]" />
-                  <span>Installer l'application</span>
+                  <span>{isFr ? "Installer l'appli" : "Install App"}</span>
                 </button>
                 <button
                   onClick={() => {
                     setShowPrompt(false);
                     sessionStorage.setItem('pwa-prompt-dismissed', 'true');
                   }}
-                  className="bg-brand-input/80 hover:bg-brand-input hover:text-white border border-brand-input/60 text-brand-text-muted text-xs py-3 px-5 rounded-xl font-bold cursor-pointer active:scale-95 transition"
+                  className="bg-brand-input/80 hover:bg-brand-input hover:text-white border border-brand-input/60 text-brand-text-muted text-xs py-2.5 px-4 rounded-xl font-bold cursor-pointer active:scale-95 transition"
                 >
-                  Plus tard
+                  {isFr ? "Plus tard" : "Maybe later"}
                 </button>
               </div>
             </motion.div>
           </div>
         )}
 
-        {/* Beautiful Installation Guide Modal (Visual Mockup & Guide) */}
+        {/* Full Installation Modal (Visual Device Dashboard Mockup & Step-by-Step Instructions) */}
         {showInstructions && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[10005] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-brand-deep border border-brand-gold/20 rounded-3xl p-6 max-w-sm w-full text-white shadow-2xl relative"
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              className="bg-brand-deep border-2 border-brand-gold/30 rounded-3xl p-5 sm:p-6 max-w-md w-full text-white shadow-2xl relative max-h-[92vh] overflow-y-auto"
             >
               {/* Close Button */}
               <button
                 onClick={() => setShowInstructions(false)}
-                className="absolute top-4 right-4 text-brand-text-muted hover:text-brand-gold p-1.5 rounded-full hover:bg-brand-input cursor-pointer transition"
+                className="absolute top-4 right-4 text-brand-text-muted hover:text-brand-gold p-1.5 rounded-full hover:bg-brand-input cursor-pointer transition z-10"
               >
-                <X size={18} />
+                <X size={20} />
               </button>
 
-              {/* Title & Slogan */}
-              <div className="text-center mt-2 flex flex-col items-center">
-                <div className="relative mb-3">
-                  <div className="absolute inset-0 bg-brand-gold/20 blur-xl rounded-full scale-125 animate-pulse"></div>
+              {/* Title & Branding */}
+              <div className="text-center mt-1 flex flex-col items-center">
+                <div className="relative mb-2">
+                  <div className="absolute inset-0 bg-brand-gold/25 blur-xl rounded-full scale-125 animate-pulse"></div>
                   <img 
                     src="/wanda_logo.jpg" 
-                    alt="Wanda Launcher Icon" 
-                    className="relative w-20 h-20 rounded-2xl object-cover border-2 border-brand-gold shadow-gold-glow-lg"
+                    alt="Wanda Mobile App Launcher Icon" 
+                    className="relative w-18 h-18 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-brand-gold shadow-gold-glow"
                     referrerPolicy="no-referrer"
                   />
-                  <span className="absolute -bottom-1.5 -right-1.5 bg-brand-gold text-brand-midnight rounded-full p-1 border border-brand-deep shadow">
-                    <Download size={12} className="stroke-[3]" />
+                  <span className="absolute -bottom-1 -right-1 bg-brand-gold text-brand-midnight rounded-full p-1 border-2 border-brand-deep shadow-md">
+                    <Sparkles size={13} className="fill-brand-midnight" />
                   </span>
                 </div>
                 
-                <h3 className="text-lg font-black tracking-tight text-brand-gold uppercase">WANDA MOBILE</h3>
+                <h3 className="text-lg font-black tracking-tight text-brand-gold uppercase flex items-center gap-1.5">
+                  <span>WANDA MOBILE PWA</span>
+                </h3>
                 <p className="text-[10px] text-brand-text-muted italic font-bold">Tu wanda, on te transporte.</p>
               </div>
 
-              {/* Mobile Device Mockup Visual */}
-              <div className="my-5 p-3.5 bg-brand-card/40 border border-brand-input rounded-2xl text-center">
-                <p className="text-[11px] text-brand-text-muted font-bold mb-2">INSTALLATION MOBILE DIRECTE</p>
-                <div className="flex items-center justify-center gap-3">
-                  <div className="w-14 h-14 bg-brand-deep rounded-xl border border-brand-input/80 flex flex-col items-center justify-center text-center p-1 relative shadow">
-                    <img 
-                      src="/wanda_logo.jpg" 
-                      alt="Wanda icon" 
-                      className="w-8 h-8 rounded-lg object-cover border border-brand-gold/40"
-                      referrerPolicy="no-referrer"
-                    />
-                    <span className="text-[8px] font-black text-white mt-1 scale-90">Wanda</span>
+              {/* Visual Mobile Dashboard Mockup (iOS / Android Home Screen Icon Preview) */}
+              <div className="my-4 p-3 bg-brand-card/60 border border-brand-gold/25 rounded-2xl text-center shadow-inner">
+                <div className="flex justify-between items-center mb-2 px-1">
+                  <p className="text-[10px] font-black uppercase text-brand-gold tracking-wider flex items-center gap-1">
+                    <Smartphone size={12} />
+                    <span>{isFr ? "Aperçu de l'Icône sur Écran d'Accueil" : "Home Screen Icon Preview"}</span>
+                  </p>
+                  <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
+                    iOS & Android
+                  </span>
+                </div>
+
+                <div className="bg-brand-midnight/90 border border-brand-input p-3 rounded-xl flex items-center justify-center gap-4 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-brand-gold/5 rounded-full blur-lg pointer-events-none" />
+                  
+                  {/* Smartphone Icon Preview Box */}
+                  <div className="flex flex-col items-center group cursor-default">
+                    <div className="w-14 h-14 bg-brand-deep rounded-2xl border-2 border-brand-gold/80 flex items-center justify-center p-1 shadow-lg shadow-brand-gold/15 relative">
+                      <img 
+                        src="/wanda_logo.jpg" 
+                        alt="Wanda icon" 
+                        className="w-full h-full rounded-xl object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="absolute -top-1 -right-1 bg-brand-gold text-brand-midnight text-[7px] font-black px-1 rounded-full">
+                        APP
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-black text-white mt-1.5 tracking-tight">Wanda</span>
                   </div>
-                  <div className="text-left max-w-[180px]">
-                    <p className="text-[11px] font-extrabold text-white">Application Intégrale</p>
-                    <p className="text-[9px] text-brand-text-muted">S'installe instantanément sans passer par l'App Store ou Google Play.</p>
+
+                  {/* Context Info */}
+                  <div className="text-left max-w-[200px] space-y-1">
+                    <p className="text-[11px] font-extrabold text-white leading-tight">
+                      {isFr ? "Tableau de bord Mobile" : "Mobile Home Screen"}
+                    </p>
+                    <p className="text-[9.5px] text-brand-text-muted leading-relaxed font-medium">
+                      {isFr 
+                        ? <>L'icône <strong className="text-brand-gold">Wanda</strong> s'affiche directement parmi vos applications mobiles avec le logo officiel.</>
+                        : <>The <strong className="text-brand-gold">Wanda</strong> icon appears directly on your mobile home screen with the official logo.</>
+                      }
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Instruction Steps based on OS */}
+              {/* OS Selection Tabs */}
+              <div className="flex bg-brand-card p-1 rounded-xl border border-brand-input mb-3">
+                <button
+                  onClick={() => setActiveTab('ios')}
+                  className={`flex-1 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeTab === 'ios' ? 'bg-brand-gold text-brand-midnight shadow' : 'text-brand-text-muted hover:text-white'
+                  }`}
+                >
+                  <span> iPhone / iPad (iOS)</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('android')}
+                  className={`flex-1 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeTab === 'android' ? 'bg-brand-gold text-brand-midnight shadow' : 'text-brand-text-muted hover:text-white'
+                  }`}
+                >
+                  <span>🤖 Android / Chrome</span>
+                </button>
+              </div>
+
+              {/* Instructions Content */}
               <div className="space-y-3 text-xs leading-relaxed">
                 {deferredPrompt ? (
-                  <div className="bg-brand-gold/10 border border-brand-gold/30 rounded-xl p-3 flex flex-col gap-2">
-                    <div className="flex gap-2 items-start">
-                      <ShieldCheck size={16} className="text-brand-gold shrink-0 mt-0.5" />
+                  <div className="bg-brand-gold/10 border border-brand-gold/40 rounded-2xl p-3.5 flex flex-col gap-2.5">
+                    <div className="flex gap-2.5 items-start">
+                      <ShieldCheck size={18} className="text-brand-gold shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-extrabold text-brand-gold">Installation Standard</p>
-                        <p className="text-[10px] text-brand-text-muted">Votre navigateur prend en charge l'installation directe en 1 clic.</p>
+                        <p className="font-extrabold text-brand-gold text-xs">
+                          {isFr ? "Installation Automatique Disponible" : "Automatic Installation Available"}
+                        </p>
+                        <p className="text-[10.5px] text-brand-text-muted mt-0.5">
+                          {isFr 
+                            ? "Votre navigateur prend en charge l'installation directe en 1 clic."
+                            : "Your browser supports 1-click direct installation."
+                          }
+                        </p>
                       </div>
                     </div>
                     <button
                       onClick={handleInstallClick}
-                      className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-2 rounded-xl text-center shadow cursor-pointer transition flex items-center justify-center gap-1"
+                      className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-2.5 rounded-xl text-center shadow-lg cursor-pointer transition flex items-center justify-center gap-2 text-xs active:scale-95"
                     >
-                      <Download size={13} />
-                      Installer maintenant
+                      <Download size={15} className="stroke-[3]" />
+                      {isFr ? "Installer Wanda Maintenant" : "Install Wanda Now"}
                     </button>
                   </div>
                 ) : (
                   <>
-                    {/* iOS / Safari Specific instructions */}
-                    {(deviceOS === 'ios' || deviceOS === 'other') && (
-                      <div className="bg-brand-card border border-brand-input rounded-xl p-3 space-y-2">
-                        <div className="flex gap-2">
-                          <span className="bg-brand-gold text-brand-midnight text-[9px] font-black px-1.5 py-0.5 rounded h-fit shrink-0">iOS / Safari</span>
-                          <p className="font-extrabold text-white text-[11px]">Comment installer sur iPhone / iPad :</p>
+                    {activeTab === 'ios' && (
+                      <div className="bg-brand-card border border-brand-input rounded-2xl p-3.5 space-y-2.5">
+                        <div className="flex items-center gap-2 border-b border-brand-input/60 pb-2">
+                          <span className="bg-brand-gold text-brand-midnight text-[9px] font-black px-2 py-0.5 rounded">iOS / Safari</span>
+                          <p className="font-extrabold text-white text-xs">
+                            {isFr ? "Ajouter à l'écran d'accueil Safari :" : "Add to Safari Home Screen:"}
+                          </p>
                         </div>
-                        <ol className="list-decimal list-inside text-[10px] text-brand-text-muted space-y-1.5 pl-1">
-                          <li>Ouvrez l'application dans <strong className="text-white">Safari</strong></li>
-                          <li>Appuyez sur le bouton de <strong className="text-white flex inline-flex items-center gap-0.5 bg-brand-input px-1.5 py-0.5 rounded text-[9px]">Partage <ArrowUpToLine size={10} className="inline" /></strong> en bas</li>
-                          <li>Faites défiler et appuyez sur <strong className="text-brand-gold">"Sur l'écran d'accueil"</strong></li>
+                        <ol className="list-decimal list-inside text-[11px] text-brand-text-muted space-y-2 font-medium pl-0.5">
+                          <li>
+                            {isFr ? <>Ouvrez ce lien dans le navigateur <strong className="text-white">Safari</strong>.</> : <>Open this link in <strong className="text-white">Safari</strong> browser.</>}
+                          </li>
+                          <li>
+                            {isFr 
+                              ? <>Appuyez sur l'icône de <strong className="text-white inline-flex items-center gap-1 bg-brand-input px-1.5 py-0.5 rounded text-[10px] border border-brand-input/80">Partage <ArrowUpToLine size={11} className="inline text-brand-gold" /></strong> en bas de Safari.</>
+                              : <>Tap the <strong className="text-white inline-flex items-center gap-1 bg-brand-input px-1.5 py-0.5 rounded text-[10px] border border-brand-input/80">Share <ArrowUpToLine size={11} className="inline text-brand-gold" /></strong> button at the bottom of Safari.</>
+                            }
+                          </li>
+                          <li>
+                            {isFr 
+                              ? <>Défilez vers le bas et appuyez sur <strong className="text-brand-gold font-bold">"Sur l'écran d'accueil"</strong> (ou "Add to Home Screen").</>
+                              : <>Scroll down and tap <strong className="text-brand-gold font-bold">"Add to Home Screen"</strong>.</>
+                            }
+                          </li>
+                          <li>
+                            {isFr 
+                              ? <>Confirmez avec l'icône <strong className="text-white">Wanda</strong> et appuyez sur <strong className="text-brand-gold font-bold">"Ajouter"</strong> en haut à droite.</>
+                              : <>Confirm with the <strong className="text-white">Wanda</strong> icon and tap <strong className="text-brand-gold font-bold">"Add"</strong> in the top right corner.</>
+                            }
+                          </li>
                         </ol>
                       </div>
                     )}
 
-                    {/* Android / Chrome Specific instructions */}
-                    {(deviceOS === 'android' || deviceOS === 'other') && (
-                      <div className="bg-brand-card border border-brand-input rounded-xl p-3 space-y-2">
-                        <div className="flex gap-2">
-                          <span className="bg-brand-gold text-brand-midnight text-[9px] font-black px-1.5 py-0.5 rounded h-fit shrink-0">Android / Chrome</span>
-                          <p className="font-extrabold text-white text-[11px]">Comment installer sur Android :</p>
+                    {activeTab === 'android' && (
+                      <div className="bg-brand-card border border-brand-input rounded-2xl p-3.5 space-y-2.5">
+                        <div className="flex items-center gap-2 border-b border-brand-input/60 pb-2">
+                          <span className="bg-brand-gold text-brand-midnight text-[9px] font-black px-2 py-0.5 rounded">Android / Chrome</span>
+                          <p className="font-extrabold text-white text-xs">
+                            {isFr ? "Installer via Google Chrome / Samsung Internet :" : "Install via Google Chrome / Samsung Internet:"}
+                          </p>
                         </div>
-                        <ol className="list-decimal list-inside text-[10px] text-brand-text-muted space-y-1.5 pl-1">
-                          <li>Appuyez sur le bouton de menu <strong className="text-white">(les 3 points en haut à droite)</strong></li>
-                          <li>Appuyez sur <strong className="text-brand-gold">"Installer l'application"</strong> ou "Ajouter à l'écran d'accueil"</li>
+                        <ol className="list-decimal list-inside text-[11px] text-brand-text-muted space-y-2 font-medium pl-0.5">
+                          <li>
+                            {isFr 
+                              ? <>Appuyez sur le menu <strong className="text-white">(3 points en haut à droite)</strong>.</>
+                              : <>Tap the menu icon <strong className="text-white">(3 dots in top right corner)</strong>.</>
+                            }
+                          </li>
+                          <li>
+                            {isFr 
+                              ? <>Appuyez sur <strong className="text-brand-gold font-bold">"Installer l'application"</strong> ou <strong className="text-brand-gold font-bold">"Ajouter à l'écran d'accueil"</strong>.</>
+                              : <>Tap <strong className="text-brand-gold font-bold">"Install app"</strong> or <strong className="text-brand-gold font-bold">"Add to Home screen"</strong>.</>
+                            }
+                          </li>
+                          <li>
+                            {isFr 
+                              ? <>Validez le popup pour voir apparaître le logo <strong className="text-white">Wanda</strong> sur votre tableau de bord Android.</>
+                              : <>Confirm the prompt to place the <strong className="text-white">Wanda</strong> icon on your Android home screen.</>
+                            }
+                          </li>
                         </ol>
                       </div>
                     )}
@@ -287,12 +407,32 @@ export default function InstallPrompt() {
                 )}
               </div>
 
-              {/* Close Info */}
+              {/* Copy Direct Link Helper */}
+              <div className="mt-3.5 p-2.5 bg-brand-midnight/80 border border-brand-input rounded-xl flex items-center justify-between gap-2">
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-white flex items-center gap-1">
+                    <Share2 size={11} className="text-brand-gold" />
+                    <span>{isFr ? "Tester sur votre Téléphone" : "Test on your Phone"}</span>
+                  </p>
+                  <p className="text-[9px] text-brand-text-muted truncate max-w-[210px]">
+                    {window.location.href}
+                  </p>
+                </div>
+                <button
+                  onClick={handleCopyAppUrl}
+                  className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/30 px-2.5 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer transition"
+                >
+                  {copiedLink ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                  <span>{copiedLink ? (isFr ? "Copié !" : "Copied!") : (isFr ? "Copier" : "Copy")}</span>
+                </button>
+              </div>
+
+              {/* Close Button */}
               <button
                 onClick={() => setShowInstructions(false)}
                 className="w-full mt-4 bg-brand-input hover:bg-brand-input/80 text-brand-text-muted hover:text-white font-extrabold py-2.5 rounded-xl text-center text-xs transition cursor-pointer"
               >
-                Fermer
+                {isFr ? "Fermer" : "Close"}
               </button>
             </motion.div>
           </div>
