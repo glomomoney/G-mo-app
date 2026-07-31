@@ -58,6 +58,7 @@ import {
   Lock,
   Unlock,
   Grid,
+  Box,
   WifiOff
 } from 'lucide-react';
 
@@ -4908,7 +4909,7 @@ export default function App() {
             <Grid size={16} className={`transition-transform duration-300 ${showMapGrid ? 'rotate-90 text-brand-gold' : 'group-hover:scale-110'}`} />
           </button>
 
-          {/* Floating Map Pitch Control Button */}
+          {/* Small Circular 3D Tilt Control Button */}
           <button
             onClick={() => {
               setIsMapTilted(prev => {
@@ -4921,16 +4922,20 @@ export default function App() {
                 setIsAutoPitchEnabled(false);
               }
             }}
-            className={`absolute top-[164px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] border shadow-lg transition-all duration-200 active:scale-95 cursor-pointer group ${
-              (isMapTilted === true || isMapTilted === 'tilted')
-                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
+            className={`absolute top-[156px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[34px] h-[34px] rounded-full border shadow-lg transition-all duration-200 active:scale-95 cursor-pointer group ${
+              (isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric')
+                ? 'bg-gradient-to-br from-amber-400 via-brand-gold to-yellow-500 border-amber-300 text-brand-midnight shadow-[0_0_12px_rgba(255,211,67,0.7)] ring-2 ring-brand-gold/50'
                 : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
             }`}
-            title={isMapTilted ? (slangMode ? "Vue 2D" : "2D Flat View") : (slangMode ? "Vue 3D (Inclinée)" : "3D Perspective View")}
-            id="map-pitch-control"
+            title={
+              isMapTilted
+                ? (slangMode ? "Désactiver Inclinaison 3D (Retour Vue 2D)" : "Switch to 2D Flat View")
+                : (slangMode ? "Inclinaison 3D + Transparence Bâtiments (Translucide à Ndokoti & Bastos)" : "3D Tilt & Translucent Building Footprints (See-through in Ndokoti & Bastos)")
+            }
+            id="map-3d-tilt-toggle"
           >
-            <Layers size={14} className={`transition-transform duration-300 ${(isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric') ? 'rotate-12 scale-110' : 'group-hover:scale-110'}`} />
-            <span className="text-[7px] font-bold font-mono tracking-tighter mt-0.5 leading-none">
+            <Box size={15} className={`transition-transform duration-300 ${(isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric') ? 'rotate-12 scale-110 text-brand-midnight' : 'group-hover:scale-110'}`} />
+            <span className="sr-only">
               {(isMapTilted === true || isMapTilted === 'tilted') ? '54°' : isMapTilted === 'isometric' ? '45°' : '2D'}
             </span>
           </button>
@@ -4943,7 +4948,7 @@ export default function App() {
                 setIsAutoPitchEnabled(false);
               }
             }}
-            className={`absolute top-[170px] right-[56px] z-[1000] flex flex-col items-center justify-center w-[28px] h-[28px] rounded-lg border transition-all duration-200 active:scale-95 cursor-pointer group ${
+            className={`absolute top-[159px] right-[52px] z-[1000] flex flex-col items-center justify-center w-[28px] h-[28px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
               isMapTilted === 'isometric'
                 ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.3)]'
                 : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-white shadow-md'

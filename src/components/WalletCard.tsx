@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Smartphone, Plus, CreditCard, ArrowUpRight, History, Shield, Info, Sparkles, Award, Eye, EyeOff, WifiOff, Database } from 'lucide-react';
+import { Smartphone, Plus, CreditCard, ArrowUpRight, History, Shield, Info, Sparkles, Award, Eye, EyeOff, WifiOff, Database, AlertTriangle, X } from 'lucide-react';
 import { PaymentMethod } from '../types';
 
 interface WalletCardProps {
@@ -27,6 +27,14 @@ export default function WalletCard({
   const [showBalance, setShowBalance] = useState<boolean>(false);
   const [amount, setAmount] = useState<string>('5000');
   const [provider, setProvider] = useState<'momo_mtn' | 'orange_money'>('momo_mtn');
+  const [isWarningDismissed, setIsWarningDismissed] = useState<boolean>(false);
+
+  // Reset dismissal if balance rises to 2,000 XAF or higher
+  useEffect(() => {
+    if (balance >= 2000) {
+      setIsWarningDismissed(false);
+    }
+  }, [balance]);
 
   const handleQuickAmount = (val: number) => {
     setAmount(val.toString());
@@ -112,6 +120,73 @@ export default function WalletCard({
           </div>
         </div>
       </div>
+
+      {/* Persistent but Dismissible Low Balance Warning Banner (< 2,000 XAF) */}
+      {balance < 2000 && !isWarningDismissed && (
+        <div 
+          className="bg-amber-950/80 border-2 border-amber-500/50 rounded-2xl p-3.5 space-y-2.5 text-amber-100 shadow-xl relative overflow-hidden animate-fade-in"
+          id="wallet-low-balance-warning-banner"
+        >
+          {/* Glow ambient background element */}
+          <div className="absolute right-[-20px] top-[-20px] w-28 h-28 rounded-full bg-amber-500/10 blur-xl pointer-events-none" />
+
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="flex items-start gap-2.5 pr-1">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 border border-amber-500/35 mt-0.5">
+                <AlertTriangle size={18} className="animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase">
+                    {slangMode ? "ALERTE RECHARGE" : "LOW BALANCE"}
+                  </span>
+                  <h4 className="text-xs font-black text-amber-300 tracking-tight">
+                    {slangMode ? "Solde Faible (< 2 000 FCFA)" : "Low Wallet Balance (< 2,000 XAF)"}
+                  </h4>
+                </div>
+                <p className="text-[10.5px] text-amber-100/90 leading-relaxed font-semibold">
+                  {slangMode
+                    ? `Votre solde actuel est de ${balance.toLocaleString('fr-FR')} FCFA. Rechargez votre portefeuille dès maintenant pour réserver vos courses sans interruption !`
+                    : `Your current balance is ${balance.toLocaleString('fr-FR')} XAF. Top up your wallet now to guarantee seamless ride bookings!`}
+                </p>
+              </div>
+            </div>
+
+            {/* Dismiss button */}
+            <button
+              type="button"
+              onClick={() => setIsWarningDismissed(true)}
+              className="text-amber-400/80 hover:text-amber-200 p-1.5 rounded-lg hover:bg-amber-500/20 transition cursor-pointer shrink-0"
+              title={slangMode ? "Masquer cet avertissement" : "Dismiss warning"}
+              id="dismiss-low-balance-warning-btn"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Quick Action Top-Up Helper */}
+          <div className="pt-2 border-t border-amber-500/20 flex items-center justify-between gap-2">
+            <span className="text-[9.5px] font-bold text-amber-300/80">
+              {slangMode ? "Recharge recommandée : 2 000 FCFA" : "Suggested top-up: 2,000 XAF"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                handleQuickAmount(2000);
+                const inputEl = document.getElementById('topup-amount-input');
+                if (inputEl) {
+                  inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  inputEl.focus();
+                }
+              }}
+              className="bg-amber-400 hover:bg-amber-300 text-brand-midnight font-black text-[10px] px-3 py-1.5 rounded-xl shadow-md cursor-pointer transition active:scale-95 flex items-center gap-1"
+            >
+              <Plus size={12} className="stroke-[3]" />
+              <span>{slangMode ? "Recharger 2 000 FCFA" : "Top Up 2,000 XAF"}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Wanda Points Rewards Loyalty Widget */}
       <div className="bg-gradient-to-br from-indigo-950/40 to-brand-midnight/65 border border-indigo-500/25 p-3.5 rounded-2xl space-y-2.5 relative overflow-hidden shadow">

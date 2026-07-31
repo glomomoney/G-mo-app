@@ -361,6 +361,8 @@ export default function TaxiMap({
   const roadNamesLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const buildingPoisLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const publicTransitLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const buildingFootprintsLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const buildingFootprintPolygonsRef = useRef<L.Polygon[]>([]);
 
   // Click outside layers menu to close it
   useEffect(() => {
@@ -589,15 +591,58 @@ export default function TaxiMap({
     const roadNamesLayerGroup = L.layerGroup();
     const buildingPoisLayerGroup = L.layerGroup();
     const publicTransitLayerGroup = L.layerGroup();
+    const buildingFootprintsLayerGroup = L.layerGroup();
 
     roadNamesLayerGroupRef.current = roadNamesLayerGroup;
     buildingPoisLayerGroupRef.current = buildingPoisLayerGroup;
     publicTransitLayerGroupRef.current = publicTransitLayerGroup;
+    buildingFootprintsLayerGroupRef.current = buildingFootprintsLayerGroup;
 
     // Add them to map initially
     roadNamesLayerGroup.addTo(map);
     buildingPoisLayerGroup.addTo(map);
     publicTransitLayerGroup.addTo(map);
+    buildingFootprintsLayerGroup.addTo(map);
+
+    // High-density urban building footprints (Ndokoti Junction, Bastos Embassy Quarter, Akwa, Bonanjo)
+    const buildingFootprintsData = [
+      // Ndokoti High-Density Commercial & Transport Hub (Douala)
+      { id: 'ndokoti-station', name: 'Ndokoti Railway Station Complex', zone: 'Ndokoti', coords: [[4.0418, 9.7412], [4.0426, 9.7418], [4.0422, 9.7428], [4.0414, 9.7422]] },
+      { id: 'ndokoti-total', name: 'Total Ndokoti Commercial Building', zone: 'Ndokoti', coords: [[4.0428, 9.7442], [4.0436, 9.7448], [4.0432, 9.7458], [4.0424, 9.7452]] },
+      { id: 'ndokoti-sgc', name: 'SGC Bank & Financial Plaza', zone: 'Ndokoti', coords: [[4.0422, 9.7432], [4.0428, 9.7438], [4.0425, 9.7445], [4.0419, 9.7439]] },
+      { id: 'ndokoti-market', name: 'Ndokoti Central Market Arcade', zone: 'Ndokoti', coords: [[4.0408, 9.7422], [4.0416, 9.7428], [4.0412, 9.7436], [4.0404, 9.7430]] },
+      { id: 'ndokoti-express', name: 'Express Union Ndokoti Hub', zone: 'Ndokoti', coords: [[4.0438, 9.7415], [4.0444, 9.7422], [4.0440, 9.7430], [4.0434, 9.7423]] },
+
+      // Bastos Diplomatic & High-Density Embassy Quarter (Yaoundé)
+      { id: 'bastos-tower', name: 'Bastos Embassy Heights Tower', zone: 'Bastos', coords: [[3.8910, 11.5130], [3.8918, 11.5136], [3.8914, 11.5146], [3.8906, 11.5140]] },
+      { id: 'bastos-diplomatic', name: 'Bastos Diplomatic Center Enclave', zone: 'Bastos', coords: [[3.8896, 11.5118], [3.8904, 11.5124], [3.8900, 11.5134], [3.8892, 11.5128]] },
+      { id: 'bastos-palais', name: 'Palais des Congrès Executive Block', zone: 'Bastos', coords: [[3.8922, 11.5142], [3.8930, 11.5148], [3.8926, 11.5158], [3.8918, 11.5152]] },
+      { id: 'bastos-residence', name: 'Bastos Luxury Residence Plaza', zone: 'Bastos', coords: [[3.8902, 11.5148], [3.8910, 11.5154], [3.8906, 11.5164], [3.8898, 11.5158]] },
+
+      // Akwa Commercial Core (Douala)
+      { id: 'akwa-palace', name: 'Akwa Palace Hotel & Tower', zone: 'Akwa', coords: [[4.0483, 9.6972], [4.0491, 9.6978], [4.0487, 9.6988], [4.0479, 9.6982]] },
+      { id: 'akwa-plaza', name: 'Douala Commercial Plaza', zone: 'Akwa', coords: [[4.0470, 9.6958], [4.0478, 9.6964], [4.0474, 9.6974], [4.0466, 9.6968]] },
+
+      // Bonanjo Civic & Port Authority District (Douala)
+      { id: 'bonanjo-civic', name: 'Bonanjo Port Authority & Civic Center', zone: 'Bonanjo', coords: [[4.0433, 9.6892], [4.0441, 9.6898], [4.0437, 9.6908], [4.0429, 9.6902]] },
+    ];
+
+    const polyList: L.Polygon[] = [];
+    buildingFootprintsData.forEach(b => {
+      const isCurrentlyTilted = isTilted === true || isTilted === 'tilted' || isTilted === 'isometric';
+      const poly = L.polygon(b.coords as L.LatLngExpression[], {
+        color: isCurrentlyTilted ? '#FFD343' : '#D97706',
+        weight: isCurrentlyTilted ? 1.5 : 1,
+        fillColor: isCurrentlyTilted ? '#FFD343' : '#F59E0B',
+        fillOpacity: isCurrentlyTilted ? 0.20 : 0.65, // Translucent see-through when tilted!
+        dashArray: isCurrentlyTilted ? '3,3' : undefined,
+        className: 'transition-all duration-500 cursor-pointer'
+      }).addTo(buildingFootprintsLayerGroup);
+
+      poly.bindTooltip(`🏢 ${b.name} (${b.zone})`, { direction: 'top', sticky: true });
+      polyList.push(poly);
+    });
+    buildingFootprintPolygonsRef.current = polyList;
 
     // Define and populate Road Names overlay data
     const roadNamesData = [
@@ -830,6 +875,36 @@ export default function TaxiMap({
     return () => {
       clearTimeout(snapTimeout);
     };
+  }, [isTilted]);
+
+  // Synchronize 3D Tilt Mode & Building Footprint Opacity (See-through translucent buildings in Ndokoti/Bastos)
+  useEffect(() => {
+    const isCurrentlyTilted = isTilted === true || isTilted === 'tilted' || isTilted === 'isometric';
+    const targetFillOpacity = isCurrentlyTilted ? 0.20 : 0.65;
+    const targetColor = isCurrentlyTilted ? '#FFD343' : '#D97706';
+    const targetWeight = isCurrentlyTilted ? 1.5 : 1;
+
+    buildingFootprintPolygonsRef.current.forEach(poly => {
+      poly.setStyle({
+        fillOpacity: targetFillOpacity,
+        color: targetColor,
+        fillColor: targetColor,
+        weight: targetWeight,
+        dashArray: isCurrentlyTilted ? '3,3' : undefined,
+      });
+    });
+
+    // POI icons translucency when tilted
+    const poiElements = document.querySelectorAll('.custom-building-poi-icon');
+    poiElements.forEach(el => {
+      if (isCurrentlyTilted) {
+        (el as HTMLElement).style.opacity = '0.45';
+        (el as HTMLElement).style.backdropFilter = 'blur(1px)';
+      } else {
+        (el as HTMLElement).style.opacity = '1';
+        (el as HTMLElement).style.backdropFilter = 'none';
+      }
+    });
   }, [isTilted]);
 
   // Dynamic Map Detail Control Effect (Toggles road names & POIs based on Zoom & Status)
@@ -2346,15 +2421,33 @@ export default function TaxiMap({
               <span className="w-2 h-2 rounded-full bg-brand-gold animate-ping" />
               <p className="text-[10px] font-black tracking-widest text-brand-gold uppercase font-mono">
                 {isTilted === 'isometric' 
-                  ? (slangMode ? "🎯 VUE 3D ISOMÉTRIQUE CENTRÉE (45°)" : "🎯 45° ISOMETRIC VIEW CENTERED")
+                  ? (slangMode ? "🎯 VUE 3D ISOMÉTRIQUE (45°) — BÂTIMENTS TRANSLUCIDES (20%)" : "🎯 45° ISOMETRIC VIEW — SEE-THROUGH FOOTPRINTS (20%)")
                   : (isTilted === true || isTilted === 'tilted')
-                    ? (slangMode ? "🎯 VUE 3D PERSPECTIVE CENTRÉE (54°)" : "🎯 54° PERSPECTIVE VIEW CENTERED")
+                    ? (slangMode ? "🎯 VUE 3D PERSPECTIVE (54°) — BÂTIMENTS TRANSLUCIDES (20%)" : "🎯 54° PERSPECTIVE VIEW — SEE-THROUGH FOOTPRINTS (20%)")
                     : (slangMode ? "🎯 VUE 2D PLATE CENTRÉE (0°)" : "🎯 2D FLAT VIEW CENTERED")}
               </p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Persistent 3D Building Translucency Status Chip */}
+      {(isTilted === true || isTilted === 'tilted' || isTilted === 'isometric') && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          id="building-footprints-translucency-chip"
+          className="absolute top-12 left-4 z-[1010] flex items-center gap-2 px-3 py-1.5 rounded-xl bg-brand-midnight/95 border border-amber-300/60 shadow-xl backdrop-blur-md text-amber-300 text-[9.5px] font-black tracking-wide"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+          <span>
+            {slangMode
+              ? "🏢 Emprises Bâtiments Translucides (20% Opacité) — Ndokoti & Bastos"
+              : "🏢 See-Through Building Footprints (20% Opacity) — Ndokoti & Bastos"}
+          </span>
+        </motion.div>
+      )}
 
       {/* Map Detail Mode Adaptive Badge */}
       <div 
