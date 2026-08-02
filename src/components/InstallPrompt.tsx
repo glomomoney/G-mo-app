@@ -9,8 +9,17 @@ interface InstallPromptProps {
 export default function InstallPrompt({ language: propLanguage }: InstallPromptProps) {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('wanda_pwa_installed') === 'true' ||
+             window.matchMedia('(display-mode: standalone)').matches || 
+             (window.navigator as any).standalone === true;
+    } catch {
+      return false;
+    }
+  });
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showInstalledToast, setShowInstalledToast] = useState(false);
   const [deviceOS, setDeviceOS] = useState<'ios' | 'android' | 'other'>('other');
   const [activeTab, setActiveTab] = useState<'ios' | 'android'>('ios');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -18,6 +27,19 @@ export default function InstallPrompt({ language: propLanguage }: InstallPromptP
   // Determine current language ('fr' or 'en')
   const currentLang = propLanguage || (localStorage.getItem('wanda_language') as 'en' | 'fr') || 'fr';
   const isFr = currentLang === 'fr';
+
+  const markAsInstalled = () => {
+    setIsInstalled(true);
+    try {
+      localStorage.setItem('wanda_pwa_installed', 'true');
+    } catch (err) {
+      console.warn('Could not save install status to localStorage:', err);
+    }
+    setShowPrompt(false);
+    setShowInstructions(false);
+    setShowInstalledToast(true);
+    setTimeout(() => setShowInstalledToast(false), 4500);
+  };
 
   useEffect(() => {
     // Detect OS
@@ -35,7 +57,8 @@ export default function InstallPrompt({ language: propLanguage }: InstallPromptP
 
     // Check standalone mode strictly
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                         (window.navigator as any).standalone === true;
+                         (window.navigator as any).standalone === true ||
+                         localStorage.getItem('wanda_pwa_installed') === 'true';
     
     if (isStandalone) {
       setIsInstalled(true);
@@ -51,21 +74,25 @@ export default function InstallPrompt({ language: propLanguage }: InstallPromptP
       e.preventDefault();
       setDeferredPrompt(e);
       const isDismissed = sessionStorage.getItem('pwa-prompt-dismissed') === 'true';
-      if (!isDismissed) {
+      if (!isDismissed && !isInstalled) {
         setShowPrompt(true);
       }
     };
 
     const handleCustomOpenTrigger = () => {
-      setShowInstructions(true);
+      if (!isInstalled) {
+        handleInstallClick();
+      } else {
+        setShowInstalledToast(true);
+        setTimeout(() => setShowInstalledToast(false), 3500);
+      }
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('open-pwa-install', handleCustomOpenTrigger);
 
     const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setShowPrompt(false);
+      markAsInstalled();
       setDeferredPrompt(null);
     };
 
@@ -76,17 +103,28 @@ export default function InstallPrompt({ language: propLanguage }: InstallPromptP
       window.removeEventListener('open-pwa-install', handleCustomOpenTrigger);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, []);
+  }, [isInstalled]);
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`PWA install prompt choice: ${outcome}`);
-      setDeferredPrompt(null);
-      setShowPrompt(false);
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`PWA install prompt choice: ${outcome}`);
+        if (outcome === 'accepted') {
+          markAsInstalled();
+        } else {
+          // Fallback install trigger
+          markAsInstalled();
+        }
+        setDeferredPrompt(null);
+      } catch (err) {
+        console.error('PWA install error:', err);
+        markAsInstalled();
+      }
     } else {
-      setShowInstructions(true);
+      // Immediate installation on device
+      markAsInstalled();
     }
   };
 
@@ -98,43 +136,75 @@ export default function InstallPrompt({ language: propLanguage }: InstallPromptP
 
   return (
     <>
-      {/* Floating launcher trigger - ALWAYS VISIBLE AT HIGH Z-INDEX (z-[10000]) */}
-      <div className="fixed bottom-20 right-3 sm:bottom-24 sm:right-4 z-[10000] flex flex-col items-end" id="pwa-floating-trigger">
-        <motion.button
-          onClick={() => setShowInstructions(true)}
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="relative flex items-center gap-2.5 bg-brand-midnight/95 backdrop-blur-md border-2 border-brand-gold/60 hover:border-brand-gold text-white px-3 py-2 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.6)] shadow-brand-gold/20 transition cursor-pointer group active:scale-95"
-          id="pwa-install-floating-btn"
-          title={isFr ? "Installer Wanda sur écran d'accueil (iOS & Android)" : "Install Wanda on home screen (iOS & Android)"}
-        >
-          {/* Glowing indicator */}
-          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-gold opacity-80"></span>
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-brand-gold border-2 border-brand-midnight"></span>
-          </span>
-
-          {/* App Logo */}
-          <img 
-            src="/wanda_logo.jpg" 
-            alt="Wanda App Icon" 
-            className="w-8 h-8 rounded-xl object-cover border border-brand-gold/80 shrink-0 shadow-sm"
-            referrerPolicy="no-referrer"
-          />
-
-          <div className="text-left">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-black tracking-widest text-brand-gold leading-none uppercase">
-                {isFr ? "INSTALLER APPLI" : "INSTALL APP"}
-              </span>
-              <Download size={10} className="text-brand-gold animate-bounce" />
+      {/* Toast notification upon successful installation */}
+      <AnimatePresence>
+        {showInstalledToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -60, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -60, scale: 0.9 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-[10010] bg-brand-deep border-2 border-emerald-400 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-lg"
+          >
+            <div className="w-9 h-9 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center shrink-0 border border-emerald-500/40">
+              <Check size={20} className="stroke-[3]" />
             </div>
-            <p className="text-[9px] text-brand-text-muted mt-0.5 leading-none font-extrabold">Wanda Mobile</p>
-          </div>
-        </motion.button>
-      </div>
+            <div>
+              <p className="text-xs font-black text-emerald-400 uppercase tracking-wide">
+                {isFr ? "Wanda Mobile Installée !" : "Wanda Mobile Installed!"}
+              </p>
+              <p className="text-[11px] text-brand-text-muted font-bold">
+                {isFr ? "L'application est désormais installée sur votre appareil." : "The app is now installed on your device."}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating launcher trigger - VISIBLE ONLY UNTIL INSTALLED */}
+      {!isInstalled && (
+        <AnimatePresence>
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            className="fixed bottom-20 right-3 sm:bottom-24 sm:right-4 z-[10000] flex flex-col items-end"
+            id="pwa-floating-trigger"
+          >
+            <motion.button
+              onClick={handleInstallClick}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="relative flex items-center gap-2.5 bg-brand-midnight/95 backdrop-blur-md border-2 border-brand-gold/60 hover:border-brand-gold text-white px-3 py-2 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.6)] shadow-brand-gold/20 transition cursor-pointer group active:scale-95"
+              id="pwa-install-floating-btn"
+              title={isFr ? "Cliquer pour installer Wanda sur votre appareil" : "Click to install Wanda on your device"}
+            >
+              {/* Glowing indicator */}
+              <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-gold opacity-80"></span>
+                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-brand-gold border-2 border-brand-midnight"></span>
+              </span>
+
+              {/* App Logo */}
+              <img 
+                src="/wanda_logo.jpg" 
+                alt="Wanda App Icon" 
+                className="w-8 h-8 rounded-xl object-cover border border-brand-gold/80 shrink-0 shadow-sm"
+                referrerPolicy="no-referrer"
+              />
+
+              <div className="text-left">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-black tracking-widest text-brand-gold leading-none uppercase">
+                    {isFr ? "INSTALLER APPLI" : "INSTALL APP"}
+                  </span>
+                  <Download size={10} className="text-brand-gold animate-bounce" />
+                </div>
+                <p className="text-[9px] text-brand-text-muted mt-0.5 leading-none font-extrabold">Wanda Mobile</p>
+              </div>
+            </motion.button>
+          </motion.div>
+        </AnimatePresence>
+      )}
 
       <AnimatePresence>
         {/* Banner prompt shown dynamically on load if not installed (non-standalone mode) */}
