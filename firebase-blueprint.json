@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User accounts and profiles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "avatar": { "type": "string" },
+        "walletBalance": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "rides": {
+      "title": "Rides",
+      "description": "Live ride requests and bookings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "passengerId": { "type": "string" },
+        "passengerName": { "type": "string" },
+        "passengerPhone": { "type": "string" },
+        "pickup": { "type": "object" },
+        "destination": { "type": "object" },
+        "fare": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "rideClassId": { "type": "string" },
+        "status": { "type": "string" },
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["passengerName", "pickup", "destination", "fare", "status"]
+    },
+    "history": {
+      "title": "Ride History",
+      "description": "Completed and cancelled ride records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "pickupName": { "type": "string" },
+        "destName": { "type": "string" },
+        "fare": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string" },
+        "vehicleClass": { "type": "string" },
+        "driverName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["pickupName", "destName", "fare", "status"]
+    }
+  }
+}

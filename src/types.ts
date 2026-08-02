@@ -44,6 +44,7 @@ export type PaymentMethod = 'momo_mtn' | 'orange_money' | 'cash' | 'wallet';
 
 export interface RideRequest {
   id: string;
+  passengerId?: string;
   passengerName: string;
   passengerPhone: string;
   pickup: Location;

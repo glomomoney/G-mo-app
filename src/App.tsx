@@ -81,6 +81,15 @@ import {
   getCachedWalletData, 
   getCachedRideHistory 
 } from './utils/offlineCache';
+import {
+  saveUserToFirestore,
+  createRideInFirestore,
+  updateRideStatusInFirestore,
+  subscribeToActiveRides,
+  saveHistoryToFirestore,
+  subscribeToHistory,
+  saveTransactionToFirestore
+} from './lib/firebaseService';
 
 // Data and helpers
 import { 
@@ -1307,6 +1316,17 @@ export default function App() {
     setSlangMode(userData.slangMode);
     localStorage.setItem('wanda_user', JSON.stringify(userData));
 
+    // Save to Firestore real backend database
+    saveUserToFirestore({
+      id: userData.phone.replace(/[^0-9]/g, '') || `user_${Date.now()}`,
+      name: userData.name,
+      email: `${userData.phone.replace(/[^0-9]/g, '') || 'user'}@wanda.cm`,
+      phone: userData.phone,
+      role: userData.role,
+      walletBalance: userData.role === 'driver' ? driverWallet : passengerWallet,
+      points: passengerPoints
+    });
+
     if (userData.role === 'driver' && userData.vehiclePlate) {
       const newDriverId = `driver_custom_${Date.now()}`;
       const newDriver = {
@@ -1341,6 +1361,10 @@ export default function App() {
     const updated = [item, ...history];
     setHistory(updated);
     localStorage.setItem('wanda_ride_history', JSON.stringify(updated));
+
+    // Persist to Firestore real backend database
+    const userId = user?.phone?.replace(/[^0-9]/g, '') || 'guest_user';
+    saveHistoryToFirestore(item, userId);
   };
 
   // Re-book helper for past routes
@@ -1861,6 +1885,23 @@ export default function App() {
   const startSearchingDriver = () => {
     setRideStatus('searching');
     setMessages([]);
+
+    // Persist active ride request to Firestore real backend database
+    if (pickup && destination && user) {
+      const selectedClass = RIDE_CLASSES.find(c => c.id === selectedClassId);
+      const fare = selectedClass ? selectedClass.baseFare : 1500;
+      createRideInFirestore({
+        passengerId: user.phone.replace(/[^0-9]/g, ''),
+        passengerName: user.name,
+        passengerPhone: user.phone,
+        pickup,
+        destination,
+        fare,
+        paymentMethod,
+        rideClassId: selectedClassId,
+        status: 'searching'
+      });
+    }
 
     setTimeout(() => {
       // Find an approved driver for this ride class
@@ -2704,6 +2745,10 @@ export default function App() {
                   📍 {currentCity}
                 </span>
               )}
+              <span className="bg-orange-500/20 text-orange-400 border border-orange-500/40 text-[8px] sm:text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+                Firebase Real Backend
+              </span>
             </div>
             <p className="text-[8px] sm:text-[9px] text-brand-text-muted italic font-bold hidden xs:block">tu Wanda on tes transporte.</p>
           </div>

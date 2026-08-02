@@ -228,6 +228,14 @@ interface TaxiMapProps {
   onToggleSummaryMetricMode?: (mode: 'time' | 'distance') => void;
 }
 
+// High-density urban bounding boxes for auto-triggering building footprint transparency
+const HIGH_DENSITY_ZONES = [
+  { id: 'ndokoti', name: 'Ndokoti Commercial Hub', city: 'Douala', minLat: 4.0370, maxLat: 4.0480, minLng: 9.7360, maxLng: 9.7490 },
+  { id: 'bastos', name: 'Bastos Embassy Quarter', city: 'Yaoundé', minLat: 3.8840, maxLat: 3.8970, minLng: 11.5070, maxLng: 11.5190 },
+  { id: 'akwa', name: 'Akwa Commercial Core', city: 'Douala', minLat: 4.0440, maxLat: 4.0520, minLng: 9.6930, maxLng: 9.7010 },
+  { id: 'bonanjo', name: 'Bonanjo Civic District', city: 'Douala', minLat: 4.0400, maxLat: 4.0460, minLng: 9.6860, maxLng: 9.6940 },
+];
+
 export default function TaxiMap({
   pickup,
   destination,
@@ -294,6 +302,7 @@ export default function TaxiMap({
   const [currentZoom, setCurrentZoom] = useState<number>(12);
   const [isIntegerGlow, setIsIntegerGlow] = useState<boolean>(false);
   const [isTiltSnapping, setIsTiltSnapping] = useState<boolean>(false);
+  const [autoDetectedZone, setAutoDetectedZone] = useState<{ id: string; name: string; city: string } | null>(null);
 
   // New Tactical Navigation Overlay States
   const [isTacticalOverlayMinimized, setIsTacticalOverlayMinimized] = useState(() => {
@@ -877,12 +886,46 @@ export default function TaxiMap({
     };
   }, [isTilted]);
 
-  // Synchronize 3D Tilt Mode & Building Footprint Opacity (See-through translucent buildings in Ndokoti/Bastos)
+  // Auto-detection of map center entering high-density urban bounding boxes (Ndokoti, Bastos, Akwa, Bonanjo)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const handleCheckMapCenterZone = () => {
+      const center = map.getCenter();
+      const matched = HIGH_DENSITY_ZONES.find(
+        z => center.lat >= z.minLat && center.lat <= z.maxLat && center.lng >= z.minLng && center.lng <= z.maxLng
+      );
+      if (matched) {
+        setAutoDetectedZone({ id: matched.id, name: matched.name, city: matched.city });
+      } else {
+        setAutoDetectedZone(null);
+      }
+    };
+
+    // Run immediately on setup/re-render
+    handleCheckMapCenterZone();
+
+    map.on('move', handleCheckMapCenterZone);
+    map.on('moveend', handleCheckMapCenterZone);
+    map.on('zoomend', handleCheckMapCenterZone);
+
+    return () => {
+      map.off('move', handleCheckMapCenterZone);
+      map.off('moveend', handleCheckMapCenterZone);
+      map.off('zoomend', handleCheckMapCenterZone);
+    };
+  }, []);
+
+  // Synchronize 3D Tilt Mode & Auto-Detected High-Density Footprint Transparency
   useEffect(() => {
     const isCurrentlyTilted = isTilted === true || isTilted === 'tilted' || isTilted === 'isometric';
-    const targetFillOpacity = isCurrentlyTilted ? 0.20 : 0.65;
-    const targetColor = isCurrentlyTilted ? '#FFD343' : '#D97706';
-    const targetWeight = isCurrentlyTilted ? 1.5 : 1;
+    const isAutoTranslucent = !!autoDetectedZone;
+    const shouldBeTranslucent = isCurrentlyTilted || isAutoTranslucent;
+
+    const targetFillOpacity = shouldBeTranslucent ? 0.20 : 0.65;
+    const targetColor = shouldBeTranslucent ? '#FFD343' : '#D97706';
+    const targetWeight = shouldBeTranslucent ? 1.5 : 1;
 
     buildingFootprintPolygonsRef.current.forEach(poly => {
       poly.setStyle({
@@ -890,14 +933,14 @@ export default function TaxiMap({
         color: targetColor,
         fillColor: targetColor,
         weight: targetWeight,
-        dashArray: isCurrentlyTilted ? '3,3' : undefined,
+        dashArray: shouldBeTranslucent ? '3,3' : undefined,
       });
     });
 
-    // POI icons translucency when tilted
+    // POI icons translucency when tilted or auto-detected in high-density zone
     const poiElements = document.querySelectorAll('.custom-building-poi-icon');
     poiElements.forEach(el => {
-      if (isCurrentlyTilted) {
+      if (shouldBeTranslucent) {
         (el as HTMLElement).style.opacity = '0.45';
         (el as HTMLElement).style.backdropFilter = 'blur(1px)';
       } else {
@@ -905,7 +948,7 @@ export default function TaxiMap({
         (el as HTMLElement).style.backdropFilter = 'none';
       }
     });
-  }, [isTilted]);
+  }, [isTilted, autoDetectedZone]);
 
   // Dynamic Map Detail Control Effect (Toggles road names & POIs based on Zoom & Status)
   useEffect(() => {
@@ -2431,20 +2474,24 @@ export default function TaxiMap({
         )}
       </AnimatePresence>
 
-      {/* Persistent 3D Building Translucency Status Chip */}
-      {(isTilted === true || isTilted === 'tilted' || isTilted === 'isometric') && (
+      {/* Persistent 3D & Auto-Detected Building Translucency Status Chip */}
+      {(autoDetectedZone || isTilted === true || isTilted === 'tilted' || isTilted === 'isometric') && (
         <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
+          initial={{ opacity: 0, y: -8, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -8, scale: 0.95 }}
           id="building-footprints-translucency-chip"
-          className="absolute top-12 left-4 z-[1010] flex items-center gap-2 px-3 py-1.5 rounded-xl bg-brand-midnight/95 border border-amber-300/60 shadow-xl backdrop-blur-md text-amber-300 text-[9.5px] font-black tracking-wide"
+          className="absolute top-12 left-4 z-[1010] flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-brand-midnight/95 border border-amber-400/80 shadow-xl shadow-amber-400/10 backdrop-blur-md text-amber-300 text-[9.5px] font-black tracking-wide font-mono"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
           <span>
-            {slangMode
-              ? "🏢 Emprises Bâtiments Translucides (20% Opacité) — Ndokoti & Bastos"
-              : "🏢 See-Through Building Footprints (20% Opacity) — Ndokoti & Bastos"}
+            {autoDetectedZone
+              ? (slangMode
+                  ? `⚡ AUTO-DÉTECTION : ${autoDetectedZone.name.toUpperCase()} (${autoDetectedZone.city}) — BÂTIMENTS TRANSLUCIDES (20%)`
+                  : `⚡ AUTO-DETECTED HIGH-DENSITY: ${autoDetectedZone.name.toUpperCase()} (${autoDetectedZone.city}) — SEE-THROUGH FOOTPRINTS (20%)`)
+              : (slangMode
+                  ? "🏢 Emprises Bâtiments Translucides (20% Opacité) — Mode 3D Actif"
+                  : "🏢 See-Through Building Footprints (20% Opacity) — 3D Tilt Active")}
           </span>
         </motion.div>
       )}
