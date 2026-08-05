@@ -90,6 +90,7 @@ import {
   subscribeToHistory,
   saveTransactionToFirestore
 } from './lib/firebaseService';
+import { generateAndDownloadRideReceipt } from './utils/pdfReceipt';
 
 // Data and helpers
 import { 
@@ -1442,207 +1443,37 @@ export default function App() {
     );
   };
 
-  // Professional PDF receipt generator for business passengers
+  // Professional PDF receipt generator for business passengers using jsPDF
   const downloadPDFReceipt = (hist: HistoryItem) => {
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-
-    const getPaymentLabel = (method: string) => {
-      switch (method) {
-        case 'momo_mtn': return 'MTN Mobile Money';
-        case 'orange_money': return 'Orange Money';
-        case 'wallet': return 'Wanda Wallet';
-        default: return 'Cash Payment';
-      }
-    };
-
-    // Brand and theme colors
-    const brandMidnight = [11, 15, 25]; // #0B0F19
-    const brandGold = [234, 179, 8];   // #EAB308
-    const darkGray = [30, 41, 59];     // #1E293B
-    const lightGray = [100, 116, 139]; // #64748B
-    const bgHeader = [241, 245, 249];  // #F1F5F9
-
-    // Page decoration - Header bar
-    doc.setFillColor(brandMidnight[0], brandMidnight[1], brandMidnight[2]);
-    doc.rect(0, 0, 210, 45, 'F');
-
-    // Gold separator accent line
-    doc.setFillColor(brandGold[0], brandGold[1], brandGold[2]);
-    doc.rect(0, 45, 210, 2.5, 'F');
-
-    // Corporate branding
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(22);
-    doc.text('WANDA TAXI', 15, 18);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(180, 187, 202);
-    doc.text('Premium Smart Urban Mobility Platform', 15, 24);
-    doc.text('Web: ai.studio/build/wanda | Support: +237 677 00 00 00', 15, 29);
-    doc.text('RC/DLA/2026/B/1452 | Cameroon Taxpayer ID / NIU: M0726145290A', 15, 34);
-
-    // Receipt header details (right side of header)
-    doc.setFontSize(16);
-    doc.setTextColor(brandGold[0], brandGold[1], brandGold[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('BUSINESS RECEIPT', 130, 18);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(255, 255, 255);
-    doc.text(`Invoice ID: WND-${hist.id.replace('hist_', '')}`, 130, 25);
-    doc.text(`Date of Service: ${hist.date}`, 130, 31);
-    doc.text('Status: SETTLED & COMPLETED', 130, 37);
-
-    // Section 1: Customer Details vs Service Details
-    doc.setFontSize(10.5);
-    doc.setTextColor(brandMidnight[0], brandMidnight[1], brandMidnight[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('PASSENGER DETAILS', 15, 60);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
-    doc.text(`Name: ${user?.name || 'Wanda Passenger'}`, 15, 66);
-    doc.text(`Phone Contact: ${user?.phone || 'Not available'}`, 15, 72);
-    doc.text('Corporate Class: Business Expense Account', 15, 78);
-
-    // Service Details
-    doc.setFontSize(10.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text('SERVICE REPRESENTATIVE', 115, 60);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`Driver Partner: ${hist.driverName}`, 115, 66);
-    doc.text(`Transit Tier: ${hist.vehicleClass}`, 115, 72);
-    doc.text('Regulator Status: Verified & Licensed', 115, 78);
-
-    // Gray Divider Line
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.3);
-    doc.line(15, 85, 195, 85);
-
-    // Section 2: Journey Logistics
-    doc.setFontSize(10.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text('ROUTE LOGISTICS & DISPATCH', 15, 93);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    // Draw green starting pin circle
-    doc.setFillColor(16, 185, 129); // emerald 500
-    doc.circle(18, 100, 1.5, 'F');
-    doc.text(`Pickup Station: ${hist.pickupName}`, 23, 101);
-
-    // Draw gold dropoff pin circle
-    doc.setFillColor(brandGold[0], brandGold[1], brandGold[2]);
-    doc.circle(18, 108, 1.5, 'F');
-    doc.text(`Destination: ${hist.destName}`, 23, 109);
-
-    // Divider Line
-    doc.line(15, 117, 195, 117);
-
-    // Section 3: Financial Breakdown Table
-    doc.setFontSize(10.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text('FINANCIAL SUMMARY', 15, 125);
-
-    // Table Header Background
-    doc.setFillColor(bgHeader[0], bgHeader[1], bgHeader[2]);
-    doc.rect(15, 130, 180, 8, 'F');
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(lightGray[0], lightGray[1], lightGray[2]);
-    doc.text('Description of Charges', 18, 135.5);
-    doc.text('Billing Method', 105, 135.5);
-    doc.text('Subtotal (FCFA)', 162, 135.5);
-
-    // Items
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
-
-    const tip = hist.tipAmount || 0;
-    const baseRideFare = hist.fare - tip;
-
-    // Row 1
-    doc.text(`Base Transport Fare (${hist.vehicleClass})`, 18, 144);
-    doc.text(getPaymentLabel(hist.paymentMethod), 105, 144);
-    doc.text(`${baseRideFare.toLocaleString('fr-FR')} FCFA`, 162, 144);
-
-    // Row 2
-    doc.text('Driver Tip Accrued', 18, 151);
-    doc.text(getPaymentLabel(hist.paymentMethod), 105, 151);
-    doc.text(`${tip.toLocaleString('fr-FR')} FCFA`, 162, 151);
-
-    // Row 3
-    doc.text('State Road Regulatory Tax (VAT / TS)', 18, 158);
-    doc.text('Exempt / Pre-paid', 105, 158);
-    doc.text('0 FCFA', 162, 158);
-
-    // Line under table
-    doc.line(15, 163, 195, 163);
-
-    // Totals Box
-    doc.setFillColor(248, 250, 252);
-    doc.rect(115, 167, 80, 25, 'F');
-
-    doc.setFont('helvetica', 'normal');
-    doc.text('Net Subtotal:', 118, 173);
-    doc.text(`${baseRideFare.toLocaleString('fr-FR')} FCFA`, 165, 173);
-
-    doc.text('Tips and Extras:', 118, 179);
-    doc.text(`${tip.toLocaleString('fr-FR')} FCFA`, 165, 179);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(brandGold[0], brandGold[1], brandGold[2]);
-    doc.text('TOTAL CHARGED:', 118, 187);
-    doc.text(`${hist.fare.toLocaleString('fr-FR')} FCFA`, 165, 187);
-
-    // Reset Color
-    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
-
-    // Footer Regulatory notice
-    doc.line(15, 205, 195, 205);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text('Cameroonian Transit Compliance Notice', 15, 211);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(lightGray[0], lightGray[1], lightGray[2]);
-    doc.text('Wanda Taxi is a certified municipal transport aggregator. This receipt represents an official document confirming urban transport', 15, 216);
-    doc.text('delivery, generated under state-approved pricing frameworks. For accounting and audits, use the authorized signature block below.', 15, 220);
-
-    // QR Code / Barcode simulation
-    doc.setDrawColor(brandMidnight[0], brandMidnight[1], brandMidnight[2]);
-    doc.setLineWidth(0.4);
-    for (let i = 0; i < 45; i += 1.8) {
-      // Draw procedural lines
-      const height = 9 + (Math.sin(i) * 2);
-      doc.line(135 + i, 230, 135 + i, 230 + height);
+    let distanceKm: number | undefined = undefined;
+    if (hist.pickupLat && hist.destLat && hist.pickupLng && hist.destLng) {
+      distanceKm = Number(getDistanceKm(hist.pickupLat, hist.pickupLng, hist.destLat, hist.destLng).toFixed(1));
+    } else if (pickup && destination) {
+      distanceKm = Number(getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng).toFixed(1));
     }
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`WND-VERIFY-${hist.id.toUpperCase()}`, 135, 245);
 
-    // Thank you text
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9.5);
-    doc.setTextColor(brandMidnight[0], brandMidnight[1], brandMidnight[2]);
-    doc.text('Thank you for choosing Wanda Taxi!', 15, 236);
-    doc.text('Have a safe and premium journey next time.', 15, 241);
-
-    doc.save(`Wanda_Receipt_${hist.id}.pdf`);
+    generateAndDownloadRideReceipt({
+      id: hist.id,
+      date: hist.date,
+      pickupName: hist.pickupName,
+      destName: hist.destName,
+      fare: hist.fare,
+      paymentMethod: hist.paymentMethod,
+      vehicleClass: hist.vehicleClass,
+      driverName: hist.driverName || activeDriver?.name || 'Chauffeur Wanda',
+      driverPlate: activeDriver?.vehiclePlate,
+      passengerName: user?.name || 'Passager Wanda',
+      passengerPhone: user?.phone || 'N/A',
+      distanceKm: distanceKm,
+      tipAmount: hist.tipAmount || tipAmount || 0,
+      waitingTimeSeconds: currentRideWaitingTime,
+      waitingFee: currentRideWaitingFare,
+      pointsRedeemed: hist.pointsRedeemed || ridePointsRedeemed || 0,
+      status: hist.status
+    }, {
+      slangMode,
+      language
+    });
 
     setTimeout(() => {
       alert(slangMode 
