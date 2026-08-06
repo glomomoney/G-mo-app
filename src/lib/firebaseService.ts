@@ -155,3 +155,74 @@ export const subscribeToSettings = (onUpdate: (data: any) => void) => {
     console.warn('Firestore subscribeToSettings notice:', err?.message || err);
   });
 };
+
+// Push Notifications Firestore Integration
+export const sendNotificationToFirestore = async (notification: any) => {
+  try {
+    const notifCol = collection(db, 'notifications');
+    const docRef = await addDoc(notifCol, {
+      ...notification,
+      timestamp: notification.timestamp || new Date().toISOString(),
+      readBy: notification.readBy || []
+    });
+    return docRef.id;
+  } catch (err) {
+    console.error('Error sending notification to Firestore:', err);
+    throw err;
+  }
+};
+
+export const subscribeToNotifications = (onUpdate: (notifications: any[]) => void) => {
+  const notifCol = collection(db, 'notifications');
+  const q = query(notifCol, orderBy('timestamp', 'desc'), limit(50));
+  return onSnapshot(q, (snapshot) => {
+    const notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    onUpdate(notifications);
+  }, (err) => {
+    console.warn('Firestore subscribeToNotifications notice:', err?.message || err);
+  });
+};
+
+export const markNotificationAsReadInFirestore = async (notificationId: string, userId: string) => {
+  try {
+    const notifRef = doc(db, 'notifications', notificationId);
+    const snap = await getDoc(notifRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      const readBy = data.readBy || [];
+      if (!readBy.includes(userId)) {
+        await updateDoc(notifRef, {
+          readBy: [...readBy, userId]
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Error marking notification as read in Firestore:', err);
+  }
+};
+
+export const saveNotificationScheduleToFirestore = async (schedule: any) => {
+  try {
+    const scheduleRef = doc(db, 'settings', 'notification_schedule');
+    await setDoc(scheduleRef, {
+      ...schedule,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('Error saving notification schedule to Firestore:', err);
+    throw err;
+  }
+};
+
+export const subscribeToNotificationSchedule = (onUpdate: (data: any) => void) => {
+  const scheduleRef = doc(db, 'settings', 'notification_schedule');
+  return onSnapshot(scheduleRef, (docSnap) => {
+    if (docSnap.exists()) {
+      onUpdate(docSnap.data());
+    }
+  }, (err) => {
+    console.warn('Firestore subscribeToNotificationSchedule notice:', err?.message || err);
+  });
+};
+

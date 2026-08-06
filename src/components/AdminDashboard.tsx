@@ -23,11 +23,31 @@ import {
   Cloud,
   Check,
   AlertCircle,
-  Percent
+  Percent,
+  Send,
+  Sparkles,
+  Globe,
+  UserCheck,
+  Calendar,
+  Edit3,
+  Megaphone,
+  Zap,
+  Play,
+  Trash2,
+  Tag,
+  Car
 } from 'lucide-react';
 import WandaLogo from './WandaLogo';
-import { PaymentMethod } from '../types';
-import { saveSettingsToFirestore, subscribeToSettings } from '../lib/firebaseService';
+import { PaymentMethod, AppNotification, NotificationScheduleConfig } from '../types';
+import { 
+  saveSettingsToFirestore, 
+  subscribeToSettings, 
+  sendNotificationToFirestore, 
+  subscribeToNotifications,
+  saveNotificationScheduleToFirestore,
+  subscribeToNotificationSchedule
+} from '../lib/firebaseService';
+
 
 interface AdminDashboardProps {
   onClose: () => void;
@@ -64,7 +84,7 @@ export default function AdminDashboard({
   transactions,
   onApproveWithdrawal
 }: AdminDashboardProps) {
-  const [tab, setTab] = useState<'kpi' | 'drivers' | 'transactions' | 'settings'>('kpi');
+  const [tab, setTab] = useState<'kpi' | 'drivers' | 'transactions' | 'settings' | 'notifications'>('kpi');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeWeatherAlert, setActiveWeatherAlert] = useState<string>('Normal Skies');
 
@@ -75,14 +95,67 @@ export default function AdminDashboard({
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
 
+  // Push Notifications Management State
+  const [notificationsList, setNotificationsList] = useState<AppNotification[]>([]);
+  const [notificationSegment, setNotificationSegment] = useState<'passengers' | 'drivers' | 'schedule' | 'calculator'>('passengers');
+  
+  // Custom Broadcast Composer State
+  const [composerTarget, setComposerTarget] = useState<'passenger' | 'driver' | 'all'>('passenger');
+  const [composerTitle, setComposerTitle] = useState('');
+  const [composerMessage, setComposerMessage] = useState('');
+  const [composerType, setComposerType] = useState<'promo' | 'info' | 'alert' | 'route_fare'>('promo');
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+  const [notifSendFeedback, setNotifSendFeedback] = useState<string | null>(null);
+
+  // Automated Schedule & Templates State
+  const [scheduleConfig, setScheduleConfig] = useState<NotificationScheduleConfig>({
+    enabled: true,
+    timesPerDay: 3,
+    timesList: ["08:00", "12:30", "18:00"],
+    language: "fr",
+    passengerTemplates: [
+      {
+        title: "⚡ Réduction Wallet Wanda 15%",
+        message: "Économisez 15% sur toutes vos courses Wanda en payant directement avec votre Portefeuille Wallet Wanda !"
+      },
+      {
+        title: "🎁 Bonus de Recharge +20%",
+        message: "Chaque rechargement Wallet Wanda vous donne droit à 20% de crédit bonus immédiatement !"
+      },
+      {
+        title: "🚖 Meilleur Tarif du Pays Garanti",
+        message: "Nos tarifs sont les meilleurs du Cameroun ! Effectuez vos trajets BMRC <-> Bastos au meilleur prix."
+      }
+    ],
+    driverTemplates: [
+      {
+        title: "🚀 Heure de Pointe - Bastos / Akwa",
+        message: "Demande élevée détectée ! Connectez-vous pour accepter des courses au meilleur tarif."
+      },
+      {
+        title: "💰 Commission Wanda Réduite",
+        message: "Complétez 10 courses aujourd'hui et conservez 90% de vos gains !"
+      }
+    ]
+  });
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+  const [scheduleFeedback, setScheduleFeedback] = useState<string | null>(null);
+
+  // Route Fare Calculator Simulator State
+  const [calcFrom, setCalcFrom] = useState('BMRC');
+  const [calcTo, setCalcTo] = useState('Bastos');
+  const [calcDistance, setCalcDistance] = useState(7.5);
+  const [calcClass, setCalcClass] = useState('ecoride');
+  const [calcLang, setCalcLang] = useState<'fr' | 'en'>('fr');
+
   // Sync formData with systemSettings when props change
   useEffect(() => {
     setFormData(systemSettings);
   }, [systemSettings]);
 
-  // Subscribe directly to Firestore settings/pricing collection
+  // Subscribe directly to Firestore settings, notifications & schedule collections
   useEffect(() => {
-    const unsubscribe = subscribeToSettings((firestoreData) => {
+    const unsubscribeSettings = subscribeToSettings((firestoreData) => {
       if (firestoreData) {
         setFormData(prev => ({
           ...prev,
@@ -95,10 +168,133 @@ export default function AdminDashboard({
         setLastSyncedTime(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       }
     });
+
+    const unsubscribeNotifications = subscribeToNotifications((list) => {
+      setNotificationsList(list as AppNotification[]);
+    });
+
+    const unsubscribeSchedule = subscribeToNotificationSchedule((sched) => {
+      if (sched) {
+        setScheduleConfig(prev => ({
+          ...prev,
+          ...sched
+        }));
+      }
+    });
+
     return () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribeSettings) unsubscribeSettings();
+      if (unsubscribeNotifications) unsubscribeNotifications();
+      if (unsubscribeSchedule) unsubscribeSchedule();
     };
   }, []);
+
+  // Dispatch custom push notification to Firestore
+  const handleSendCustomNotification = async (targetOverride?: 'passenger' | 'driver' | 'all') => {
+    const target = targetOverride || composerTarget;
+    if (!composerTitle.trim() || !composerMessage.trim()) {
+      setNotifSendFeedback("Veuillez saisir un titre et un message.");
+      return;
+    }
+
+    setIsSendingNotif(true);
+    setNotifSendFeedback(null);
+
+    try {
+      await sendNotificationToFirestore({
+        target,
+        title: composerTitle,
+        message: composerMessage,
+        type: composerType,
+        timestamp: new Date().toISOString(),
+        language: scheduleConfig.language,
+        readBy: []
+      });
+
+      setNotifSendFeedback(`Push envoyé avec succès aux ${target === 'passenger' ? 'Passagers' : target === 'driver' ? 'Chauffeurs' : 'Tous'} !`);
+      setComposerTitle('');
+      setComposerMessage('');
+      setTimeout(() => setNotifSendFeedback(null), 5000);
+    } catch (err: any) {
+      setNotifSendFeedback(`Erreur lors de l'envoi : ${err?.message || 'Erreur inconnue'}`);
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
+  // Save Notification Schedule to Firestore
+  const handleSaveNotificationSchedule = async () => {
+    setIsSavingSchedule(true);
+    setScheduleFeedback(null);
+    try {
+      await saveNotificationScheduleToFirestore(scheduleConfig);
+      setScheduleFeedback(`Planning des 3 notifications quotidiennes enregistré dans Firestore !`);
+      setTimeout(() => setScheduleFeedback(null), 5000);
+    } catch (err: any) {
+      setScheduleFeedback(`Erreur de sauvegarde : ${err?.message || 'Erreur'}`);
+    } finally {
+      setIsSavingSchedule(false);
+    }
+  };
+
+  // Trigger immediate test dispatch of daily generated message
+  const handleTriggerDailyGeneratedMessage = async (templateIndex: number) => {
+    setIsSendingNotif(true);
+    setNotifSendFeedback(null);
+
+    try {
+      const template = scheduleConfig.passengerTemplates[templateIndex] || scheduleConfig.passengerTemplates[0];
+      
+      // Calculate real fare for route if included
+      let routeData = undefined;
+      let title = template.title;
+      let message = template.message;
+
+      if (template.includeRouteFare || templateIndex === 2) {
+        const rates = formData.classRates?.[calcClass] || { baseFare: 1500, perKm: 250 };
+        const baseFare = rates.baseFare;
+        const perKm = rates.perKm;
+        const distance = calcDistance;
+        const rawFare = (baseFare + (distance * perKm)) * (formData.surgeMultiplier || 1.0);
+        const walletFare = Math.round(rawFare * 0.85); // 15% discount with wallet
+
+        routeData = {
+          fromName: calcFrom,
+          toName: calcTo,
+          distanceKm: distance,
+          estimatedFare: walletFare,
+          vehicleClass: calcClass
+        };
+
+        if (scheduleConfig.language === 'en') {
+          title = `⚡ Best Fare Deal Today: ${calcFrom} -> ${calcTo}`;
+          message = `Ride from ${calcFrom} to ${calcTo} for only ${walletFare.toLocaleString('en-US')} FCFA with your 15% Wanda Wallet discount! Our fare is the best in the country.`;
+        } else {
+          title = `⚡ Meilleure Offre du Jour : ${calcFrom} -> ${calcTo}`;
+          message = `Trajet de ${calcFrom} à ${calcTo} pour seulement ${walletFare.toLocaleString('fr-FR')} FCFA grâce à la réduction Wallet 15% ! Nos tarifs sont les meilleurs du pays.`;
+        }
+      }
+
+      await sendNotificationToFirestore({
+        target: 'passenger',
+        title,
+        message,
+        type: 'promo',
+        timestamp: new Date().toISOString(),
+        language: scheduleConfig.language,
+        readBy: [],
+        routeData
+      });
+
+      setNotifSendFeedback(`Message généré #${templateIndex + 1} envoyé en Push direct aux passagers !`);
+      setTimeout(() => setNotifSendFeedback(null), 5000);
+    } catch (err: any) {
+      setNotifSendFeedback(`Erreur : ${err?.message || 'Erreur'}`);
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
 
   const handleSaveToFirestore = async () => {
     setIsSaving(true);
@@ -211,6 +407,18 @@ export default function AdminDashboard({
           >
             <Sliders size={16} />
             <span>⚙️ Tarification & Prix / KM</span>
+          </button>
+          <button
+            onClick={() => setTab('notifications')}
+            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'notifications' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'}`}
+          >
+            <Bell size={16} />
+            <span>📢 Push Notifications</span>
+            {notificationsList.length > 0 && (
+              <span className="ml-auto bg-brand-gold text-brand-midnight font-extrabold text-[9px] px-2 py-0.5 rounded-full font-mono">
+                {notificationsList.length}
+              </span>
+            )}
           </button>
         </aside>
 
@@ -1031,6 +1239,819 @@ export default function AdminDashboard({
                     )}
                   </button>
                 </div>
+              </motion.div>
+            )}
+
+            {/* NOTIFICATIONS MANAGEMENT CENTER TAB */}
+            {tab === 'notifications' && (
+              <motion.div
+                key="notifications-panel"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="bg-brand-card border border-brand-input rounded-2xl p-6 shadow-md space-y-6"
+              >
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-brand-deep/90 border border-brand-gold/30 rounded-2xl p-5 shadow-inner">
+                  <div className="space-y-1">
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <Bell className="text-brand-gold animate-bounce" size={22} />
+                      <span>Centre de Notifications Push & Marketing Wanda</span>
+                    </h3>
+                    <p className="text-xs text-brand-text-muted font-medium">
+                      Gérez et diffusez des notifications push en temps réel aux Passagers et Chauffeurs, ou configurez le programme quotidien des 3 messages automatiques (Réductions Wallet 15%, Bonus 20%, Calcul de Prix de Trajet).
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-mono text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                      {notificationsList.length} Pushs diffusés
+                    </span>
+                  </div>
+                </div>
+
+                {/* Feedback Messages */}
+                {notifSendFeedback && (
+                  <div className="bg-brand-gold/15 border border-brand-gold/40 text-brand-gold p-3.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm">
+                    <Sparkles size={16} className="shrink-0" />
+                    <span>{notifSendFeedback}</span>
+                  </div>
+                )}
+
+                {/* Sub-Segments Navigation Bar */}
+                <div className="flex flex-wrap items-center gap-2 border-b border-brand-input/60 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => setNotificationSegment('passengers')}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                      notificationSegment === 'passengers'
+                        ? 'bg-brand-gold text-brand-midnight shadow-lg'
+                        : 'bg-brand-deep/80 text-brand-text-muted hover:text-white border border-brand-input/40'
+                    }`}
+                  >
+                    <Users size={14} />
+                    <span>Segment Passagers</span>
+                    <span className="bg-brand-midnight/30 text-current text-[10px] font-mono px-1.5 py-0.5 rounded-md">
+                      {notificationsList.filter(n => n.target === 'passenger' || n.target === 'all').length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNotificationSegment('drivers')}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                      notificationSegment === 'drivers'
+                        ? 'bg-brand-gold text-brand-midnight shadow-lg'
+                        : 'bg-brand-deep/80 text-brand-text-muted hover:text-white border border-brand-input/40'
+                    }`}
+                  >
+                    <Car size={14} />
+                    <span>Segment Chauffeurs</span>
+                    <span className="bg-brand-midnight/30 text-current text-[10px] font-mono px-1.5 py-0.5 rounded-md">
+                      {notificationsList.filter(n => n.target === 'driver' || n.target === 'all').length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNotificationSegment('schedule')}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                      notificationSegment === 'schedule'
+                        ? 'bg-brand-gold text-brand-midnight shadow-lg'
+                        : 'bg-brand-deep/80 text-brand-text-muted hover:text-white border border-brand-input/40'
+                    }`}
+                  >
+                    <Calendar size={14} />
+                    <span>Planning Automatique 3x/Jour</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNotificationSegment('calculator')}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                      notificationSegment === 'calculator'
+                        ? 'bg-brand-gold text-brand-midnight shadow-lg'
+                        : 'bg-brand-deep/80 text-brand-text-muted hover:text-white border border-brand-input/40'
+                    }`}
+                  >
+                    <Zap size={14} />
+                    <span>Calculateur de Tarifs Trajet (BMRC → Bastos)</span>
+                  </button>
+                </div>
+
+                {/* SEGMENT 1: PASSENGERS PUSH NOTIFICATIONS */}
+                {notificationSegment === 'passengers' && (
+                  <div className="space-y-6">
+                    <div className="bg-brand-deep/80 border border-brand-gold/20 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-brand-input/60">
+                        <div>
+                          <h4 className="text-xs font-black text-brand-gold uppercase tracking-wider flex items-center gap-1.5">
+                            <Megaphone size={16} />
+                            <span>Composer & Diffuser une Notification aux Passagers</span>
+                          </h4>
+                          <p className="text-[11px] text-brand-text-muted mt-0.5 font-medium">
+                            Saisissez un message personnalisé ou cliquez sur l'un des modèles pré-remplis ci-dessous.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Preset Buttons for Passengers */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider block">
+                          Modèles Rapides Passagers :
+                        </span>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComposerTitle("⚡ Réduction Wallet Wanda -15%");
+                              setComposerMessage("Économisez 15% sur toutes vos courses Wanda en payant directement avec votre Portefeuille Wallet Wanda ! Nos tarifs sont les meilleurs du pays.");
+                              setComposerType("promo");
+                            }}
+                            className="bg-brand-midnight/80 hover:bg-brand-card p-3 rounded-xl border border-brand-gold/30 text-left transition space-y-1 group cursor-pointer"
+                          >
+                            <div className="text-xs font-bold text-brand-gold flex items-center gap-1">
+                              <Sparkles size={12} /> Réduction Wallet 15%
+                            </div>
+                            <p className="text-[10px] text-brand-text-muted line-clamp-2">
+                              "Économisez 15% sur toutes vos courses Wanda en payant directement avec votre Wallet..."
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComposerTitle("🎁 Bonus de Recharge +20%");
+                              setComposerMessage("Profitez d'un bonus instantané de +20% crédité sur votre compte pour chaque rechargement effectué aujourd'hui via MTN MoMo ou Orange Money !");
+                              setComposerType("promo");
+                            }}
+                            className="bg-brand-midnight/80 hover:bg-brand-card p-3 rounded-xl border border-brand-gold/30 text-left transition space-y-1 group cursor-pointer"
+                          >
+                            <div className="text-xs font-bold text-amber-400 flex items-center gap-1">
+                              <Tag size={12} /> Bonus Top-up +20%
+                            </div>
+                            <p className="text-[10px] text-brand-text-muted line-clamp-2">
+                              "Profitez d'un bonus instantané de +20% crédité sur votre compte pour chaque rechargement..."
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const rates = formData.classRates?.[calcClass] || { baseFare: 1500, perKm: 250 };
+                              const fare = Math.round(((rates.baseFare + (calcDistance * rates.perKm)) * (formData.surgeMultiplier || 1.0)) * 0.85);
+                              setComposerTitle(`⚡ Meilleure Offre du Jour : ${calcFrom} -> ${calcTo}`);
+                              setComposerMessage(`Trajet de ${calcFrom} à ${calcTo} pour seulement ${fare.toLocaleString('fr-FR')} FCFA grâce à la réduction Wallet 15% ! Nos tarifs sont les meilleurs du pays.`);
+                              setComposerType("route_fare");
+                            }}
+                            className="bg-brand-midnight/80 hover:bg-brand-card p-3 rounded-xl border border-brand-gold/30 text-left transition space-y-1 group cursor-pointer"
+                          >
+                            <div className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                              <MapPin size={12} /> Tarif Trajet {calcFrom} → {calcTo}
+                            </div>
+                            <p className="text-[10px] text-brand-text-muted line-clamp-2">
+                              "Trajet de {calcFrom} à {calcTo} pour seulement le meilleur tarif du pays avec réduction..."
+                            </p>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Form Inputs */}
+                      <div className="space-y-3 pt-2">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider mb-1">
+                            Titre du Push
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ex: ⚡ Offre du week-end : -15% sur vos courses !"
+                            value={composerTitle}
+                            onChange={(e) => setComposerTitle(e.target.value)}
+                            className="w-full bg-brand-midnight border border-brand-input focus:border-brand-gold rounded-xl px-3.5 py-2 text-xs font-medium text-white outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider mb-1">
+                            Contenu du Message Push
+                          </label>
+                          <textarea
+                            rows={3}
+                            placeholder="Saisissez le texte envoyé sur l'écran des passagers..."
+                            value={composerMessage}
+                            onChange={(e) => setComposerMessage(e.target.value)}
+                            className="w-full bg-brand-midnight border border-brand-input focus:border-brand-gold rounded-xl px-3.5 py-2 text-xs font-medium text-white outline-none resize-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-brand-text-muted font-bold">Type :</span>
+                            <select
+                              value={composerType}
+                              onChange={(e: any) => setComposerType(e.target.value)}
+                              className="bg-brand-midnight border border-brand-input text-white rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                            >
+                              <option value="promo">🎁 Promotion & Promo</option>
+                              <option value="route_fare">🚖 Tarif de Trajet</option>
+                              <option value="info">ℹ️ Information</option>
+                              <option value="alert">⚠️ Alerte Urgente</option>
+                            </select>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSendCustomNotification('passenger')}
+                            disabled={isSendingNotif}
+                            className="w-full sm:w-auto bg-gradient-to-r from-brand-gold to-amber-500 hover:from-amber-400 hover:to-brand-gold text-brand-midnight font-black px-6 py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                          >
+                            {isSendingNotif ? (
+                              <>
+                                <RefreshCw size={14} className="animate-spin" />
+                                <span>Envoi en cours...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Send size={14} />
+                                <span>Envoyer Push aux Passagers</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Passenger Push History */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center justify-between">
+                        <span>Historique des Pushs Passagers</span>
+                        <span className="text-brand-text-muted text-[10px] font-mono">
+                          {notificationsList.filter(n => n.target === 'passenger' || n.target === 'all').length} messages
+                        </span>
+                      </h4>
+
+                      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                        {notificationsList.filter(n => n.target === 'passenger' || n.target === 'all').length === 0 ? (
+                          <div className="p-4 text-center text-xs text-brand-text-muted bg-brand-deep/50 rounded-xl border border-brand-input/40">
+                            Aucun message push diffusé aux passagers pour le moment.
+                          </div>
+                        ) : (
+                          notificationsList.filter(n => n.target === 'passenger' || n.target === 'all').map((notif) => (
+                            <div key={notif.id} className="bg-brand-deep/60 border border-brand-input/60 rounded-xl p-3 flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-brand-gold">{notif.title}</span>
+                                  <span className="text-[9px] bg-brand-gold/15 text-brand-gold font-mono px-1.5 py-0.5 rounded uppercase">
+                                    {notif.type}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-200">{notif.message}</p>
+                                <div className="text-[10px] text-brand-text-muted font-mono">
+                                  {new Date(notif.timestamp).toLocaleString('fr-FR')}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SEGMENT 2: DRIVERS PUSH NOTIFICATIONS */}
+                {notificationSegment === 'drivers' && (
+                  <div className="space-y-6">
+                    <div className="bg-brand-deep/80 border border-brand-gold/20 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-brand-input/60">
+                        <div>
+                          <h4 className="text-xs font-black text-brand-gold uppercase tracking-wider flex items-center gap-1.5">
+                            <Car size={16} />
+                            <span>Composer & Diffuser une Notification aux Chauffeurs</span>
+                          </h4>
+                          <p className="text-[11px] text-brand-text-muted mt-0.5 font-medium">
+                            Envoyez des alertes de forte demande, rappels de sécurité, ou annonces de primes à la flotte de chauffeurs.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Preset Buttons for Drivers */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider block">
+                          Modèles Rapides Chauffeurs :
+                        </span>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComposerTitle("🚀 Zone à Forte Demande - Bastos & Akwa");
+                              setComposerMessage("Forte affluence enregistrée ! Connectez-vous maintenant pour recevoir des demandes de courses en continu avec multiplicateur Surge.");
+                              setComposerType("info");
+                            }}
+                            className="bg-brand-midnight/80 hover:bg-brand-card p-3 rounded-xl border border-brand-gold/30 text-left transition space-y-1 cursor-pointer"
+                          >
+                            <div className="text-xs font-bold text-brand-gold flex items-center gap-1">
+                              <Zap size={12} /> Forte Demande
+                            </div>
+                            <p className="text-[10px] text-brand-text-muted line-clamp-2">
+                              "Forte affluence enregistrée ! Connectez-vous maintenant pour recevoir..."
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComposerTitle("💰 Prime de Course - 5 000 FCFA Offerts");
+                              setComposerMessage("Effectuez 15 courses cette semaine et recevez une prime de 5 000 FCFA versée directement sur votre compte Mobile Money !");
+                              setComposerType("promo");
+                            }}
+                            className="bg-brand-midnight/80 hover:bg-brand-card p-3 rounded-xl border border-brand-gold/30 text-left transition space-y-1 cursor-pointer"
+                          >
+                            <div className="text-xs font-bold text-amber-400 flex items-center gap-1">
+                              <Award size={12} /> Prime Hebdomadaire
+                            </div>
+                            <p className="text-[10px] text-brand-text-muted line-clamp-2">
+                              "Effectuez 15 courses cette semaine et recevez une prime de 5 000 FCFA..."
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComposerTitle("🛡️ Rappel Sécurité & Code de la Route");
+                              setComposerMessage("Chers chauffeurs, merci de porter votre ceinture / casque, vérifier vos pièces et offrir un service accueillant à vos passagers.");
+                              setComposerType("info");
+                            }}
+                            className="bg-brand-midnight/80 hover:bg-brand-card p-3 rounded-xl border border-brand-gold/30 text-left transition space-y-1 cursor-pointer"
+                          >
+                            <div className="text-xs font-bold text-blue-400 flex items-center gap-1">
+                              <ShieldAlert size={12} /> Sécurité & Qualité
+                            </div>
+                            <p className="text-[10px] text-brand-text-muted line-clamp-2">
+                              "Chers chauffeurs, merci de porter votre ceinture / casque et offrir..."
+                            </p>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Form Inputs */}
+                      <div className="space-y-3 pt-2">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider mb-1">
+                            Titre du Push Chauffeurs
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ex: 🚀 Alerte Bastos : Multiplicateur Surge 1.5x !"
+                            value={composerTitle}
+                            onChange={(e) => setComposerTitle(e.target.value)}
+                            className="w-full bg-brand-midnight border border-brand-input focus:border-brand-gold rounded-xl px-3.5 py-2 text-xs font-medium text-white outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider mb-1">
+                            Contenu du Message Push
+                          </label>
+                          <textarea
+                            rows={3}
+                            placeholder="Saisissez le message envoyé à l'application Chauffeur..."
+                            value={composerMessage}
+                            onChange={(e) => setComposerMessage(e.target.value)}
+                            className="w-full bg-brand-midnight border border-brand-input focus:border-brand-gold rounded-xl px-3.5 py-2 text-xs font-medium text-white outline-none resize-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-brand-text-muted font-bold">Type :</span>
+                            <select
+                              value={composerType}
+                              onChange={(e: any) => setComposerType(e.target.value)}
+                              className="bg-brand-midnight border border-brand-input text-white rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                            >
+                              <option value="info">ℹ️ Info Chauffeur</option>
+                              <option value="promo">🎁 Prime / Bonus</option>
+                              <option value="alert">⚠️ Alerte Trafic / Sécurité</option>
+                            </select>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSendCustomNotification('driver')}
+                            disabled={isSendingNotif}
+                            className="w-full sm:w-auto bg-gradient-to-r from-brand-gold to-amber-500 hover:from-amber-400 hover:to-brand-gold text-brand-midnight font-black px-6 py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                          >
+                            {isSendingNotif ? (
+                              <>
+                                <RefreshCw size={14} className="animate-spin" />
+                                <span>Envoi en cours...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Send size={14} />
+                                <span>Envoyer Push aux Chauffeurs</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Driver Push History */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center justify-between">
+                        <span>Historique des Pushs Chauffeurs</span>
+                        <span className="text-brand-text-muted text-[10px] font-mono">
+                          {notificationsList.filter(n => n.target === 'driver' || n.target === 'all').length} messages
+                        </span>
+                      </h4>
+
+                      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                        {notificationsList.filter(n => n.target === 'driver' || n.target === 'all').length === 0 ? (
+                          <div className="p-4 text-center text-xs text-brand-text-muted bg-brand-deep/50 rounded-xl border border-brand-input/40">
+                            Aucun message push diffusé aux chauffeurs pour le moment.
+                          </div>
+                        ) : (
+                          notificationsList.filter(n => n.target === 'driver' || n.target === 'all').map((notif) => (
+                            <div key={notif.id} className="bg-brand-deep/60 border border-brand-input/60 rounded-xl p-3 flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-brand-gold">{notif.title}</span>
+                                  <span className="text-[9px] bg-brand-gold/15 text-brand-gold font-mono px-1.5 py-0.5 rounded uppercase">
+                                    {notif.type}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-200">{notif.message}</p>
+                                <div className="text-[10px] text-brand-text-muted font-mono">
+                                  {new Date(notif.timestamp).toLocaleString('fr-FR')}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SEGMENT 3: AUTOMATED DAILY SCHEDULE & EDITABLE TEMPLATES (3 MESSAGES/DAY) */}
+                {notificationSegment === 'schedule' && (
+                  <div className="space-y-6">
+                    <div className="bg-brand-deep/80 border border-brand-gold/30 rounded-2xl p-5 space-y-5">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-brand-input/60">
+                        <div>
+                          <h4 className="text-xs font-black text-brand-gold uppercase tracking-wider flex items-center gap-1.5">
+                            <Calendar size={18} />
+                            <span>Programme Quotidien des 3 Messages Automatiques</span>
+                          </h4>
+                          <p className="text-[11px] text-brand-text-muted mt-0.5 font-medium">
+                            Chaque jour, les passagers reçoivent 3 messages générés (Réduction Wallet 15%, Bonus 20%, et Calcul du meilleur tarif du pays).
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          {/* Language Switcher */}
+                          <div className="flex items-center bg-brand-midnight p-1 rounded-xl border border-brand-input/60 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setScheduleConfig(prev => ({ ...prev, language: 'fr' }))}
+                              className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
+                                scheduleConfig.language === 'fr' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted'
+                              }`}
+                            >
+                              🇫🇷 Français
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setScheduleConfig(prev => ({ ...prev, language: 'en' }))}
+                              className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
+                                scheduleConfig.language === 'en' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted'
+                              }`}
+                            >
+                              🇬🇧 English
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleSaveNotificationSchedule}
+                            disabled={isSavingSchedule}
+                            className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer transition"
+                          >
+                            {isSavingSchedule ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span>Enregistrer Planning</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {scheduleFeedback && (
+                        <div className="bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 p-3 rounded-xl text-xs font-bold flex items-center gap-2">
+                          <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+                          <span>{scheduleFeedback}</span>
+                        </div>
+                      )}
+
+                      {/* Times & Frequency Controls */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-brand-midnight p-3.5 rounded-xl border border-brand-input/60 space-y-1.5">
+                          <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">
+                            Matin (Message #1 - Wallet Discount)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <Clock size={16} className="text-brand-gold" />
+                            <input
+                              type="time"
+                              value={scheduleConfig.timesList[0] || "08:00"}
+                              onChange={(e) => {
+                                const list = [...scheduleConfig.timesList];
+                                list[0] = e.target.value;
+                                setScheduleConfig(prev => ({ ...prev, timesList: list }));
+                              }}
+                              className="bg-brand-card border border-brand-input rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-white outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="bg-brand-midnight p-3.5 rounded-xl border border-brand-input/60 space-y-1.5">
+                          <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">
+                            Midi (Message #2 - Top-Up Bonus)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <Clock size={16} className="text-brand-gold" />
+                            <input
+                              type="time"
+                              value={scheduleConfig.timesList[1] || "12:30"}
+                              onChange={(e) => {
+                                const list = [...scheduleConfig.timesList];
+                                list[1] = e.target.value;
+                                setScheduleConfig(prev => ({ ...prev, timesList: list }));
+                              }}
+                              className="bg-brand-card border border-brand-input rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-white outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="bg-brand-midnight p-3.5 rounded-xl border border-brand-input/60 space-y-1.5">
+                          <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">
+                            Soir (Message #3 - Best Fare Route Deal)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <Clock size={16} className="text-brand-gold" />
+                            <input
+                              type="time"
+                              value={scheduleConfig.timesList[2] || "18:00"}
+                              onChange={(e) => {
+                                const list = [...scheduleConfig.timesList];
+                                list[2] = e.target.value;
+                                setScheduleConfig(prev => ({ ...prev, timesList: list }));
+                              }}
+                              className="bg-brand-card border border-brand-input rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-white outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Editable Template Cards */}
+                      <div className="space-y-4 pt-2">
+                        <h5 className="text-xs font-black text-white uppercase tracking-wider">
+                          Contenu des 3 Messages Générés (Modifiables en Temps Réel)
+                        </h5>
+
+                        <div className="space-y-3">
+                          {scheduleConfig.passengerTemplates.map((template, idx) => (
+                            <div key={idx} className="bg-brand-midnight/90 border border-brand-input/80 rounded-2xl p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-brand-gold flex items-center gap-2">
+                                  <span className="bg-brand-gold text-brand-midnight text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">
+                                    Message #{idx + 1}
+                                  </span>
+                                  {idx === 0 ? "Réduction Wallet 15%" : idx === 1 ? "Bonus Recharge 20%" : "Meilleur Tarif Trajet du Pays"}
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleTriggerDailyGeneratedMessage(idx)}
+                                  disabled={isSendingNotif}
+                                  className="bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-xl text-[10.5px] font-bold flex items-center gap-1 transition cursor-pointer"
+                                >
+                                  <Play size={12} />
+                                  <span>Tester l'Envoi Direct</span>
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase mb-1">Titre</label>
+                                  <input
+                                    type="text"
+                                    value={template.title}
+                                    onChange={(e) => {
+                                      const updatedTemplates = [...scheduleConfig.passengerTemplates];
+                                      updatedTemplates[idx] = { ...template, title: e.target.value };
+                                      setScheduleConfig(prev => ({ ...prev, passengerTemplates: updatedTemplates }));
+                                    }}
+                                    className="w-full bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 text-xs text-white font-bold outline-none"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase mb-1">Description / Offre</label>
+                                  <input
+                                    type="text"
+                                    value={template.message}
+                                    onChange={(e) => {
+                                      const updatedTemplates = [...scheduleConfig.passengerTemplates];
+                                      updatedTemplates[idx] = { ...template, message: e.target.value };
+                                      setScheduleConfig(prev => ({ ...prev, passengerTemplates: updatedTemplates }));
+                                    }}
+                                    className="w-full bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 text-xs text-white outline-none"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SEGMENT 4: ROUTE FARE CALCULATOR SIMULATOR (BMRC -> BASTOS & CUSTOM ROUTES) */}
+                {notificationSegment === 'calculator' && (
+                  <div className="space-y-6">
+                    <div className="bg-brand-deep/80 border border-brand-gold/30 rounded-2xl p-5 space-y-5">
+                      <div className="flex items-center justify-between pb-3 border-b border-brand-input/60">
+                        <div>
+                          <h4 className="text-xs font-black text-brand-gold uppercase tracking-wider flex items-center gap-1.5">
+                            <Zap size={18} />
+                            <span>Calculateur d'Offres de Trajets & Générateur de Messages (BMRC → Bastos)</span>
+                          </h4>
+                          <p className="text-[11px] text-brand-text-muted mt-0.5 font-medium">
+                            Calcule automatiquement la distance, le tarif de base, le prix/km et la réduction Wallet de 15% pour générer une offre push irrésistible.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Quick Route Preset Pills */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider block">
+                          Trajets Populaires Prédéfinis :
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCalcFrom("BMRC");
+                              setCalcTo("Bastos");
+                              setCalcDistance(7.5);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                              calcFrom === "BMRC" && calcTo === "Bastos"
+                                ? 'bg-brand-gold text-brand-midnight border-brand-gold'
+                                : 'bg-brand-midnight text-brand-text-muted hover:text-white border-brand-input'
+                            }`}
+                          >
+                            📍 Yaoundé : BMRC → Bastos (7.5 km)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCalcFrom("Akwa");
+                              setCalcTo("Bonapriso");
+                              setCalcDistance(4.2);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                              calcFrom === "Akwa" && calcTo === "Bonapriso"
+                                ? 'bg-brand-gold text-brand-midnight border-brand-gold'
+                                : 'bg-brand-midnight text-brand-text-muted hover:text-white border-brand-input'
+                            }`}
+                          >
+                            📍 Douala : Akwa → Bonapriso (4.2 km)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCalcFrom("Bastos");
+                              setCalcTo("Aéroport Nsimalen");
+                              setCalcDistance(22.0);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                              calcFrom === "Bastos" && calcTo === "Aéroport Nsimalen"
+                                ? 'bg-brand-gold text-brand-midnight border-brand-gold'
+                                : 'bg-brand-midnight text-brand-text-muted hover:text-white border-brand-input'
+                            }`}
+                          >
+                            ✈️ Yaoundé : Bastos → Nsimalen (22.0 km)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custom Route Controls */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-brand-midnight p-4 rounded-xl border border-brand-input/60">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase mb-1">Point de Départ</label>
+                          <input
+                            type="text"
+                            value={calcFrom}
+                            onChange={(e) => setCalcFrom(e.target.value)}
+                            className="w-full bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 text-xs text-white font-bold outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase mb-1">Destination</label>
+                          <input
+                            type="text"
+                            value={calcTo}
+                            onChange={(e) => setCalcTo(e.target.value)}
+                            className="w-full bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 text-xs text-white font-bold outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase mb-1">Distance (km)</label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={calcDistance}
+                            onChange={(e) => setCalcDistance(parseFloat(e.target.value) || 1)}
+                            className="w-full bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 text-xs text-brand-gold font-mono font-bold outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-brand-text-muted uppercase mb-1">Catégorie Véhicule</label>
+                          <select
+                            value={calcClass}
+                            onChange={(e) => setCalcClass(e.target.value)}
+                            className="w-full bg-brand-card border border-brand-input text-white rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                          >
+                            <option value="okada">🏍️ Okada (Moto)</option>
+                            <option value="keke">🛺 Keke (Petit Taxi)</option>
+                            <option value="ecoride">🚗 EcoRide (Berline Economy)</option>
+                            <option value="comfort">🚘 VIP Ride (SUV Luxe)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Fare Calculation Breakdown Box */}
+                      {(() => {
+                        const rates = formData.classRates?.[calcClass] || { baseFare: 1500, perKm: 250 };
+                        const rawFare = Math.round((rates.baseFare + (calcDistance * rates.perKm)) * (formData.surgeMultiplier || 1.0));
+                        const walletFare = Math.round(rawFare * 0.85); // 15% discount
+                        const savings = rawFare - walletFare;
+
+                        return (
+                          <div className="bg-gradient-to-br from-brand-midnight to-brand-deep border border-brand-gold/40 rounded-2xl p-5 space-y-4 shadow-xl">
+                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 pb-3 border-b border-brand-input/60">
+                              <span className="text-xs font-black text-brand-gold flex items-center gap-2">
+                                <Sparkles size={16} />
+                                <span>Résultat du Calcul : {calcFrom} → {calcTo} ({calcDistance} km)</span>
+                              </span>
+
+                              <div className="flex items-center gap-3 font-mono">
+                                <span className="text-xs text-brand-text-muted line-through">{rawFare.toLocaleString('fr-FR')} FCFA</span>
+                                <span className="text-base font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-xl">
+                                  {walletFare.toLocaleString('fr-FR')} FCFA (Wallet -15%)
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Generated Message Preview */}
+                            <div className="bg-brand-midnight p-3.5 rounded-xl border border-brand-input/80 space-y-1">
+                              <span className="text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider block">
+                                Aperçu du Message Push Généré :
+                              </span>
+                              <p className="text-xs font-bold text-white leading-relaxed">
+                                ⚡ <strong>Meilleure Offre du Jour : Trajet {calcFrom} → {calcTo} !</strong><br />
+                                Prenez votre course pour seulement <span className="text-brand-gold font-mono">{walletFare.toLocaleString('fr-FR')} FCFA</span> au lieu de {rawFare.toLocaleString('fr-FR')} FCFA en réglant avec votre Wallet Wanda (-15% de réduction). Nos tarifs sont les meilleurs du pays !
+                              </p>
+                            </div>
+
+                            <div className="flex justify-end pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setComposerTitle(`⚡ Meilleure Offre du Jour : ${calcFrom} -> ${calcTo}`);
+                                  setComposerMessage(`Trajet de ${calcFrom} à ${calcTo} pour seulement ${walletFare.toLocaleString('fr-FR')} FCFA grâce à la réduction Wallet 15% ! Nos tarifs sont les meilleurs du pays.`);
+                                  setComposerType("route_fare");
+                                  setNotificationSegment("passengers");
+                                }}
+                                className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black px-5 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow transition active:scale-95 cursor-pointer"
+                              >
+                                <Send size={14} />
+                                <span>Transférer cette offre au Segment Passagers</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
 

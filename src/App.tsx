@@ -73,6 +73,8 @@ import AdminLoginModal from './components/AdminLoginModal';
 import NoDriverModal from './components/NoDriverModal';
 import WalletCard from './components/WalletCard';
 import DriverWallet from './components/DriverWallet';
+import NotificationDrawer from './components/NotificationDrawer';
+import NotificationPushBanner from './components/NotificationPushBanner';
 import WandaLogo from './components/WandaLogo';
 import { LiveCountdownTimer } from './components/LiveCountdownTimer';
 import { ParticleExplosion } from './components/ParticleExplosion';
@@ -92,7 +94,8 @@ import {
   subscribeToHistory,
   saveTransactionToFirestore,
   subscribeToSettings,
-  saveSettingsToFirestore
+  saveSettingsToFirestore,
+  subscribeToNotifications
 } from './lib/firebaseService';
 import { generateAndDownloadRideReceipt } from './utils/pdfReceipt';
 
@@ -114,7 +117,8 @@ import {
   RideClass, 
   PaymentMethod, 
   Message, 
-  HistoryItem 
+  HistoryItem,
+  AppNotification
 } from './types';
 
 // Create friendly local alias to represent Cameroonian locations cleanly
@@ -511,6 +515,30 @@ export default function App() {
   const [showSOS, setShowSOS] = useState(false);
   const [sosAlertTriggered, setSosAlertTriggered] = useState(false);
   const [sosCountdown, setSosCountdown] = useState(5);
+
+  // Notification Push States
+  const [appNotifications, setAppNotifications] = useState<AppNotification[]>([]);
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState<boolean>(false);
+  const [pushBannerNotif, setPushBannerNotif] = useState<AppNotification | null>(null);
+
+  // Subscribe to real-time Firestore notifications
+  useEffect(() => {
+    const unsubscribeNotifs = subscribeToNotifications((rawNotifs) => {
+      const filtered = rawNotifs.filter(n => n.target === 'all' || n.target === role);
+      setAppNotifications(filtered);
+
+      if (filtered.length > 0) {
+        const newest = filtered[0];
+        const lastSeen = localStorage.getItem('wanda_last_seen_notif_id');
+        if (lastSeen !== newest.id) {
+          setPushBannerNotif(newest);
+        }
+      }
+    });
+    return () => {
+      if (unsubscribeNotifs) unsubscribeNotifs();
+    };
+  }, [role]);
 
   // No Driver Available Modal state
   const [showNoDriverModal, setShowNoDriverModal] = useState(false);
@@ -2695,6 +2723,27 @@ export default function App() {
             <ShieldCheck size={12} className="text-emerald-400 shrink-0" />
             <span>Admin Portal</span>
             <span className="text-[8px] bg-emerald-500/20 px-1 py-0.2 rounded text-emerald-300 font-mono">1-CLIC</span>
+          </button>
+
+          {/* Push Notification Bell Icon */}
+          <button
+            onClick={() => {
+              setIsNotificationDrawerOpen(true);
+              if (appNotifications.length > 0) {
+                localStorage.setItem('wanda_last_seen_notif_id', appNotifications[0].id);
+              }
+            }}
+            className="relative bg-brand-card/60 hover:bg-brand-card text-brand-gold border border-brand-input px-2 py-1 sm:px-2.5 sm:py-1 rounded-xl text-[9px] sm:text-[10px] font-black cursor-pointer transition shadow-sm flex items-center gap-1 shrink-0"
+            id="notification-bell-btn"
+            title="Notifications Push Wanda"
+          >
+            <Bell size={13} className="text-brand-gold animate-bounce" />
+            <span className="hidden xs:inline text-[10px] font-extrabold text-brand-gold">Push</span>
+            {appNotifications.length > 0 && (
+              <span className="bg-rose-500 text-white font-mono text-[9px] font-bold px-1.5 py-0.2 rounded-full border border-brand-midnight animate-pulse">
+                {appNotifications.length}
+              </span>
+            )}
           </button>
 
           {/* Dual Role Selector: Passenger vs Driver */}
@@ -6425,6 +6474,24 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Push Notification Banner Overlay */}
+      <NotificationPushBanner
+        notification={pushBannerNotif}
+        onClose={() => setPushBannerNotif(null)}
+        onOpenDrawer={() => {
+          setPushBannerNotif(null);
+          setIsNotificationDrawerOpen(true);
+        }}
+      />
+
+      {/* Notification Drawer Panel */}
+      <NotificationDrawer
+        isOpen={isNotificationDrawerOpen}
+        onClose={() => setIsNotificationDrawerOpen(false)}
+        notifications={appNotifications}
+        role={role}
+      />
 
     </div>
   );

@@ -69,12 +69,31 @@
         "classRates": { "type": "object" },
         "updatedAt": { "type": "string" }
       }
+    },
+    "notifications": {
+      "title": "Push Notifications",
+      "description": "Broadcast push notifications sent to passengers and drivers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "target": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "language": { "type": "string" }
+      },
+      "required": ["target", "title", "message"]
     }
   },
   "firestore": {
     "/settings/{settingsId}": {
       "schema": { "$ref": "#/entities/settings" },
       "description": "System configuration documents such as pricing"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/notifications" },
+      "description": "Push notification messages"
     }
   }
 }

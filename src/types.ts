@@ -79,3 +79,40 @@ export interface HistoryItem {
   pointsEarned?: number;
   pointsRedeemed?: number;
 }
+
+export interface AppNotification {
+  id: string;
+  target: 'all' | 'passenger' | 'driver';
+  title: string;
+  message: string;
+  type: 'promo' | 'info' | 'alert' | 'route_fare';
+  timestamp: string;
+  language?: 'fr' | 'en';
+  readBy?: string[];
+  routeData?: {
+    fromName: string;
+    toName: string;
+    distanceKm: number;
+    estimatedFare: number;
+    vehicleClass: string;
+  };
+}
+
+export interface NotificationScheduleConfig {
+  enabled: boolean;
+  timesPerDay: number; // e.g. 3
+  timesList: string[]; // e.g. ["08:00", "12:30", "18:00"]
+  language: 'fr' | 'en';
+  passengerTemplates: {
+    title: string;
+    message: string;
+    includeRouteFare?: boolean;
+    routeFrom?: string;
+    routeTo?: string;
+  }[];
+  driverTemplates: {
+    title: string;
+    message: string;
+  }[];
+}
+

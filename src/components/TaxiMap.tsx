@@ -304,6 +304,39 @@ export default function TaxiMap({
   const [isTiltSnapping, setIsTiltSnapping] = useState<boolean>(false);
   const [autoDetectedZone, setAutoDetectedZone] = useState<{ id: string; name: string; city: string } | null>(null);
 
+  // Live Polyline Leaflet Instance Reader & Floating Instruction Chip State
+  const [routePolylineVerticesCount, setRoutePolylineVerticesCount] = useState<number>(0);
+  const [isChipHighlighted, setIsChipHighlighted] = useState<boolean>(false);
+
+  useEffect(() => {
+    const updatePolylineFromLeaflet = () => {
+      let activeLine: L.Polyline | null = null;
+      if (activeRouteLineRef.current && mapRef.current?.hasLayer(activeRouteLineRef.current)) {
+        activeLine = activeRouteLineRef.current;
+      } else if (routeLineRef.current && mapRef.current?.hasLayer(routeLineRef.current)) {
+        activeLine = routeLineRef.current;
+      } else if (approachLineRef.current && mapRef.current?.hasLayer(approachLineRef.current)) {
+        activeLine = approachLineRef.current;
+      }
+
+      if (activeLine) {
+        try {
+          const latlngs = activeLine.getLatLngs();
+          const count = Array.isArray(latlngs) ? latlngs.flat(2).length : 0;
+          setRoutePolylineVerticesCount(count);
+        } catch (e) {
+          setRoutePolylineVerticesCount(0);
+        }
+      } else {
+        setRoutePolylineVerticesCount(0);
+      }
+    };
+
+    updatePolylineFromLeaflet();
+    const interval = setInterval(updatePolylineFromLeaflet, 800);
+    return () => clearInterval(interval);
+  }, [pickup, destination, driverLocation, status]);
+
   // New Tactical Navigation Overlay States
   const [isTacticalOverlayMinimized, setIsTacticalOverlayMinimized] = useState(() => {
     const saved = localStorage.getItem('wanda_nav_overlay_minimized');
@@ -2774,6 +2807,139 @@ export default function TaxiMap({
           />
         )}
       </motion.div>
+
+      {/* HIGH-VISIBILITY FLOATING ROUTE INSTRUCTION CHIP IN MAP VIEWPORT */}
+      {(() => {
+        const activeNavStep = navInstructions[currentStepIndex];
+        let dynamicManeuverIcon = <Navigation size={15} className="text-brand-midnight animate-pulse" />;
+        let cueText = slangMode ? "Suivez l'itinéraire principal" : "Follow main route polyline";
+        let cueDistanceStr = totalDistanceRemaining > 0 ? formatDistance(totalDistanceRemaining) : "";
+
+        if (activeNavStep) {
+          const type = (activeNavStep.modifier || activeNavStep.type || "").toLowerCase();
+          const distVal = activeNavStep.distance || 0;
+          const formattedStepDist = formatDistance(distVal);
+          
+          if (type.includes("left")) {
+            dynamicManeuverIcon = <CornerUpLeft size={16} className="text-brand-midnight font-bold" />;
+            cueText = slangMode 
+              ? `Tournez à gauche dans ${formattedStepDist}`
+              : `Turn left in ${formattedStepDist}`;
+          } else if (type.includes("right")) {
+            dynamicManeuverIcon = <CornerUpRight size={16} className="text-brand-midnight font-bold" />;
+            cueText = slangMode 
+              ? `Tournez à droite dans ${formattedStepDist}`
+              : `Turn right in ${formattedStepDist}`;
+          } else if (type.includes("straight")) {
+            dynamicManeuverIcon = <ArrowUp size={16} className="text-brand-midnight font-bold" />;
+            cueText = slangMode 
+              ? `Continuez tout droit pendant ${formattedStepDist}`
+              : `Continue straight for ${formattedStepDist}`;
+          } else if (type.includes("uturn") || type.includes("u-turn")) {
+            dynamicManeuverIcon = <RefreshCw size={16} className="text-brand-midnight font-bold" />;
+            cueText = slangMode 
+              ? `Faites demi-tour dans ${formattedStepDist}`
+              : `Make a U-turn in ${formattedStepDist}`;
+          } else if (type.includes("arrive") || type.includes("destination")) {
+            dynamicManeuverIcon = <MapPin size={16} className="text-brand-midnight font-bold" />;
+            cueText = slangMode 
+              ? `Arrivée à destination dans ${formattedStepDist}`
+              : `Arrive at destination in ${formattedStepDist}`;
+          } else {
+            dynamicManeuverIcon = <Navigation size={16} className="text-brand-midnight" />;
+            cueText = `${activeNavStep.instruction || "Proceed"} (${formattedStepDist})`;
+          }
+          cueDistanceStr = formattedStepDist;
+        } else if (pickup && destination) {
+          const approxDistMeters = getHaversineDistanceInMeters(
+            driverLocation || pickup, 
+            destination
+          );
+          const formattedDist = formatDistance(approxDistMeters);
+          cueText = slangMode 
+            ? `Itinéraire tracé vers ${destination.name || "Destination"}`
+            : `Route plotted to ${destination.name || "Destination"}`;
+          cueDistanceStr = formattedDist;
+        }
+
+        const handleChipClick = () => {
+          setIsChipHighlighted(true);
+          setTimeout(() => setIsChipHighlighted(false), 1200);
+
+          if (mapRef.current) {
+            let targetPoint: [number, number] | null = null;
+            if (driverLocation) {
+              targetPoint = [driverLocation.lat, driverLocation.lng];
+            } else if (pickup) {
+              targetPoint = [pickup.lat, pickup.lng];
+            }
+            if (targetPoint) {
+              mapRef.current.flyTo(targetPoint, Math.max(15, mapRef.current.getZoom()), { duration: 1.0 });
+            }
+          }
+        };
+
+        return (
+          <motion.div
+            id="floating-route-instruction-chip"
+            initial={{ opacity: 0, y: -15, scale: 0.9 }}
+            animate={{ 
+              opacity: 1, 
+              y: 0, 
+              scale: isChipHighlighted ? 1.05 : 1,
+              boxShadow: isChipHighlighted 
+                ? "0 0 30px rgba(255,211,67,0.9)" 
+                : "0 10px 25px rgba(0,0,0,0.5)"
+            }}
+            transition={{ type: "spring", stiffness: 220, damping: 22 }}
+            onClick={handleChipClick}
+            className={`absolute top-3.5 left-[125px] sm:left-[145px] z-[1010] flex items-center gap-2.5 px-3 py-1.5 rounded-2xl border-2 transition-all duration-300 backdrop-blur-md cursor-pointer select-none max-w-[220px] xs:max-w-[260px] sm:max-w-xs sm:px-3.5 sm:py-2 ${
+              isChipHighlighted 
+                ? 'bg-brand-midnight border-brand-gold text-white shadow-[0_0_25px_rgba(255,211,67,0.8)]' 
+                : routePolylineVerticesCount > 0
+                  ? 'bg-brand-midnight/95 border-brand-gold/80 hover:border-brand-gold text-white shadow-[0_4px_20px_rgba(255,211,67,0.35)]'
+                  : 'bg-brand-midnight/90 border-brand-input/70 hover:border-brand-gold/50 text-brand-text-muted'
+            }`}
+            title={slangMode ? "Cliquez pour centrer sur la prochaine manoeuvre ou le tracé Leaflet" : "Click to center on next maneuver or Leaflet polyline route"}
+          >
+            {/* Maneuver Icon Badge */}
+            <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-md font-black transition-transform ${
+              routePolylineVerticesCount > 0 
+                ? 'bg-gradient-to-br from-brand-gold via-amber-400 to-amber-500 text-brand-midnight shadow-[0_0_10px_rgba(255,211,67,0.5)]' 
+                : 'bg-brand-deep text-brand-text-muted border border-brand-input/40'
+            }`}>
+              {dynamicManeuverIcon}
+            </div>
+
+            {/* Dynamic Cue Text & Polyline Vertex Readout */}
+            <div className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-brand-gold flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${routePolylineVerticesCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                  <span>{slangMode ? "GUIDAGE LEAFLET" : "ROUTE CUE"}</span>
+                </span>
+
+                {/* Live Leaflet Polyline Vertex Counter */}
+                <span className="text-[7.5px] sm:text-[8px] font-mono font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-1 py-0.2 rounded shrink-0" id="chip-polyline-vertex-badge">
+                  {routePolylineVerticesCount > 0 ? `L.Polyline: ${routePolylineVerticesCount} pts` : "Polyline: Active"}
+                </span>
+              </div>
+
+              {/* Dynamic Navigational Cue Text (e.g. 'Turn left in 150m') */}
+              <p className="text-[10px] sm:text-xs font-black text-white truncate mt-0.5 tracking-tight" id="chip-nav-instruction-text">
+                {cueText}
+              </p>
+
+              {/* Additional details */}
+              {cueDistanceStr && (
+                <p className="text-[8px] sm:text-[9px] font-mono font-bold text-brand-gold/90 truncate">
+                  {cueDistanceStr} {totalDurationRemaining > 0 ? `• ETA ${formatDuration(totalDurationRemaining)}` : ''}
+                </p>
+              )}
+            </div>
+          </motion.div>
+        );
+      })()}
 
       {/* FLOATING LIVE TURN-BY-TURN NAVIGATION HUD */}
       <AnimatePresence mode="wait">
