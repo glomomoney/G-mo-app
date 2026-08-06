@@ -46,6 +46,8 @@ export const subscribeToUser = (userId: string, onUpdate: (data: any) => void) =
     if (docSnap.exists()) {
       onUpdate(docSnap.data());
     }
+  }, (err) => {
+    console.warn('Firestore subscribeToUser offline or connection notice:', err?.message || err);
   });
 };
 
@@ -60,7 +62,7 @@ export const createRideInFirestore = async (ride: Partial<RideRequest> & { userI
     });
     return docRef.id;
   } catch (err) {
-    console.error('Error creating ride in Firestore:', err);
+    console.warn('Error creating ride in Firestore (offline mode active):', err);
     return null;
   }
 };
@@ -73,7 +75,7 @@ export const updateRideStatusInFirestore = async (rideId: string, updates: Parti
       updatedAt: new Date().toISOString()
     });
   } catch (err) {
-    console.error('Error updating ride status in Firestore:', err);
+    console.warn('Error updating ride status in Firestore:', err);
   }
 };
 
@@ -83,6 +85,8 @@ export const subscribeToActiveRides = (onUpdate: (rides: any[]) => void) => {
   return onSnapshot(q, (snapshot) => {
     const rides = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     onUpdate(rides);
+  }, (err) => {
+    console.warn('Firestore subscribeToActiveRides offline or connection notice:', err?.message || err);
   });
 };
 
@@ -96,7 +100,7 @@ export const saveHistoryToFirestore = async (item: HistoryItem, userId: string) 
       createdAt: new Date().toISOString()
     });
   } catch (err) {
-    console.error('Error saving history item to Firestore:', err);
+    console.warn('Error saving history item to Firestore:', err);
   }
 };
 
@@ -108,6 +112,8 @@ export const subscribeToHistory = (userId: string, onUpdate: (items: HistoryItem
       .map(doc => ({ id: doc.id, ...doc.data() } as HistoryItem & { userId?: string }))
       .filter(item => !item.userId || item.userId === userId);
     onUpdate(items);
+  }, (err) => {
+    console.warn('Firestore subscribeToHistory offline or connection notice:', err?.message || err);
   });
 };
 

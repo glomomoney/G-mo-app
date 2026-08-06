@@ -160,14 +160,25 @@ export default function PaymentGateway({
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <div className="flex justify-center mb-4">
+                <div className="flex justify-center mb-3">
                   <div className={`px-4 py-2 rounded-full font-bold text-sm border shadow-sm ${providerColor}`}>
                     {providerName} Checkout
                   </div>
                 </div>
 
-                 <p className="text-sm text-brand-text-muted text-center mb-6 font-medium leading-relaxed">
-                  Enter your {providerName} registered mobile number to authorize the push-payment request.
+                {/* Coming Soon API Badge */}
+                <div className="bg-amber-500/15 border border-amber-500/30 rounded-2xl p-3 mb-4 text-xs text-amber-200 leading-relaxed font-medium">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-[11px] uppercase tracking-wider mb-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                    <span>API Direct {providerName} : Bientôt Disponible</span>
+                  </div>
+                  <p className="text-[11px]">
+                    L'API automatisée Mobile Money est en cours de déploiement. Ce portail simule le rechargement via agent agréé Wanda pour créditer immédiatement votre wallet avec <strong>+20% DE BONUS GRATUIT</strong> !
+                  </p>
+                </div>
+
+                 <p className="text-xs text-brand-text-muted text-center mb-4 font-medium leading-relaxed">
+                  Saisissez votre numéro {providerName} pour valider votre demande de dépôt instantané (+20% bonus offert).
                 </p>
 
                 <form onSubmit={handleSendOtp} className="space-y-4">

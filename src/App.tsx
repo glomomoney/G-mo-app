@@ -233,7 +233,7 @@ export default function App() {
       surgeMultiplier: 1.0, // multiplier based on weather/traffic
       minimumWithdrawal: 2000, // minimum amount driver can withdraw
       topupPromoActive: true, // Wallet top-up promo is active by default
-      topupPromoRate: 15 // 15% bonus by default
+      topupPromoRate: 20 // 20% bonus increase when uploading wallet balance as requested
     };
     if (saved) {
       try {
@@ -501,12 +501,7 @@ export default function App() {
 
   // Share My Ride States
   const [showShareModal, setShowShareModal] = useState(false);
-  const [showPromoBanner, setShowPromoBanner] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('wanda_topup_promo_dismissed') !== 'true';
-    }
-    return true;
-  });
+  const [showPromoBanner, setShowPromoBanner] = useState<boolean>(true); // Always display publicity
   const [shareRideData, setShareRideData] = useState<{
     shareRideId: string;
     passengerName: string;
@@ -1205,6 +1200,30 @@ export default function App() {
     localStorage.setItem('wanda_waiting_logs', JSON.stringify(waitingLogs));
   }, [waitingLogs]);
 
+  // Real-time Firestore live synchronization
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.phone ? user.phone.replace(/[^0-9]/g, '') : 'guest_user';
+    const unsubscribeHistory = subscribeToHistory(userId, (firestoreHistory) => {
+      if (firestoreHistory && firestoreHistory.length > 0) {
+        setHistory(prev => {
+          const ids = new Set(prev.map(h => h.id));
+          const newItems = firestoreHistory.filter(h => !ids.has(h.id));
+          return [...newItems, ...prev];
+        });
+      }
+    });
+
+    const unsubscribeRides = subscribeToActiveRides((activeRides) => {
+      // Live cloud database ride updates
+    });
+
+    return () => {
+      unsubscribeHistory();
+      unsubscribeRides();
+    };
+  }, [user]);
+
   // Call Duration & Ringing Simulation
   useEffect(() => {
     let interval: any = null;
@@ -1503,23 +1522,23 @@ export default function App() {
     ? Math.round((activeBaseFare + (rideDistance * activePerKm)) * systemSettings.surgeMultiplier)
     : 0;
 
-  // Wallet pay offers an automated 10% cash discount in Cameroon style!
-  const walletPrice = Math.round(baseSurgeFare * 0.9);
+  // Wallet pay offers an automated 15% cash discount!
+  const walletPrice = Math.round(baseSurgeFare * 0.85);
   const cashPrice = baseSurgeFare;
 
   // Selected payment rate depending on checkout choice
   const activeFareToCharge = paymentMethod === 'wallet' ? walletPrice : cashPrice;
 
   // Wanda Points Rewards Calculations:
-  // 1 Wanda Point = 10 FCFA discount.
-  const maxPointsRedeemable = Math.min(passengerPoints, Math.floor(activeFareToCharge / 10));
-  const pointsDiscount = usePoints ? maxPointsRedeemable * 10 : 0;
+  // 1 Wanda Point = 100 FCFA discount (1 trip paid by wallet = 1 point earned = 100 FCFA value).
+  const maxPointsRedeemable = Math.min(passengerPoints, Math.floor(activeFareToCharge / 100));
+  const pointsDiscount = usePoints ? maxPointsRedeemable * 100 : 0;
   const finalFareToPay = Math.max(0, activeFareToCharge - pointsDiscount);
 
   // Active discount amount for the active ride
   const activeDiscountAmount = (rideStatus === 'idle' || rideStatus === 'searching') 
     ? pointsDiscount 
-    : (ridePointsRedeemed * 10);
+    : (ridePointsRedeemed * 100);
 
   // Traffic simulation helper based on active surgeMultiplier
   const getTrafficDetails = () => {
@@ -1608,7 +1627,7 @@ export default function App() {
     setRidePointsRedeemed(pointsToLock);
 
     // Calculate discounted fare to pay
-    const discountedPrice = Math.max(0, activeFareToCharge - (pointsToLock * 10));
+    const discountedPrice = Math.max(0, activeFareToCharge - (pointsToLock * 100));
 
     if (paymentMethod === 'wallet') {
       // Wallet check
@@ -2035,7 +2054,7 @@ export default function App() {
     const tipToPay = paymentMethod === 'wallet' ? tipAmount : 0;
     
     // Calculate final discounted fare of this ride
-    const pointsDiscountAmount = ridePointsRedeemed * 10;
+    const pointsDiscountAmount = ridePointsRedeemed * 100;
     const finalFareToCharge = Math.max(0, activeFareToCharge - pointsDiscountAmount);
     
     // Standard payout math including waiting time extra fare adjustments (commission not applied to tip)
@@ -2077,8 +2096,8 @@ export default function App() {
       setTransactions(prev => [cTx, ...prev]);
     }
 
-    // Deduct redeemed points and award new earned points (1 point per 100 FCFA spent, excluding tip)
-    const pointsEarned = Math.round(totalRideFare / 100);
+    // Deduct redeemed points and award 1 point (= 100 FCFA value) per trip ONLY if paid with Wallet
+    const pointsEarned = paymentMethod === 'wallet' ? 1 : 0;
     setPassengerPoints(prev => Math.max(0, prev - ridePointsRedeemed + pointsEarned));
 
     // Save history item
@@ -2762,16 +2781,16 @@ export default function App() {
                 </div>
                 <div className="text-white truncate">
                   <span className="font-extrabold text-brand-gold tracking-wider uppercase mr-2 bg-brand-gold/15 px-1.5 py-0.5 rounded border border-brand-gold/20 text-[9px]">
-                    {slangMode ? "PROMO RECHARGE !" : "TOP-UP SPECIAL !"}
+                    {slangMode ? "PUBLICITÉ WANDA !" : "WANDA PROMO !"}
                   </span>
                   <span className="font-semibold text-[11px] leading-relaxed">
                     {slangMode ? (
                       <>
-                        Gagne <strong className="text-brand-gold">+{systemSettings.topupPromoRate}% de bonus</strong> auto sur toutes tes recharges MoMo / Orange Money ! 🚀
+                        ⚡ Paye par Wallet = <strong className="text-brand-gold">15% DE RÉDUCTION</strong> sur tes courses & <strong className="text-emerald-400">+{systemSettings.topupPromoRate}% DE BONUS</strong> sur tes recharges ! 🎁
                       </>
                     ) : (
                       <>
-                        Get <strong className="text-brand-gold">+{systemSettings.topupPromoRate}% bonus</strong> automatically on all Mobile Money top-ups ! 🚀
+                        ⚡ Pay with Wallet = <strong className="text-brand-gold">15% RIDE DISCOUNT</strong> & <strong className="text-emerald-400">+{systemSettings.topupPromoRate}% BONUS</strong> on all deposits ! 🎁
                       </>
                     )}
                   </span>
@@ -3122,7 +3141,7 @@ export default function App() {
                               const clsBaseFare = systemSettings.classRates?.[rc.id]?.baseFare ?? rc.baseFare;
                               const clsPerKm = systemSettings.classRates?.[rc.id]?.perKm ?? rc.perKm;
                               const rcBaseFare = Math.round((clsBaseFare + (rideDistance * clsPerKm)) * systemSettings.surgeMultiplier);
-                              const rcWalletFare = Math.round(rcBaseFare * 0.9); // 10% discount on wallets
+                              const rcWalletFare = Math.round(rcBaseFare * 0.85); // 15% discount on wallets
                               const rcCashFare = rcBaseFare;
                               const isSelected = selectedClassId === rc.id;
 
@@ -3161,7 +3180,7 @@ export default function App() {
                                       }}
                                       className={`py-2 px-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition cursor-pointer ${isSelected && paymentMethod === 'wallet' ? 'bg-brand-gold border-brand-gold text-brand-midnight shadow' : 'bg-brand-input/40 border-brand-card text-brand-text-muted hover:text-white hover:border-brand-input'}`}
                                     >
-                                      <span className="text-[8px] font-black uppercase tracking-wider block">Wallet Pay (10% Off)</span>
+                                      <span className="text-[8px] font-black uppercase tracking-wider block">Wallet Pay (15% Off)</span>
                                       <span className="text-xs font-black tracking-tight">{rcWalletFare.toLocaleString('fr-FR')} XAF</span>
                                     </button>
 
@@ -3197,9 +3216,9 @@ export default function App() {
                                 </span>
                                 <span className="text-[10px] text-brand-text-muted font-semibold mt-0.5 block leading-none">
                                   {passengerPoints > 0 ? (
-                                    `${passengerPoints.toLocaleString('fr-FR')} points dispos (≈ ${(passengerPoints * 10).toLocaleString('fr-FR')} FCFA)`
+                                    `${passengerPoints.toLocaleString('fr-FR')} ${passengerPoints === 1 ? 'point dispo' : 'points dispos'} (≈ ${(passengerPoints * 100).toLocaleString('fr-FR')} FCFA)`
                                   ) : (
-                                    slangMode ? "0 points • Gagnez 1 point par 100 FCFA dépensé !" : "0 points • Earn 1 point per 100 FCFA spent!"
+                                    slangMode ? "0 point • Payez par Wallet pour gagner 1 pt (= 100 FCFA) par course !" : "0 points • Pay with Wallet to earn 1 pt (= 100 FCFA) per trip!"
                                   )}
                                 </span>
                               </div>
@@ -3225,7 +3244,7 @@ export default function App() {
                                 {slangMode ? "Réduction appliquée :" : "Discount applied :"}
                               </span>
                               <strong className="text-white font-black text-xs animate-pulse">
-                                -{(maxPointsRedeemable * 10).toLocaleString('fr-FR')} FCFA
+                                -{(maxPointsRedeemable * 100).toLocaleString('fr-FR')} FCFA
                               </strong>
                             </div>
                           )}
@@ -3503,7 +3522,7 @@ export default function App() {
                                         </p>
                                         <span className="text-[8px] text-white font-extrabold flex items-center gap-0.5 leading-tight truncate">
                                           <CreditCard size={8} className="text-brand-text-muted shrink-0" />
-                                          {paymentMethod === 'wallet' ? (slangMode ? "Wanda Wallet (-10%)" : "Wanda Wallet (-10%)") :
+                                          {paymentMethod === 'wallet' ? (slangMode ? "Wanda Wallet (-15%)" : "Wanda Wallet (-15%)") :
                                            paymentMethod === 'momo_mtn' ? "MTN MoMo" :
                                            paymentMethod === 'orange_money' ? "Orange Money" : (slangMode ? "Cash" : "Cash")}
                                         </span>
@@ -5604,7 +5623,7 @@ export default function App() {
                   {ridePointsRedeemed > 0 && (
                     <div className="flex justify-between text-indigo-400 bg-indigo-500/5 p-1 rounded border border-indigo-500/15">
                       <span>{slangMode ? "Réduction Wanda Points :" : "Wanda Points Discount :"} ({ridePointsRedeemed} pts)</span>
-                      <strong>-{(ridePointsRedeemed * 10).toLocaleString('fr-FR')} FCFA</strong>
+                      <strong>-{(ridePointsRedeemed * 100).toLocaleString('fr-FR')} FCFA</strong>
                     </div>
                   )}
                   {paymentMethod === 'wallet' && tipAmount > 0 && (
@@ -5620,15 +5639,18 @@ export default function App() {
                   
                   {/* Highlighted Wanda Points Earned Banner */}
                   {(() => {
-                    const finalFareToCharge = Math.max(0, activeFareToCharge - (ridePointsRedeemed * 10));
-                    const totalRideFare = finalFareToCharge + currentRideWaitingFare;
-                    const pointsEarned = Math.round(totalRideFare / 100);
+                    const pointsEarned = paymentMethod === 'wallet' ? 1 : 0;
                     return pointsEarned > 0 ? (
                       <div className="mt-1.5 flex justify-between items-center text-[10.5px] text-indigo-300 bg-indigo-500/10 px-2.5 py-1.5 rounded-xl border border-indigo-500/20 font-bold">
-                        <span>⭐ {slangMode ? "Points Wanda gagnés :" : "Wanda Points Earned :"}</span>
-                        <span>+{pointsEarned} pts</span>
+                        <span>⭐ {slangMode ? "Points Wanda gagnés (Payement Wallet) :" : "Wanda Points Earned (Wallet Pay) :"}</span>
+                        <span>+1 pt (≈ 100 FCFA)</span>
                       </div>
-                    ) : null;
+                    ) : (
+                      <div className="mt-1.5 flex justify-between items-center text-[10.5px] text-brand-text-muted bg-brand-input/20 px-2.5 py-1.5 rounded-xl border border-brand-input/30 font-medium">
+                        <span>⭐ {slangMode ? "Points Wanda (Payement Cash) :" : "Wanda Points (Cash Pay) :"}</span>
+                        <span>0 pt ({slangMode ? "Payez par Wallet pour gagner +1 pt" : "Wallet Payment Required"})</span>
+                      </div>
+                    );
                   })()}
                 </div>
 
@@ -5670,7 +5692,7 @@ export default function App() {
 
                 <div className="flex justify-between items-center text-sm font-bold border-b border-brand-input pb-3.5">
                   <span className="text-brand-text-muted">{language === 'fr' ? "Montant Total :" : "Total Amount :"}</span>
-                  <span className="text-base font-black text-brand-gold">{(Math.max(0, activeFareToCharge - (ridePointsRedeemed * 10)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0)).toLocaleString('fr-FR')} FCFA</span>
+                  <span className="text-base font-black text-brand-gold">{(Math.max(0, activeFareToCharge - (ridePointsRedeemed * 100)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0)).toLocaleString('fr-FR')} FCFA</span>
                 </div>
 
                 {/* Rating component */}
@@ -5709,7 +5731,7 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       if (pickup && destination && activeDriver) {
-                        const finalFareToCharge = Math.max(0, activeFareToCharge - (ridePointsRedeemed * 10)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0);
+                        const finalFareToCharge = Math.max(0, activeFareToCharge - (ridePointsRedeemed * 100)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0);
                         const currentHist: HistoryItem = {
                           id: transactionId || `hist_${Date.now()}`,
                           date: new Date().toLocaleString(),

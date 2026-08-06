@@ -152,6 +152,21 @@ export default function DriverWallet({
         </div>
       )}
 
+      {/* Driver Cash Only Settlement Banner */}
+      <div className="bg-emerald-950/60 border-2 border-emerald-500/50 rounded-2xl p-3.5 space-y-1 text-emerald-200 text-xs shadow-md">
+        <div className="flex items-center gap-2">
+          <span className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 font-extrabold text-sm">💵</span>
+          <h4 className="font-black text-emerald-300 uppercase text-[11px] tracking-wider">
+            {slangMode ? "MODE CHAUFFEUR : RÈGLEMENT CASH UNIQUEMENT" : "DRIVER PAYMENT MODE: CASH ONLY"}
+          </h4>
+        </div>
+        <p className="text-[10.5px] leading-relaxed text-emerald-100/90 font-medium">
+          {slangMode
+            ? "Pour le moment, tous les chauffeurs sont payés exclusivement en Cash par les passagers lors des déposes. Les encaissements et retraits de solde se font directement au guichet Wanda Cash."
+            : "Currently, all drivers are paid directly in Cash by passengers upon trip completion. Wallet settlements and cashouts are collected directly at Wanda Cash desks."}
+        </p>
+      </div>
+
       {/* Earnings Summary Card */}
       <div 
         onClick={() => setShowBalance(!showBalance)}

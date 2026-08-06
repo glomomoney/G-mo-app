@@ -232,7 +232,7 @@ export function generateAndDownloadRideReceipt(data: ReceiptData, options: Recei
   // Calculation items
   const tip = data.tipAmount || 0;
   const waitingFee = data.waitingFee || 0;
-  const discount = (data.pointsRedeemed || 0) * 10;
+  const discount = (data.pointsRedeemed || 0) * 100;
   const baseFareCalculated = Math.max(0, data.fare - tip - waitingFee + discount);
 
   doc.setFont('helvetica', 'normal');
