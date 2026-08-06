@@ -485,7 +485,7 @@ export default function App() {
 
   // 9. Modals triggers
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(true);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [isAdminPage, setIsAdminPage] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -2410,22 +2410,14 @@ export default function App() {
 
   // Render independent admin page if URL has admin param or /admin route
   if (isAdminPage) {
-    if (!isAdminAuthenticated) {
-      return (
-        <AdminLoginModal
-          onSuccess={() => setIsAdminAuthenticated(true)}
-          onClose={() => {
-            window.location.href = window.location.origin;
-          }}
-        />
-      );
-    }
-
     return (
       <AdminDashboard
         onClose={() => {
-          // Exit independent dashboard redirects back to main application
-          window.location.href = window.location.origin;
+          setIsAdminPage(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('admin');
+          url.searchParams.delete('page');
+          window.history.pushState({}, '', url.pathname.replace(/\/admin\/?$/i, '') || '/');
         }}
         driversList={driversList}
         onApproveDriver={handleApproveDriver}
@@ -2656,21 +2648,16 @@ export default function App() {
             <Download size={11} className="text-brand-gold animate-pulse shrink-0" />
           </button>
 
-          {/* Admin Switch (Independent URL Link) */}
+          {/* Admin Switch (Instant 1-Click Access) */}
           <button
-            onClick={() => {
-              if (isAdminAuthenticated) {
-                setIsAdminOpen(true);
-              } else {
-                setShowAdminLoginModal(true);
-              }
-            }}
-            className="bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/20 hover:border-brand-gold/40 px-1.5 py-1 rounded-xl text-[9px] sm:text-[10px] font-black tracking-wide flex items-center gap-0.5 sm:gap-1 cursor-pointer transition shadow-sm shrink-0"
+            onClick={() => setIsAdminOpen(true)}
+            className="bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 px-2 py-1 rounded-xl text-[9px] sm:text-[10px] font-extrabold tracking-wide flex items-center gap-1 cursor-pointer transition shadow-md shrink-0"
             id="admin-console-trigger"
+            title="Ouvrir le Tableau de Bord Admin (Accès Direct)"
           >
-            <span>🔧</span>
-            <span className="hidden sm:inline">Admin Portal</span>
-            <span className="text-[8px] opacity-75">↗</span>
+            <ShieldCheck size={12} className="text-emerald-400 shrink-0" />
+            <span>Admin Portal</span>
+            <span className="text-[8px] bg-emerald-500/20 px-1 py-0.2 rounded text-emerald-300 font-mono">1-CLIC</span>
           </button>
 
           {/* Dual Role Selector: Passenger vs Driver */}
