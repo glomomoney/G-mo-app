@@ -35,7 +35,23 @@ import {
   Play,
   Trash2,
   Tag,
-  Car
+  Car,
+  Building2,
+  ShieldCheck,
+  FileText,
+  UploadCloud,
+  Eye,
+  UserPlus,
+  Phone,
+  ExternalLink,
+  Lock,
+  Unlock,
+  ChevronRight,
+  Image,
+  MessageSquare,
+  Download,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import WandaLogo from './WandaLogo';
 import { PaymentMethod, AppNotification, NotificationScheduleConfig } from '../types';
@@ -52,8 +68,9 @@ import {
 interface AdminDashboardProps {
   onClose: () => void;
   driversList: any[];
-  onApproveDriver: (id: string) => void;
-  onRejectDriver: (id: string) => void;
+  onApproveDriver: (id: string, customMessage?: string) => void;
+  onRejectDriver: (id: string, reason?: string) => void;
+  onUpdateDriversList?: (updatedList: any[]) => void;
   systemSettings: {
     commissionRate: number;
     surgeMultiplier: number;
@@ -79,14 +96,59 @@ export default function AdminDashboard({
   driversList,
   onApproveDriver,
   onRejectDriver,
+  onUpdateDriversList,
   systemSettings,
   onUpdateSettings,
   transactions,
   onApproveWithdrawal
 }: AdminDashboardProps) {
-  const [tab, setTab] = useState<'kpi' | 'drivers' | 'transactions' | 'settings' | 'notifications'>('kpi');
+  type AdminRole = 'super_admin' | 'accounting' | 'publicity' | 'forensic';
+  const [activeAdminRole, setActiveAdminRole] = useState<AdminRole>('super_admin');
+  const [tab, setTab] = useState<'kpi' | 'drivers' | 'transactions' | 'settings' | 'notifications' | 'roles'>('kpi');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeWeatherAlert, setActiveWeatherAlert] = useState<string>('Normal Skies');
+
+  // Staff Users & Department Rules Directory
+  const [staffUsers, setStaffUsers] = useState<any[]>([
+    { id: 'st_1', name: 'Paul Biya', email: 'p.biya@wanda.cm', role: 'super_admin', departmentName: 'Direction Générale (Super Admin)', assignedBy: 'Système Root', createdAt: '2026-01-01', active: true },
+    { id: 'st_2', name: 'Martine Abena', email: 'm.abena@wanda.cm', role: 'accounting', departmentName: 'Comptabilité & Finances', assignedBy: 'Paul Biya (Super Admin)', createdAt: '2026-02-15', active: true },
+    { id: 'st_3', name: 'Francis Ngannou', email: 'f.ngannou@wanda.cm', role: 'forensic', departmentName: 'Analyse Forensic & Conformité KYC', assignedBy: 'Paul Biya (Super Admin)', createdAt: '2026-03-10', active: true },
+    { id: 'st_4', name: 'Samuel Eto\'o', email: 's.etoo@wanda.cm', role: 'publicity', departmentName: 'Publicité, Marketing & Broadcasts', assignedBy: 'Paul Biya (Super Admin)', createdAt: '2026-04-01', active: true },
+  ]);
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<AdminRole>('accounting');
+
+  // Driver KYC Inspection & Profile Drawer State
+  const [selectedDriverForKyc, setSelectedDriverForKyc] = useState<any | null>(null);
+  const [kycSubTab, setKycSubTab] = useState<'account' | 'documents' | 'audit'>('account');
+  const [driverFilterStatus, setDriverFilterStatus] = useState<'all' | 'pending' | 'approved' | 'suspended'>('all');
+
+  // Driver Account Form State inside KYC Modal
+  const [editDriverName, setEditDriverName] = useState('');
+  const [editDriverPhone, setEditDriverPhone] = useState('');
+  const [editVehicleModel, setEditVehicleModel] = useState('');
+  const [editVehiclePlate, setEditVehiclePlate] = useState('');
+  const [editVehicleType, setEditVehicleType] = useState('ecoride');
+  const [editCity, setEditCity] = useState('Douala');
+  const [editCnicNumber, setEditCnicNumber] = useState('');
+  const [editLicenseNumber, setEditLicenseNumber] = useState('');
+
+  // Document Replacement State
+  const [editingDocKey, setEditingDocKey] = useState<string | null>(null);
+  const [replacementUrlInput, setReplacementUrlInput] = useState('');
+  const [docReplacementFeedback, setDocReplacementFeedback] = useState<string | null>(null);
+
+  // Driver Rejection Modal State
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [driverToReject, setDriverToReject] = useState<any | null>(null);
+  const [rejectionReasonText, setRejectionReasonText] = useState('');
+  const [rejectionPreset, setRejectionPreset] = useState('');
+  const [kycSuccessToast, setKycSuccessToast] = useState<string | null>(null);
+
+  // Image Zoom Modal State
+  const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
 
   // Firebase Firestore Settings Form & Sync State
   const [formData, setFormData] = useState(systemSettings);
@@ -334,33 +396,207 @@ export default function AdminDashboard({
 
   const pendingWithdrawalsCount = transactions.filter(t => t.status === 'pending' && t.type === 'withdrawal').length;
 
+  // Helper to retrieve driver KYC documents
+  const getDriverKYCDocuments = (driver: any) => {
+    if (driver.kycDocuments) return driver.kycDocuments;
+    return {
+      nationalIdFront: {
+        title: "Carte Nationale d'Identité (CNI) - Recto",
+        url: driver.cniFrontUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop",
+        updatedByAdmin: false,
+        updatedAt: "2026-08-04 11:20",
+        status: "uploaded"
+      },
+      nationalIdBack: {
+        title: "Carte Nationale d'Identité (CNI) - Verso",
+        url: driver.cniBackUrl || "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&auto=format&fit=crop",
+        updatedByAdmin: false,
+        updatedAt: "2026-08-04 11:21",
+        status: "uploaded"
+      },
+      driverLicense: {
+        title: "Permis de Conduire (Catégorie B)",
+        url: driver.licenseUrl || "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&auto=format&fit=crop",
+        updatedByAdmin: false,
+        updatedAt: "2026-08-04 11:22",
+        status: "uploaded"
+      },
+      vehicleInsurance: {
+        title: "Attestation d'Assurance Véhicule (NSIA / Chanas)",
+        url: driver.insuranceUrl || "https://images.unsplash.com/photo-1450133064473-71024230f91b?w=800&auto=format&fit=crop",
+        updatedByAdmin: false,
+        updatedAt: "2026-08-04 11:25",
+        status: "uploaded"
+      },
+      vehicleGreyCard: {
+        title: "Carte Grise / Certificat d'Immatriculation",
+        url: driver.greyCardUrl || "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop",
+        updatedByAdmin: false,
+        updatedAt: "2026-08-04 11:28",
+        status: "uploaded"
+      }
+    };
+  };
+
+  const isTabAllowedForRole = (tabKey: string, role: AdminRole): boolean => {
+    if (role === 'super_admin') return true;
+    if (role === 'accounting') return ['kpi', 'transactions', 'settings'].includes(tabKey);
+    if (role === 'publicity') return ['kpi', 'notifications'].includes(tabKey);
+    if (role === 'forensic') return ['kpi', 'drivers'].includes(tabKey);
+    return false;
+  };
+
+  const openDriverKycModal = (driver: any) => {
+    setSelectedDriverForKyc(driver);
+    setEditDriverName(driver.name || '');
+    setEditDriverPhone(driver.phone || '');
+    setEditVehicleModel(driver.vehicleModel || '');
+    setEditVehiclePlate(driver.vehiclePlate || '');
+    setEditVehicleType(driver.vehicleType || 'ecoride');
+    setEditCity(driver.city || 'Douala');
+    setEditCnicNumber(driver.cnicNumber || '102938475612');
+    setEditLicenseNumber(driver.licenseNumber || 'CMR-DL-2024-8821');
+    setKycSubTab('account');
+  };
+
+  const handleSaveDriverAccountDetails = () => {
+    if (!selectedDriverForKyc) return;
+    const updatedDriver = {
+      ...selectedDriverForKyc,
+      name: editDriverName,
+      phone: editDriverPhone,
+      vehicleModel: editVehicleModel,
+      vehiclePlate: editVehiclePlate,
+      vehicleType: editVehicleType,
+      city: editCity,
+      cnicNumber: editCnicNumber,
+      licenseNumber: editLicenseNumber
+    };
+
+    setSelectedDriverForKyc(updatedDriver);
+
+    const newList = driversList.map(d => d.id === updatedDriver.id ? updatedDriver : d);
+    if (onUpdateDriversList) {
+      onUpdateDriversList(newList);
+    }
+    setKycSuccessToast("Compte chauffeur mis à jour avec succès !");
+    setTimeout(() => setKycSuccessToast(null), 3000);
+  };
+
+  const handleReplaceDocument = (docKey: string, newUrl: string, note?: string) => {
+    if (!selectedDriverForKyc) return;
+    const currentDocs = getDriverKYCDocuments(selectedDriverForKyc);
+    const targetDoc = currentDocs[docKey] || { title: docKey };
+
+    const updatedDoc = {
+      ...targetDoc,
+      url: newUrl,
+      updatedByAdmin: true,
+      updatedAt: new Date().toLocaleDateString('fr-FR') + ' ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      status: 'admin_replaced',
+      adminNote: note || 'Remplacé par l\'administrateur via envoi HD'
+    };
+
+    const newKycDocs = {
+      ...currentDocs,
+      [docKey]: updatedDoc
+    };
+
+    const updatedDriver = {
+      ...selectedDriverForKyc,
+      kycDocuments: newKycDocs
+    };
+
+    setSelectedDriverForKyc(updatedDriver);
+
+    const newList = driversList.map(d => d.id === updatedDriver.id ? updatedDriver : d);
+    if (onUpdateDriversList) {
+      onUpdateDriversList(newList);
+    }
+
+    setDocReplacementFeedback(`Document "${targetDoc.title || docKey}" remplacé avec succès par l'administrateur !`);
+    setEditingDocKey(null);
+    setReplacementUrlInput('');
+    setTimeout(() => setDocReplacementFeedback(null), 4000);
+  };
+
+  const handleAddStaffUser = () => {
+    if (!newStaffName || !newStaffEmail) return;
+    const deptMap: Record<AdminRole, string> = {
+      super_admin: 'Direction Générale (Super Admin)',
+      accounting: 'Comptabilité & Finances',
+      publicity: 'Publicité & Marketing',
+      forensic: 'Analyse Forensic & Conformité KYC'
+    };
+    const newStaff = {
+      id: 'st_' + Date.now(),
+      name: newStaffName,
+      email: newStaffEmail,
+      role: newStaffRole,
+      departmentName: deptMap[newStaffRole],
+      assignedBy: 'Paul Biya (Super Admin)',
+      createdAt: new Date().toISOString().split('T')[0],
+      active: true
+    };
+    setStaffUsers(prev => [...prev, newStaff]);
+    setNewStaffName('');
+    setNewStaffEmail('');
+    setShowAddStaffModal(false);
+  };
+
   return (
     <div className="fixed inset-0 bg-brand-midnight/90 backdrop-blur-md z-[1500] flex flex-col overflow-hidden text-white font-sans" id="admin-dashboard-modal">
       
       {/* Top Admin Navigation Header */}
-      <header className="bg-brand-deep border-b border-brand-card px-6 py-4 flex items-center justify-between shrink-0">
+      <header className="bg-brand-deep border-b border-brand-card px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
           <WandaLogo className="w-10 h-10 drop-shadow-[0_0_8px_rgba(226,193,141,0.25)]" />
           <div>
             <h1 className="text-base font-black tracking-widest text-brand-gold flex items-center gap-2">
-              WANDA ADMIN <span className="bg-brand-gold/15 text-brand-gold border border-brand-gold/25 text-[9px] font-black tracking-normal px-2 py-0.5 rounded-full uppercase">Command Console</span>
+              WANDA ADMIN <span className="bg-brand-gold/15 text-brand-gold border border-brand-gold/25 text-[9px] font-black tracking-normal px-2 py-0.5 rounded-full uppercase">HQ Console</span>
             </h1>
-            <p className="text-[10px] text-brand-text-muted italic font-bold">Manage drivers, approvals, cellular wallet networks & surge APIs</p>
+            <p className="text-[10px] text-brand-text-muted italic font-bold">Gestion Flotte, Comptabilité, Publicité & Conformité Forensic</p>
           </div>
         </div>
 
-        {/* Top bar controls */}
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex bg-brand-card/60 rounded-xl px-3 py-1.5 border border-brand-input items-center gap-2 text-xs">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
-            <span className="font-bold text-brand-text">Local Dispatch Server: <strong className="text-emerald-400">ONLINE (Port 3000)</strong></span>
+        {/* Department Role Switcher & Server Status */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Department Role Selector */}
+          <div className="bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs">
+            <ShieldCheck size={14} className="text-brand-gold" />
+            <span className="text-[11px] font-bold text-brand-text-muted">Département Active :</span>
+            <select
+              value={activeAdminRole}
+              onChange={(e) => {
+                const newRole = e.target.value as AdminRole;
+                setActiveAdminRole(newRole);
+                if (!isTabAllowedForRole(tab, newRole)) {
+                  if (newRole === 'accounting') setTab('transactions');
+                  else if (newRole === 'publicity') setTab('notifications');
+                  else if (newRole === 'forensic') setTab('drivers');
+                  else setTab('kpi');
+                }
+              }}
+              className="bg-brand-midnight text-brand-gold font-extrabold border border-brand-gold/30 rounded-lg px-2 py-1 text-xs focus:outline-none cursor-pointer"
+            >
+              <option value="super_admin">👑 Super Admin (Direction Général)</option>
+              <option value="accounting">💰 Département Comptabilité</option>
+              <option value="publicity">📢 Département Publicité</option>
+              <option value="forensic">🔍 Département Forensic & Conformité</option>
+            </select>
           </div>
+
+          <div className="hidden lg:flex bg-brand-card/60 rounded-xl px-3 py-1.5 border border-brand-input items-center gap-2 text-xs">
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
+            <span className="font-bold text-brand-text">Serveur : <strong className="text-emerald-400">ONLINE (Port 3000)</strong></span>
+          </div>
+
           <button
             onClick={onClose}
             className="bg-brand-card hover:bg-brand-input border border-brand-input hover:text-brand-gold text-brand-text-muted px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer"
             id="close-admin-btn"
           >
-            ← Exit Console
+            ← Quitter Console
           </button>
         </div>
       </header>
@@ -370,55 +606,78 @@ export default function AdminDashboard({
         
         {/* Left Side Tab Drawer */}
         <aside className="w-full md:w-64 bg-brand-deep/60 border-r border-brand-card/80 p-4 flex md:flex-col gap-1.5 overflow-x-auto md:overflow-y-auto shrink-0">
+          <div className="hidden md:block text-[10px] font-black uppercase text-brand-text-muted tracking-wider px-3 pb-1 border-b border-brand-input/40 mb-1">
+            Menu Département
+          </div>
+
           <button
             onClick={() => setTab('kpi')}
-            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'kpi' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'}`}
+            disabled={!isTabAllowedForRole('kpi', activeAdminRole)}
+            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'kpi' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'} ${!isTabAllowedForRole('kpi', activeAdminRole) ? 'opacity-40 cursor-not-allowed' : ''}`}
           >
             <Grid size={16} />
-            <span>Overview & Analytics</span>
+            <span>Synthèse & Analytics</span>
           </button>
+
           <button
             onClick={() => setTab('drivers')}
-            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'drivers' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'}`}
+            disabled={!isTabAllowedForRole('drivers', activeAdminRole)}
+            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'drivers' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'} ${!isTabAllowedForRole('drivers', activeAdminRole) ? 'opacity-40 cursor-not-allowed' : ''}`}
           >
             <Users size={16} />
-            <span>Driver Approvals & Fleet</span>
+            <span>Chauffeurs & Dossiers KYC</span>
             {driversList.filter(d => d.approvalStatus === 'pending').length > 0 && (
               <span className="ml-auto bg-rose-500 text-white font-extrabold text-[9px] px-2 py-0.5 rounded-full">
                 {driversList.filter(d => d.approvalStatus === 'pending').length}
               </span>
             )}
           </button>
+
           <button
             onClick={() => setTab('transactions')}
-            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'transactions' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'}`}
+            disabled={!isTabAllowedForRole('transactions', activeAdminRole)}
+            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'transactions' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'} ${!isTabAllowedForRole('transactions', activeAdminRole) ? 'opacity-40 cursor-not-allowed' : ''}`}
           >
             <Smartphone size={16} />
-            <span>Wallet Transactions</span>
+            <span>Comptabilité & Retraits</span>
             {pendingWithdrawalsCount > 0 && (
               <span className="ml-auto bg-amber-500 text-brand-midnight font-extrabold text-[9px] px-2 py-0.5 rounded-full animate-pulse">
                 {pendingWithdrawalsCount}
               </span>
             )}
           </button>
+
           <button
             onClick={() => setTab('settings')}
-            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'settings' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'}`}
+            disabled={!isTabAllowedForRole('settings', activeAdminRole)}
+            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'settings' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'} ${!isTabAllowedForRole('settings', activeAdminRole) ? 'opacity-40 cursor-not-allowed' : ''}`}
           >
             <Sliders size={16} />
-            <span>⚙️ Tarification & Prix / KM</span>
+            <span>Tarification & Commission (15%)</span>
           </button>
+
           <button
             onClick={() => setTab('notifications')}
-            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'notifications' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'}`}
+            disabled={!isTabAllowedForRole('notifications', activeAdminRole)}
+            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'notifications' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'} ${!isTabAllowedForRole('notifications', activeAdminRole) ? 'opacity-40 cursor-not-allowed' : ''}`}
           >
             <Bell size={16} />
-            <span>📢 Push Notifications</span>
+            <span>Publicité & Broadcasts</span>
             {notificationsList.length > 0 && (
               <span className="ml-auto bg-brand-gold text-brand-midnight font-extrabold text-[9px] px-2 py-0.5 rounded-full font-mono">
                 {notificationsList.length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setTab('roles')}
+            disabled={!isTabAllowedForRole('roles', activeAdminRole)}
+            className={`w-full text-left px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition cursor-pointer ${tab === 'roles' ? 'bg-brand-gold text-brand-midnight' : 'text-brand-text-muted hover:bg-brand-card hover:text-white'} ${!isTabAllowedForRole('roles', activeAdminRole) ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            <Building2 size={16} />
+            <span>Rôles & Départements</span>
+            <span className="ml-auto bg-brand-gold/20 text-brand-gold text-[8px] font-black px-1.5 py-0.5 rounded uppercase">HQ</span>
           </button>
         </aside>
 
@@ -642,76 +901,302 @@ export default function AdminDashboard({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="space-y-4"
+                className="space-y-5"
               >
-                <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-black text-white">Driver Credentials Audit</h3>
-                  <div className="relative max-w-xs">
-                    <input
-                      type="text"
-                      placeholder="Search driver list..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 pl-8 text-xs text-white focus:outline-none focus:border-brand-gold focus:bg-brand-card w-56 font-semibold"
-                    />
-                    <Search className="absolute left-2.5 top-2 text-brand-text-muted" size={13} />
+                {/* Header & Filter Bar */}
+                <div className="bg-brand-card border border-brand-input rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-md">
+                  <div>
+                    <h3 className="text-sm font-black text-white flex items-center gap-2">
+                      <Users size={18} className="text-brand-gold" />
+                      <span>Gestion des Chauffeurs & Contrôle KYC</span>
+                    </h3>
+                    <p className="text-[11px] text-brand-text-muted mt-0.5">
+                      Examinez les pièces d'identité, modifiez les comptes ou remplacez les documents illisibles reçus par WhatsApp.
+                    </p>
+                  </div>
+
+                  {/* Filter Pills & Search */}
+                  <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                    <div className="flex bg-brand-midnight p-1 rounded-xl border border-brand-input text-xs font-bold">
+                      <button
+                        onClick={() => setDriverFilterStatus('all')}
+                        className={`px-3 py-1 rounded-lg transition cursor-pointer ${driverFilterStatus === 'all' ? 'bg-brand-gold text-brand-midnight font-extrabold' : 'text-brand-text-muted hover:text-white'}`}
+                      >
+                        Tous ({driversList.length})
+                      </button>
+                      <button
+                        onClick={() => setDriverFilterStatus('pending')}
+                        className={`px-3 py-1 rounded-lg transition cursor-pointer ${driverFilterStatus === 'pending' ? 'bg-amber-500 text-brand-midnight font-extrabold' : 'text-brand-text-muted hover:text-white'}`}
+                      >
+                        En Attente ({driversList.filter(d => d.approvalStatus === 'pending').length})
+                      </button>
+                      <button
+                        onClick={() => setDriverFilterStatus('approved')}
+                        className={`px-3 py-1 rounded-lg transition cursor-pointer ${driverFilterStatus === 'approved' ? 'bg-emerald-500 text-white font-extrabold' : 'text-brand-text-muted hover:text-white'}`}
+                      >
+                        Validés ({driversList.filter(d => d.approvalStatus === 'approved').length})
+                      </button>
+                      <button
+                        onClick={() => setDriverFilterStatus('suspended')}
+                        className={`px-3 py-1 rounded-lg transition cursor-pointer ${driverFilterStatus === 'suspended' ? 'bg-rose-500 text-white font-extrabold' : 'text-brand-text-muted hover:text-white'}`}
+                      >
+                        Rejetés ({driversList.filter(d => d.approvalStatus === 'suspended').length})
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Rechercher nom, tel, plaque..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="bg-brand-midnight border border-brand-input rounded-xl px-3 py-1.5 pl-8 text-xs text-white focus:outline-none focus:border-brand-gold w-52 font-semibold"
+                      />
+                      <Search className="absolute left-2.5 top-2 text-brand-text-muted" size={13} />
+                    </div>
                   </div>
                 </div>
 
+                {/* Driver List */}
                 <div className="space-y-3">
                   {driversList
-                    .filter(driver => driver.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .filter(driver => {
+                      const matchesSearch = driver.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (driver.phone && driver.phone.includes(searchQuery)) ||
+                        (driver.vehiclePlate && driver.vehiclePlate.toLowerCase().includes(searchQuery.toLowerCase()));
+                      
+                      if (!matchesSearch) return false;
+                      if (driverFilterStatus === 'pending') return driver.approvalStatus === 'pending';
+                      if (driverFilterStatus === 'approved') return driver.approvalStatus === 'approved';
+                      if (driverFilterStatus === 'suspended') return driver.approvalStatus === 'suspended';
+                      return true;
+                    })
                     .map((driver) => {
                       const isPending = driver.approvalStatus === 'pending';
+                      const isApproved = driver.approvalStatus === 'approved';
+                      const isSuspended = driver.approvalStatus === 'suspended';
+
                       return (
-                        <div key={driver.id} className="bg-brand-card border border-brand-input rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm hover:border-brand-input/80 transition">
-                          <div className="flex items-center gap-3">
+                        <div key={driver.id} className="bg-brand-card border border-brand-input rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm hover:border-brand-gold/40 transition">
+                          <div className="flex items-center gap-3.5">
                             <img
                               src={driver.avatar}
                               alt={driver.name}
-                              className="w-12 h-12 rounded-xl object-cover border border-brand-input"
+                              className="w-13 h-13 rounded-2xl object-cover border-2 border-brand-input"
                               referrerPolicy="no-referrer"
                             />
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2.5">
                                 <h4 className="text-sm font-extrabold text-white">{driver.name}</h4>
-                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${driver.approvalStatus === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25' : 'bg-amber-500/10 text-amber-500 border border-amber-500/25'}`}>
-                                  {driver.approvalStatus}
+                                <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                                  isApproved ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
+                                  isPending ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse' :
+                                  'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                }`}>
+                                  {isApproved ? 'VALIDÉ / ACTIF' : isPending ? 'EN ATTENTE KYC' : 'SUSPENDU / REJETÉ'}
                                 </span>
                               </div>
-                              <p className="text-xs text-brand-text-muted font-medium mt-0.5">{driver.vehicleModel} • {driver.vehiclePlate}</p>
-                              <p className="text-[10px] text-brand-text-muted font-semibold mt-1">📞 {driver.phone}</p>
+                              <p className="text-xs text-brand-text-muted font-medium mt-0.5">
+                                🚘 {driver.vehicleModel} • <strong className="text-white font-mono">{driver.vehiclePlate}</strong>
+                              </p>
+                              <div className="flex items-center gap-3 text-[10px] text-brand-text-muted font-semibold mt-1">
+                                <span>📞 {driver.phone}</span>
+                                <span>📍 {driver.city || 'Douala'}</span>
+                                <span className="text-amber-400 font-bold">★ {driver.rating || 4.8}</span>
+                              </div>
+
+                              {driver.rejectionReason && (
+                                <p className="text-[10px] text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-lg font-bold mt-2">
+                                  ⚠️ Motif Rejet : {driver.rejectionReason}
+                                </p>
+                              )}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
-                            {isPending ? (
+                          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end border-t md:border-t-0 border-brand-input/40 pt-3 md:pt-0">
+                            {/* Inspect KYC & Account Button */}
+                            <button
+                              onClick={() => openDriverKycModal(driver)}
+                              className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition cursor-pointer"
+                            >
+                              <Eye size={14} />
+                              <span>Examiner Dossier & KYC</span>
+                            </button>
+
+                            {/* Direct Action triggers */}
+                            {isPending && (
                               <>
                                 <button
-                                  onClick={() => onApproveDriver(driver.id)}
-                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] px-4 py-2 rounded-xl cursor-pointer shadow transition"
+                                  onClick={() => onApproveDriver(driver.id, `Félicitations ${driver.name}, votre compte a été validé !`)}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] px-3.5 py-2 rounded-xl cursor-pointer shadow transition"
                                 >
-                                  Approve Driver
+                                  Valider
                                 </button>
                                 <button
-                                  onClick={() => onRejectDriver(driver.id)}
+                                  onClick={() => {
+                                    setDriverToReject(driver);
+                                    setShowRejectModal(true);
+                                  }}
                                   className="bg-brand-input hover:bg-brand-card text-rose-400 font-bold text-[11px] px-3 py-2 rounded-xl border border-brand-input cursor-pointer transition"
                                 >
-                                  Reject
+                                  Rejeter
                                 </button>
                               </>
-                            ) : (
+                            )}
+
+                            {isApproved && (
                               <button
-                                onClick={() => onRejectDriver(driver.id)}
-                                className="bg-brand-input hover:bg-brand-card text-rose-400/80 font-semibold text-[10px] px-3 py-1.5 rounded-xl border border-brand-input cursor-pointer transition"
+                                onClick={() => {
+                                  setDriverToReject(driver);
+                                  setShowRejectModal(true);
+                                }}
+                                className="bg-brand-input hover:bg-brand-card text-rose-400/90 font-bold text-[10px] px-3 py-1.5 rounded-xl border border-brand-input cursor-pointer transition"
                               >
-                                Suspend/Revoke Account
+                                Suspendre Compte
                               </button>
                             )}
                           </div>
                         </div>
                       );
                     })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ROLES & DEPARTMENTS MANAGEMENT TAB */}
+            {tab === 'roles' && (
+              <motion.div
+                key="roles-panel"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="space-y-6"
+              >
+                {/* Header overview */}
+                <div className="bg-brand-card border border-brand-input rounded-2xl p-5 shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <Building2 size={20} className="text-brand-gold" />
+                      <span>Rôles & Directives Départementales - Wanda HQ</span>
+                    </h3>
+                    <p className="text-xs text-brand-text-muted mt-1">
+                      Définissez les règles d'accès par département. Seul le Super Admin peut affecter les rôles et attribuer les autorisations.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setShowAddStaffModal(true)}
+                    className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-extrabold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 shadow transition cursor-pointer shrink-0"
+                  >
+                    <UserPlus size={15} />
+                    <span>Créer Compte Staff & Affecter Règle</span>
+                  </button>
+                </div>
+
+                {/* Department Matrix Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-brand-card border border-brand-input rounded-2xl p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-xs uppercase tracking-wider">
+                      <DollarSign size={16} />
+                      <span>Département Comptabilité</span>
+                    </div>
+                    <p className="text-[11px] text-brand-text-muted leading-relaxed">
+                      Gère le suivi des commissions de 15%, la validation des demandes de retraits de solde chauffeurs (Orange / MTN MoMo), et le simulateur de prix.
+                    </p>
+                  </div>
+
+                  <div className="bg-brand-card border border-brand-input rounded-2xl p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs uppercase tracking-wider">
+                      <Megaphone size={16} />
+                      <span>Département Publicité & Marketing</span>
+                    </div>
+                    <p className="text-[11px] text-brand-text-muted leading-relaxed">
+                      Crée et diffuse les campagnes de push notifications ciblées, gère les offres promotionnelles Wallet (-15%) et le planificateur automatique.
+                    </p>
+                  </div>
+
+                  <div className="bg-brand-card border border-brand-input rounded-2xl p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-sky-400 font-extrabold text-xs uppercase tracking-wider">
+                      <ShieldCheck size={16} />
+                      <span>Département Forensic & Conformité</span>
+                    </div>
+                    <p className="text-[11px] text-brand-text-muted leading-relaxed">
+                      Inspecte les pièces d'identité KYC des chauffeurs, remplace les documents flous (via envoi WhatsApp), valide ou rejette les dossiers avec motifs.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Staff Users Directory Table */}
+                <div className="bg-brand-card border border-brand-input rounded-2xl p-5 space-y-4">
+                  <h4 className="text-xs font-black uppercase text-brand-gold tracking-wider flex items-center gap-2">
+                    <Users size={16} />
+                    <span>Annuaire des Administrateurs & Rôles Affectés</span>
+                  </h4>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-semibold">
+                      <thead>
+                        <tr className="border-b border-brand-input text-[10px] text-brand-text-muted uppercase tracking-wider">
+                          <th className="py-2.5 px-3">Membre Admin</th>
+                          <th className="py-2.5 px-3">Email Pro</th>
+                          <th className="py-2.5 px-3">Règle / Département Affecté</th>
+                          <th className="py-2.5 px-3">Affecté Par</th>
+                          <th className="py-2.5 px-3">Statut</th>
+                          <th className="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-brand-input/40">
+                        {staffUsers.map((user) => (
+                          <tr key={user.id} className="hover:bg-brand-midnight/40 transition">
+                            <td className="py-3 px-3 font-extrabold text-white flex items-center gap-2">
+                              <span className="w-8 h-8 rounded-full bg-brand-gold/15 text-brand-gold font-black flex items-center justify-center border border-brand-gold/30">
+                                {user.name.charAt(0)}
+                              </span>
+                              <span>{user.name}</span>
+                            </td>
+                            <td className="py-3 px-3 text-brand-text-muted font-mono">{user.email}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase border ${
+                                user.role === 'super_admin' ? 'bg-brand-gold/20 text-brand-gold border-brand-gold/30' :
+                                user.role === 'accounting' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                                user.role === 'publicity' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                                'bg-sky-500/20 text-sky-400 border-sky-500/30'
+                              }`}>
+                                {user.departmentName}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-brand-text-muted">{user.assignedBy}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${user.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                {user.active ? 'ACTIF' : 'INACTIF'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <select
+                                value={user.role}
+                                onChange={(e) => {
+                                  const newRole = e.target.value as AdminRole;
+                                  const deptMap: Record<AdminRole, string> = {
+                                    super_admin: 'Direction Générale (Super Admin)',
+                                    accounting: 'Comptabilité & Finances',
+                                    publicity: 'Publicité & Marketing',
+                                    forensic: 'Analyse Forensic & Conformité KYC'
+                                  };
+                                  setStaffUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: newRole, departmentName: deptMap[newRole] } : u));
+                                }}
+                                className="bg-brand-midnight text-brand-text font-bold border border-brand-input rounded-lg px-2 py-1 text-[11px] focus:outline-none cursor-pointer"
+                              >
+                                <option value="super_admin">👑 Super Admin</option>
+                                <option value="accounting">💰 Comptabilité</option>
+                                <option value="publicity">📢 Publicité</option>
+                                <option value="forensic">🔍 Forensic</option>
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -2059,6 +2544,716 @@ export default function AdminDashboard({
         </main>
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* DRIVER PROFILE & KYC INSPECTION MODAL */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {selectedDriverForKyc && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1600] flex items-center justify-center p-3 md:p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-brand-midnight border border-brand-gold/40 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl"
+            >
+              {/* Modal Top Header */}
+              <div className="bg-gradient-to-r from-brand-deep to-brand-card p-5 border-b border-brand-input flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
+                <div className="flex items-center gap-3.5">
+                  <img
+                    src={selectedDriverForKyc.avatar}
+                    alt={selectedDriverForKyc.name}
+                    className="w-14 h-14 rounded-2xl object-cover border-2 border-brand-gold/60 shadow-md"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="text-base font-black text-white">{selectedDriverForKyc.name}</h3>
+                      <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                        selectedDriverForKyc.approvalStatus === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                        selectedDriverForKyc.approvalStatus === 'pending' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                        'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      }`}>
+                        {selectedDriverForKyc.approvalStatus === 'approved' ? 'VALIDÉ / CONFORME' : selectedDriverForKyc.approvalStatus === 'pending' ? 'EN ATTENTE KYC' : 'REJETÉ / SUSPENDU'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-brand-text-muted mt-0.5">
+                      🚘 {selectedDriverForKyc.vehicleModel} • Plaque : <strong className="text-brand-gold font-mono">{selectedDriverForKyc.vehiclePlate}</strong> • Tel : <strong className="text-white">{selectedDriverForKyc.phone}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedDriverForKyc(null)}
+                    className="bg-brand-card hover:bg-brand-input text-brand-text-muted hover:text-white p-2 rounded-xl transition cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Sub-tab Switcher */}
+              <div className="bg-brand-deep/80 border-b border-brand-input px-6 py-2.5 flex items-center gap-2 shrink-0 text-xs font-bold">
+                <button
+                  onClick={() => setKycSubTab('account')}
+                  className={`px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-2 ${
+                    kycSubTab === 'account' ? 'bg-brand-gold text-brand-midnight font-black shadow' : 'text-brand-text-muted hover:text-white'
+                  }`}
+                >
+                  <Users size={15} />
+                  <span>1. Compte & Informations</span>
+                </button>
+
+                <button
+                  onClick={() => setKycSubTab('documents')}
+                  className={`px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-2 ${
+                    kycSubTab === 'documents' ? 'bg-brand-gold text-brand-midnight font-black shadow' : 'text-brand-text-muted hover:text-white'
+                  }`}
+                >
+                  <FileText size={15} />
+                  <span>2. Pièces KYC & Documents (Inspection & Remplacement)</span>
+                </button>
+
+                <button
+                  onClick={() => setKycSubTab('audit')}
+                  className={`px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-2 ${
+                    kycSubTab === 'audit' ? 'bg-brand-gold text-brand-midnight font-black shadow' : 'text-brand-text-muted hover:text-white'
+                  }`}
+                >
+                  <ShieldCheck size={15} />
+                  <span>3. Audit Forensic & Notes</span>
+                </button>
+              </div>
+
+              {/* Success Feedback Toast */}
+              {kycSuccessToast && (
+                <div className="bg-emerald-500/15 border-b border-emerald-500/30 text-emerald-300 px-6 py-2.5 text-xs font-extrabold flex items-center gap-2">
+                  <CheckCircle size={16} className="text-emerald-400" />
+                  <span>{kycSuccessToast}</span>
+                </div>
+              )}
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                
+                {/* SUB-TAB 1: ACCOUNT DETAILS EDITING */}
+                {kycSubTab === 'account' && (
+                  <div className="space-y-5">
+                    <div className="bg-brand-card p-4 rounded-2xl border border-brand-input space-y-1">
+                      <h4 className="text-xs font-black uppercase text-brand-gold tracking-wider flex items-center gap-2">
+                        <Edit3 size={15} />
+                        <span>Modification Directe du Compte Chauffeur</span>
+                      </h4>
+                      <p className="text-[11px] text-brand-text-muted">
+                        Correction des erreurs de saisie faites lors de l'inscription (Nom, Téléphone, Plaque d'immatriculation, Modèle).
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Nom Complet Chauffeur</label>
+                        <input
+                          type="text"
+                          value={editDriverName}
+                          onChange={(e) => setEditDriverName(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Téléphone WhatsApp (+237)</label>
+                        <input
+                          type="text"
+                          value={editDriverPhone}
+                          onChange={(e) => setEditDriverPhone(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Ville de Résidence</label>
+                        <select
+                          value={editCity}
+                          onChange={(e) => setEditCity(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-brand-gold cursor-pointer"
+                        >
+                          <option value="Douala">Douala</option>
+                          <option value="Yaoundé">Yaoundé</option>
+                          <option value="Bafoussam">Bafoussam</option>
+                          <option value="Kribi">Kribi</option>
+                          <option value="Garoua">Garoua</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Modèle de Véhicule</label>
+                        <input
+                          type="text"
+                          value={editVehicleModel}
+                          onChange={(e) => setEditVehicleModel(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Plaque d'Immatriculation</label>
+                        <input
+                          type="text"
+                          value={editVehiclePlate}
+                          onChange={(e) => setEditVehiclePlate(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-brand-gold focus:outline-none focus:border-brand-gold uppercase"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Catégorie Véhicule</label>
+                        <select
+                          value={editVehicleType}
+                          onChange={(e) => setEditVehicleType(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-brand-gold cursor-pointer"
+                        >
+                          <option value="keke">🛺 Kéké / Moto-Taxi 3 Roues</option>
+                          <option value="okada">🏍️ Okada / Moto-Taxi 2 Roues</option>
+                          <option value="ecoride">🚖 EcoRide (Taxi Jaune Classique)</option>
+                          <option value="comfort">🚗 Comfort Ride (Climatisé)</option>
+                          <option value="premium">✨ Wanda VIP Berline</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Numéro CNI / Passeport</label>
+                        <input
+                          type="text"
+                          value={editCnicNumber}
+                          onChange={(e) => setEditCnicNumber(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-brand-text-muted uppercase">Numéro Permis de Conduire</label>
+                        <input
+                          type="text"
+                          value={editLicenseNumber}
+                          onChange={(e) => setEditLicenseNumber(e.target.value)}
+                          className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveDriverAccountDetails}
+                        className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 shadow cursor-pointer transition active:scale-95"
+                      >
+                        <Save size={15} />
+                        <span>Enregistrer les Modifications du Compte</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUB-TAB 2: KYC DOCUMENTS INSPECTION & REPLACEMENT */}
+                {kycSubTab === 'documents' && (
+                  <div className="space-y-5">
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs text-amber-200">
+                      <Sparkles size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-amber-400 block font-black mb-0.5">Assistance Remplacement Documents Mal Téléversés :</strong>
+                        <span>
+                          Si le chauffeur a envoyé une photo floue, incomplète ou sombre de sa carte d'identité ou de son permis, demandez-lui d'envoyer la photo nette par <strong>WhatsApp</strong>, puis cliquez sur <strong>"Remplacer Document HD"</strong> ci-dessous pour importer le bon fichier à sa place avant de valider.
+                        </span>
+                      </div>
+                    </div>
+
+                    {docReplacementFeedback && (
+                      <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 p-3.5 rounded-2xl text-xs font-extrabold flex items-center gap-2">
+                        <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+                        <span>{docReplacementFeedback}</span>
+                      </div>
+                    )}
+
+                    {/* 5 KYC Documents Grid */}
+                    {(() => {
+                      const docs = getDriverKYCDocuments(selectedDriverForKyc);
+                      const docKeys = [
+                        { key: 'nationalIdFront', title: 'Carte Nationale d\'Identité (CNI) - Recto' },
+                        { key: 'nationalIdBack', title: 'Carte Nationale d\'Identité (CNI) - Verso' },
+                        { key: 'driverLicense', title: 'Permis de Conduire (Catégorie B)' },
+                        { key: 'vehicleInsurance', title: 'Attestation d\'Assurance Véhicule' },
+                        { key: 'vehicleGreyCard', title: 'Carte Grise / Immatriculation' }
+                      ];
+
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {docKeys.map(({ key, title }) => {
+                            const doc = docs[key] || { title, url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop' };
+
+                            return (
+                              <div key={key} className="bg-brand-card border border-brand-input rounded-2xl p-4 flex flex-col justify-between gap-3 space-y-1 hover:border-brand-gold/40 transition">
+                                <div>
+                                  <div className="flex justify-between items-start gap-2 mb-2">
+                                    <h5 className="text-xs font-extrabold text-white flex items-center gap-1.5">
+                                      <FileText size={15} className="text-brand-gold shrink-0" />
+                                      <span>{doc.title || title}</span>
+                                    </h5>
+
+                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                      doc.updatedByAdmin ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-brand-gold/15 text-brand-gold border border-brand-gold/25'
+                                    }`}>
+                                      {doc.updatedByAdmin ? 'REMPLACÉ PAR ADMIN HD' : 'DOC ORIGINAL CHAUFFEUR'}
+                                    </span>
+                                  </div>
+
+                                  {/* Image preview box */}
+                                  <div className="relative rounded-xl overflow-hidden border border-brand-input h-40 group bg-brand-deep">
+                                    <img
+                                      src={doc.url}
+                                      alt={title}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                      referrerPolicy="no-referrer"
+                                    />
+
+                                    {/* Overlay actions */}
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => setZoomedImageUrl(doc.url)}
+                                        className="bg-brand-gold text-brand-midnight font-bold p-2.5 rounded-xl text-xs flex items-center gap-1.5 shadow hover:scale-105 transition cursor-pointer"
+                                      >
+                                        <Eye size={14} />
+                                        <span>Agrandir</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex justify-between items-center text-[10px] text-brand-text-muted mt-2 font-mono">
+                                    <span>Mise à jour : {doc.updatedAt || '06/08/2026'}</span>
+                                    {doc.updatedByAdmin && <span className="text-sky-400 font-bold">✓ Modifié au HQ Admin</span>}
+                                  </div>
+                                </div>
+
+                                {/* Replace Button */}
+                                <div className="pt-2 border-t border-brand-input/40 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingDocKey(key);
+                                      setReplacementUrlInput(doc.url || '');
+                                    }}
+                                    className="bg-brand-deep hover:bg-brand-card text-brand-gold border border-brand-gold/40 font-bold text-xs px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                                  >
+                                    <UploadCloud size={14} />
+                                    <span>Remplacer / Téléverser HD</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* SUB-TAB 3: FORENSIC AUDIT & NOTES */}
+                {kycSubTab === 'audit' && (
+                  <div className="space-y-4">
+                    <div className="bg-brand-card p-4 rounded-2xl border border-brand-input space-y-2">
+                      <h4 className="text-xs font-black uppercase text-brand-gold tracking-wider flex items-center gap-2">
+                        <ShieldCheck size={16} />
+                        <span>Notes d'Audit Forensic & Conformité</span>
+                      </h4>
+                      <p className="text-[11px] text-brand-text-muted">
+                        Inscrivez vos remarques internes sur la vérification d'identité, les remplacements de documents effectués via WhatsApp ou les motifs de rejet.
+                      </p>
+                    </div>
+
+                    <textarea
+                      rows={5}
+                      placeholder="Saisissez vos notes d'audit (ex: Document CNI verso remplacé par l'admin le 06/08/2026 suite à la réception d'un scan HD par WhatsApp. Permis de conduire vérifié conforme.)..."
+                      defaultValue={selectedDriverForKyc.forensicNotes || "Audit initial effectué. Pièces conformes."}
+                      className="w-full bg-brand-deep border border-brand-input rounded-2xl p-4 text-xs font-medium text-white focus:outline-none focus:border-brand-gold leading-relaxed"
+                    ></textarea>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKycSuccessToast("Notes d'audit enregistrées dans le journal de conformité !");
+                          setTimeout(() => setKycSuccessToast(null), 3000);
+                        }}
+                        className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow cursor-pointer transition"
+                      >
+                        <Save size={14} />
+                        <span>Enregistrer les Notes d'Audit</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Bottom Action Footer for Driver Validation & Rejection */}
+              <div className="bg-brand-deep p-4 border-t border-brand-input flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+                <div className="text-xs text-brand-text-muted font-medium">
+                  Statut Actuel du Dossier : <strong className="text-white uppercase">{selectedDriverForKyc.approvalStatus}</strong>
+                </div>
+
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                  {/* Reject button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDriverToReject(selectedDriverForKyc);
+                      setShowRejectModal(true);
+                    }}
+                    className="bg-brand-card hover:bg-rose-500/20 text-rose-400 border border-rose-500/40 font-extrabold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <XCircle size={15} />
+                    <span>Rejeter / Demander Correction</span>
+                  </button>
+
+                  {/* Validate button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onApproveDriver(
+                        selectedDriverForKyc.id,
+                        `Félicitations ${selectedDriverForKyc.name}, votre compte chauffeur Wanda a été validé !`
+                      );
+                      setKycSuccessToast("🎉 Compte Chauffeur Validé avec Succès ! Notification transmise.");
+                      setTimeout(() => {
+                        setKycSuccessToast(null);
+                        setSelectedDriverForKyc(null);
+                      }, 2000);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-6 py-2.5 rounded-xl flex items-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Approuver & Valider le Compte</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* DOCUMENT REPLACEMENT SUB-MODAL */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {editingDocKey && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1700] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-brand-midnight border border-brand-gold/50 rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-2xl"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-brand-input">
+                <h4 className="text-sm font-black text-white flex items-center gap-2">
+                  <UploadCloud size={18} className="text-brand-gold" />
+                  <span>Remplacer le Document Par un Scan HD</span>
+                </h4>
+                <button
+                  onClick={() => setEditingDocKey(null)}
+                  className="text-brand-text-muted hover:text-white p-1"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                {/* Option A: Upload local image file */}
+                <div className="bg-brand-card p-4 rounded-2xl border border-brand-input space-y-2">
+                  <span className="font-extrabold text-brand-gold block">Option A : Téléverser un Fichier Image depuis l'Ordinateur</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          if (evt.target?.result) {
+                            handleReplaceDocument(editingDocKey, evt.target.result as string, 'Téléversé depuis l\'ordinateur par l\'administrateur');
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="block w-full text-xs text-brand-text-muted file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-extrabold file:bg-brand-gold file:text-brand-midnight hover:file:bg-amber-400 cursor-pointer"
+                  />
+                </div>
+
+                {/* Option B: Enter high-res URL */}
+                <div className="space-y-1.5">
+                  <label className="font-extrabold text-brand-text-muted block">Option B : Entrer l'URL Directe de l'Image HD</label>
+                  <input
+                    type="text"
+                    placeholder="https://..."
+                    value={replacementUrlInput}
+                    onChange={(e) => setReplacementUrlInput(e.target.value)}
+                    className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-white outline-none focus:border-brand-gold"
+                  />
+                </div>
+
+                {/* Option C: Presets */}
+                <div className="bg-brand-deep/80 p-3 rounded-2xl border border-brand-input/60 space-y-2">
+                  <span className="text-[10px] font-black uppercase text-brand-gold block">Raccourci Démo HD (Scan WhatsApp) :</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const whatsappPreset = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop";
+                      handleReplaceDocument(editingDocKey, whatsappPreset, "Scan HD reçu par WhatsApp importé par l'administrateur");
+                    }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2 rounded-xl flex items-center justify-center gap-2 shadow cursor-pointer transition"
+                  >
+                    <Smartphone size={15} />
+                    <span>📲 Importer le Scan HD Reçu par WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingDocKey(null)}
+                  className="bg-brand-card hover:bg-brand-input text-brand-text-muted px-4 py-2 rounded-xl text-xs font-bold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (replacementUrlInput) {
+                      handleReplaceDocument(editingDocKey, replacementUrlInput, 'Remplacé manuellement par URL par l\'administrateur');
+                    }
+                  }}
+                  className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black px-5 py-2 rounded-xl text-xs shadow cursor-pointer"
+                >
+                  Valider Remplacement
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* DRIVER REJECTION REASON MODAL */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {showRejectModal && driverToReject && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1700] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-brand-midnight border border-rose-500/50 rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-2xl"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-rose-500/30">
+                <h4 className="text-sm font-black text-rose-400 flex items-center gap-2">
+                  <ShieldAlert size={18} />
+                  <span>Rejet / Motif de Non-Conformité Chauffeur</span>
+                </h4>
+                <button
+                  onClick={() => setShowRejectModal(false)}
+                  className="text-brand-text-muted hover:text-white p-1"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <p className="text-brand-text-muted">
+                  Sélectionnez ou saisissez le motif de rejet pour <strong>{driverToReject.name}</strong>. Une notification explicative sera transmise sur l'application.
+                </p>
+
+                {/* Preset Choices */}
+                <div className="space-y-2">
+                  <label className="font-extrabold text-brand-gold block">Motifs Prédéfinis Rapides :</label>
+                  <div className="space-y-1.5">
+                    {[
+                      "Carte Nationale d'Identité floue, illisible ou expirée",
+                      "Permis de conduire non conforme ou expiré",
+                      "Attestation d'assurance véhicule manquante",
+                      "Plaque d'immatriculation non concordante avec le véhicule",
+                      "Photo de profil non conforme aux normes Wanda"
+                    ].map((reason, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setRejectionPreset(reason);
+                          setRejectionReasonText(reason);
+                        }}
+                        className={`w-full text-left p-2.5 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          rejectionPreset === reason ? 'bg-rose-500/20 text-rose-300 border-rose-500' : 'bg-brand-card border-brand-input text-brand-text hover:text-white'
+                        }`}
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom text */}
+                <div className="space-y-1.5">
+                  <label className="font-extrabold text-brand-text-muted block">Message / Precision Complémentaire :</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Précisez la raison détaillée..."
+                    value={rejectionReasonText}
+                    onChange={(e) => setRejectionReasonText(e.target.value)}
+                    className="w-full bg-brand-deep border border-brand-input rounded-xl p-3 text-xs text-white focus:outline-none focus:border-rose-500"
+                  ></textarea>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRejectModal(false)}
+                  className="bg-brand-card text-brand-text-muted hover:text-white px-4 py-2 rounded-xl text-xs font-bold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const finalReason = rejectionReasonText || "Pièces fournies non conformes.";
+                    onRejectDriver(driverToReject.id, finalReason);
+                    setShowRejectModal(false);
+                    setDriverToReject(null);
+                    if (selectedDriverForKyc && selectedDriverForKyc.id === driverToReject.id) {
+                      setSelectedDriverForKyc(null);
+                    }
+                  }}
+                  className="bg-rose-600 hover:bg-rose-500 text-white font-black px-5 py-2 rounded-xl text-xs shadow cursor-pointer transition"
+                >
+                  Confirmer le Rejet & Transmettre Notification
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* ADD STAFF USER MODAL */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {showAddStaffModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1700] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-brand-midnight border border-brand-gold/50 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-brand-input">
+                <h4 className="text-sm font-black text-white flex items-center gap-2">
+                  <UserPlus size={18} className="text-brand-gold" />
+                  <span>Nouveau Membre Staff Administrateur</span>
+                </h4>
+                <button
+                  onClick={() => setShowAddStaffModal(false)}
+                  className="text-brand-text-muted hover:text-white p-1"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3.5 text-xs">
+                <div className="space-y-1">
+                  <label className="font-extrabold text-brand-text-muted uppercase">Nom du Membre Staff</label>
+                  <input
+                    type="text"
+                    placeholder="ex: Marcella Ngo"
+                    value={newStaffName}
+                    onChange={(e) => setNewStaffName(e.target.value)}
+                    className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-brand-gold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-extrabold text-brand-text-muted uppercase">Adresse Email Professionnelle</label>
+                  <input
+                    type="email"
+                    placeholder="m.ngo@wanda.cm"
+                    value={newStaffEmail}
+                    onChange={(e) => setNewStaffEmail(e.target.value)}
+                    className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-brand-gold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-extrabold text-brand-text-muted uppercase">Règle / Département Affecté</label>
+                  <select
+                    value={newStaffRole}
+                    onChange={(e) => setNewStaffRole(e.target.value as AdminRole)}
+                    className="w-full bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-brand-gold cursor-pointer"
+                  >
+                    <option value="accounting">💰 Département Comptabilité & Finances</option>
+                    <option value="publicity">📢 Département Publicité & Marketing</option>
+                    <option value="forensic">🔍 Département Forensic & Conformité KYC</option>
+                    <option value="super_admin">👑 Direction Générale (Super Admin)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddStaffModal(false)}
+                  className="bg-brand-card text-brand-text-muted hover:text-white px-4 py-2 rounded-xl text-xs font-bold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddStaffUser}
+                  className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black px-5 py-2 rounded-xl text-xs shadow cursor-pointer transition"
+                >
+                  Créer Compte Staff
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* ZOOM LIGHTBOX */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {zoomedImageUrl && (
+          <div
+            className="fixed inset-0 bg-black/90 backdrop-blur-lg z-[1800] flex items-center justify-center p-4 cursor-pointer"
+            onClick={() => setZoomedImageUrl(null)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh]">
+              <img
+                src={zoomedImageUrl}
+                alt="Document Zoomed"
+                className="max-w-full max-h-[85vh] rounded-2xl object-contain border-2 border-brand-gold shadow-2xl"
+                referrerPolicy="no-referrer"
+              />
+              <button
+                onClick={() => setZoomedImageUrl(null)}
+                className="absolute -top-4 -right-4 bg-rose-600 text-white p-2 rounded-full shadow-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

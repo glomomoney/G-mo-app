@@ -95,7 +95,8 @@ import {
   saveTransactionToFirestore,
   subscribeToSettings,
   saveSettingsToFirestore,
-  subscribeToNotifications
+  subscribeToNotifications,
+  sendNotificationToFirestore
 } from './lib/firebaseService';
 import { generateAndDownloadRideReceipt } from './utils/pdfReceipt';
 
@@ -1793,13 +1794,54 @@ export default function App() {
     setTransactions(updated);
   };
 
-  // Admin approves pending drivers
-  const handleApproveDriver = (id: string) => {
-    setDriversList(prev => prev.map(d => d.id === id ? { ...d, approvalStatus: 'approved' } : d));
+  // Admin approves pending drivers with target notification
+  const handleApproveDriver = async (id: string, customMsg?: string) => {
+    const targetDriver = driversList.find(d => d.id === id);
+    const driverName = targetDriver?.name || 'Chauffeur';
+
+    setDriversList(prev => prev.map(d => d.id === id ? { 
+      ...d, 
+      approvalStatus: 'approved',
+      kycStatus: 'verified',
+      rejectionReason: undefined
+    } : d));
+
+    try {
+      await sendNotificationToFirestore({
+        target: 'driver',
+        title: '🎉 Compte Validé avec Succès !',
+        message: customMsg || `Félicitations ${driverName}, votre compte chauffeur Wanda a été validé ! Vous pouvez maintenant recevoir des courses et générer des revenus.`,
+        type: 'info',
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn('Notification error:', err);
+    }
   };
 
-  const handleRejectDriver = (id: string) => {
-    setDriversList(prev => prev.map(d => d.id === id ? { ...d, approvalStatus: 'suspended' } : d));
+  const handleRejectDriver = async (id: string, reason?: string) => {
+    const targetDriver = driversList.find(d => d.id === id);
+    const driverName = targetDriver?.name || 'Chauffeur';
+    const rejectText = reason || 'Documents fournis non conformes ou illisibles.';
+
+    setDriversList(prev => prev.map(d => d.id === id ? { 
+      ...d, 
+      approvalStatus: 'suspended',
+      kycStatus: 'rejected',
+      rejectionReason: rejectText
+    } : d));
+
+    try {
+      await sendNotificationToFirestore({
+        target: 'driver',
+        title: '⚠️ Rejet de Validation KYC',
+        message: `Bonjour ${driverName}, votre compte chauffeur n'a pas pu être validé. Raison : ${rejectText}. Veuillez mettre à jour vos documents dans l'application.`,
+        type: 'alert',
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn('Notification error:', err);
+    }
   };
 
   // Driver simulation triggers
@@ -2487,6 +2529,7 @@ export default function App() {
         driversList={driversList}
         onApproveDriver={handleApproveDriver}
         onRejectDriver={handleRejectDriver}
+        onUpdateDriversList={(updatedList) => setDriversList(updatedList)}
         systemSettings={systemSettings}
         onUpdateSettings={setSystemSettings}
         transactions={transactions}
@@ -6077,6 +6120,7 @@ export default function App() {
             driversList={driversList}
             onApproveDriver={handleApproveDriver}
             onRejectDriver={handleRejectDriver}
+            onUpdateDriversList={(updatedList) => setDriversList(updatedList)}
             systemSettings={systemSettings}
             onUpdateSettings={setSystemSettings}
             transactions={transactions}
