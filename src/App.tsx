@@ -69,6 +69,7 @@ import PaymentGateway from './components/PaymentGateway';
 import InstallPrompt from './components/InstallPrompt';
 import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
+import NoDriverModal from './components/NoDriverModal';
 import WalletCard from './components/WalletCard';
 import DriverWallet from './components/DriverWallet';
 import WandaLogo from './components/WandaLogo';
@@ -493,6 +494,10 @@ export default function App() {
   const [showSOS, setShowSOS] = useState(false);
   const [sosAlertTriggered, setSosAlertTriggered] = useState(false);
   const [sosCountdown, setSosCountdown] = useState(5);
+
+  // No Driver Available Modal state
+  const [showNoDriverModal, setShowNoDriverModal] = useState(false);
+  const [noDriverRequestedClassId, setNoDriverRequestedClassId] = useState<string>('okada');
 
   // Share My Ride States
   const [showShareModal, setShowShareModal] = useState(false);
@@ -1490,10 +1495,12 @@ export default function App() {
 
   // Active pricing calculations
   const activeRideClass = RIDE_CLASSES.find(c => c.id === selectedClassId) || RIDE_CLASSES[2];
+  const activeBaseFare = systemSettings.classRates?.[activeRideClass.id]?.baseFare ?? activeRideClass.baseFare;
+  const activePerKm = systemSettings.classRates?.[activeRideClass.id]?.perKm ?? activeRideClass.perKm;
 
   // Two distinct prices calculated based on surge:
   const baseSurgeFare = (pickup && destination) 
-    ? Math.round((activeRideClass.baseFare + (rideDistance * activeRideClass.perKm)) * systemSettings.surgeMultiplier)
+    ? Math.round((activeBaseFare + (rideDistance * activePerKm)) * systemSettings.surgeMultiplier)
     : 0;
 
   // Wallet pay offers an automated 10% cash discount in Cameroon style!
@@ -1713,13 +1720,18 @@ export default function App() {
   };
 
   // Driver simulation triggers
-  const startSearchingDriver = () => {
+  const startSearchingDriver = (classOverride?: string) => {
+    const targetClassId = classOverride || selectedClassId;
+    if (classOverride) {
+      setSelectedClassId(classOverride);
+    }
+
     setRideStatus('searching');
     setMessages([]);
 
     // Persist active ride request to Firestore real backend database
     if (pickup && destination && user) {
-      const selectedClass = RIDE_CLASSES.find(c => c.id === selectedClassId);
+      const selectedClass = RIDE_CLASSES.find(c => c.id === targetClassId);
       const fare = selectedClass ? selectedClass.baseFare : 1500;
       createRideInFirestore({
         passengerId: user.phone.replace(/[^0-9]/g, ''),
@@ -1729,14 +1741,24 @@ export default function App() {
         destination,
         fare,
         paymentMethod,
-        rideClassId: selectedClassId,
+        rideClassId: targetClassId,
         status: 'searching'
       });
     }
 
     setTimeout(() => {
-      // Find an approved driver for this ride class
-      const suitableDriver = driversList.find(d => d.vehicleType === selectedClassId && d.approvalStatus === 'approved') || driversList.find(d => d.approvalStatus === 'approved');
+      // Find an approved, active driver specifically matching this vehicle class
+      const suitableDriver = driversList.find(
+        d => d.vehicleType === targetClassId && d.approvalStatus === 'approved' && d.status !== 'offline'
+      );
+
+      if (!suitableDriver) {
+        // No driver available for this specific vehicle class!
+        setRideStatus(null);
+        setNoDriverRequestedClassId(targetClassId);
+        setShowNoDriverModal(true);
+        return;
+      }
       
       const startLat = pickup!.lat + (Math.random() - 0.5) * 0.015;
       const startLng = pickup!.lng + (Math.random() - 0.5) * 0.015;
@@ -1749,7 +1771,7 @@ export default function App() {
       });
       setDriverLoc({ lat: startLat, lng: startLng });
       
-      const baseEta = RIDE_CLASSES.find(c => c.id === selectedClassId)?.eta || 3;
+      const baseEta = RIDE_CLASSES.find(c => c.id === targetClassId)?.eta || 3;
       setEtaMinutes(baseEta);
       setEtaStatusText(slangMode ? "🕒 Trajet fluide en cours" : "🕒 Smooth transit on schedule");
       
@@ -1768,7 +1790,7 @@ export default function App() {
         ]);
       }, 1500);
 
-    }, 3000);
+    }, 2500);
   };
 
   // Real-Time GPS simulation engine
@@ -3097,7 +3119,9 @@ export default function App() {
                           <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                             {RIDE_CLASSES.map((rc) => {
                               // Price formulas
-                              const rcBaseFare = Math.round((rc.baseFare + (rideDistance * rc.perKm)) * systemSettings.surgeMultiplier);
+                              const clsBaseFare = systemSettings.classRates?.[rc.id]?.baseFare ?? rc.baseFare;
+                              const clsPerKm = systemSettings.classRates?.[rc.id]?.perKm ?? rc.perKm;
+                              const rcBaseFare = Math.round((clsBaseFare + (rideDistance * clsPerKm)) * systemSettings.surgeMultiplier);
                               const rcWalletFare = Math.round(rcBaseFare * 0.9); // 10% discount on wallets
                               const rcCashFare = rcBaseFare;
                               const isSelected = selectedClassId === rc.id;
@@ -5931,6 +5955,24 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* NO DRIVER AVAILABLE POPUP MODAL */}
+      {/* ========================================================================= */}
+      <NoDriverModal
+        isOpen={showNoDriverModal}
+        onClose={() => setShowNoDriverModal(false)}
+        requestedClassId={noDriverRequestedClassId}
+        onSelectAlternativeClass={(newClassId) => {
+          setShowNoDriverModal(false);
+          startSearchingDriver(newClassId);
+        }}
+        slangMode={slangMode}
+        language={language}
+        rideDistance={rideDistance}
+        surgeMultiplier={systemSettings.surgeMultiplier}
+        classRates={systemSettings.classRates}
+      />
 
       {/* ========================================================================= */}
       {/* SHARE MY RIDE DIALOG MODAL */}

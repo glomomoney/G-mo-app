@@ -33,6 +33,7 @@ interface AdminDashboardProps {
     minimumWithdrawal: number;
     topupPromoActive?: boolean;
     topupPromoRate?: number;
+    classRates?: Record<string, { baseFare: number; perKm: number }>;
   };
   onUpdateSettings: (settings: { 
     commissionRate: number; 
@@ -40,6 +41,7 @@ interface AdminDashboardProps {
     minimumWithdrawal: number;
     topupPromoActive?: boolean;
     topupPromoRate?: number;
+    classRates?: Record<string, { baseFare: number; perKm: number }>;
   }) => void;
   transactions: any[];
   onApproveWithdrawal: (id: string) => void;
@@ -589,6 +591,83 @@ export default function AdminDashboard({
                           ? `Currently, passengers earn an extra ${(systemSettings.topupPromoRate ?? 10)}% on all wallet deposits immediately. (e.g. 10,000 FCFA deposit gets ${(10000 * (1 + (systemSettings.topupPromoRate ?? 10)/100)).toLocaleString('fr-FR')} FCFA credit).`
                           : "Activate the promo status above to enable extra top-up bonus credits for passengers."}
                       </span>
+                    </div>
+                  </div>
+
+                  {/* Vehicle Class Rates Configuration */}
+                  <div className="border-t border-brand-input/40 pt-4 space-y-4">
+                    <div>
+                      <h4 className="text-xs font-black text-white uppercase tracking-wider">Per-Vehicle Class Base Fares & Distance Rates</h4>
+                      <p className="text-[10px] text-brand-text-muted mt-0.5 font-medium">Adjust base fare (XAF) and per-kilometer rate (XAF/km) for each ride tier in real time.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        { id: 'okada', name: 'Moto-Taxi (Okada)', defaultBase: 250, defaultPerKm: 80, icon: '🏍️' },
+                        { id: 'keke', name: 'Petit Taxi (Yellow Cab)', defaultBase: 300, defaultPerKm: 100, icon: '🛺' },
+                        { id: 'ecoride', name: 'EcoRide (Private Sedan)', defaultBase: 1500, defaultPerKm: 250, icon: '🚗' },
+                        { id: 'comfort', name: 'VIP Ride (SUV)', defaultBase: 3000, defaultPerKm: 400, icon: '🚘' },
+                      ].map((cls) => {
+                        const currentRates = systemSettings.classRates?.[cls.id] || { baseFare: cls.defaultBase, perKm: cls.defaultPerKm };
+
+                        const updateClassRate = (field: 'baseFare' | 'perKm', val: number) => {
+                          const updated = {
+                            ...(systemSettings.classRates || {}),
+                            [cls.id]: {
+                              ...currentRates,
+                              [field]: val
+                            }
+                          };
+                          onUpdateSettings({ ...systemSettings, classRates: updated });
+                        };
+
+                        return (
+                          <div key={cls.id} className="bg-brand-deep/80 border border-brand-input/60 p-3.5 rounded-xl space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                <span>{cls.icon}</span> {cls.name}
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-brand-gold">
+                                {currentRates.baseFare} + {currentRates.perKm}/km
+                              </span>
+                            </div>
+
+                            <div className="space-y-2 text-[11px]">
+                              <div>
+                                <div className="flex justify-between text-[10px] text-brand-text-muted mb-1 font-semibold">
+                                  <span>Base Fare:</span>
+                                  <strong className="text-white">{currentRates.baseFare} XAF</strong>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={100}
+                                  max={5000}
+                                  step={50}
+                                  value={currentRates.baseFare}
+                                  onChange={(e) => updateClassRate('baseFare', parseInt(e.target.value))}
+                                  className="w-full accent-brand-gold h-1.5 bg-brand-input rounded-lg cursor-pointer"
+                                />
+                              </div>
+
+                              <div>
+                                <div className="flex justify-between text-[10px] text-brand-text-muted mb-1 font-semibold">
+                                  <span>Per-KM Rate:</span>
+                                  <strong className="text-white">{currentRates.perKm} XAF / km</strong>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={20}
+                                  max={1000}
+                                  step={10}
+                                  value={currentRates.perKm}
+                                  onChange={(e) => updateClassRate('perKm', parseInt(e.target.value))}
+                                  className="w-full accent-brand-gold h-1.5 bg-brand-input rounded-lg cursor-pointer"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
