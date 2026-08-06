@@ -90,7 +90,9 @@ import {
   subscribeToActiveRides,
   saveHistoryToFirestore,
   subscribeToHistory,
-  saveTransactionToFirestore
+  saveTransactionToFirestore,
+  subscribeToSettings,
+  saveSettingsToFirestore
 } from './lib/firebaseService';
 import { generateAndDownloadRideReceipt } from './utils/pdfReceipt';
 
@@ -234,11 +236,22 @@ export default function App() {
       surgeMultiplier: 1.0, // multiplier based on weather/traffic
       minimumWithdrawal: 2000, // minimum amount driver can withdraw
       topupPromoActive: true, // Wallet top-up promo is active by default
-      topupPromoRate: 20 // 20% bonus increase when uploading wallet balance as requested
+      topupPromoRate: 20, // 20% bonus increase when uploading wallet balance as requested
+      classRates: {
+        okada: { baseFare: 250, perKm: 80 },
+        keke: { baseFare: 300, perKm: 100 },
+        ecoride: { baseFare: 1500, perKm: 250 },
+        comfort: { baseFare: 3000, perKm: 400 },
+      }
     };
     if (saved) {
       try {
-        return { ...defaults, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaults,
+          ...parsed,
+          classRates: { ...defaults.classRates, ...(parsed.classRates || {}) }
+        };
       } catch (e) {
         return defaults;
       }
@@ -1200,6 +1213,25 @@ export default function App() {
     localStorage.setItem('wanda_system_settings', JSON.stringify(systemSettings));
   }, [systemSettings]);
 
+  // Subscribe to real-time pricing and rates from Firestore settings collection
+  useEffect(() => {
+    const unsubscribeSettings = subscribeToSettings((firestoreData) => {
+      if (firestoreData) {
+        setSystemSettings(prev => ({
+          ...prev,
+          ...firestoreData,
+          classRates: {
+            ...prev.classRates,
+            ...(firestoreData.classRates || {})
+          }
+        }));
+      }
+    });
+    return () => {
+      if (unsubscribeSettings) unsubscribeSettings();
+    };
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('wanda_waiting_logs', JSON.stringify(waitingLogs));
   }, [waitingLogs]);
@@ -1754,8 +1786,11 @@ export default function App() {
 
     // Persist active ride request to Firestore real backend database
     if (pickup && destination && user) {
-      const selectedClass = RIDE_CLASSES.find(c => c.id === targetClassId);
-      const fare = selectedClass ? selectedClass.baseFare : 1500;
+      const selectedClass = RIDE_CLASSES.find(c => c.id === targetClassId) || RIDE_CLASSES[2];
+      const clsBaseFare = systemSettings.classRates?.[selectedClass.id]?.baseFare ?? selectedClass.baseFare;
+      const clsPerKm = systemSettings.classRates?.[selectedClass.id]?.perKm ?? selectedClass.perKm;
+      const calculatedBaseSurge = Math.round((clsBaseFare + (rideDistance * clsPerKm)) * systemSettings.surgeMultiplier);
+      const fare = paymentMethod === 'wallet' ? Math.round(calculatedBaseSurge * 0.85) : calculatedBaseSurge;
       createRideInFirestore({
         passengerId: user.phone.replace(/[^0-9]/g, ''),
         passengerName: user.name,
@@ -2185,7 +2220,9 @@ export default function App() {
 
     const driverVehicleType = user?.vehicleType || 'ecoride';
     const activeClass = RIDE_CLASSES.find(c => c.id === driverVehicleType) || RIDE_CLASSES[2];
-    const calculatedFare = Math.round((activeClass.baseFare + (distanceVal * activeClass.perKm)) * systemSettings.surgeMultiplier);
+    const clsBase = systemSettings.classRates?.[activeClass.id]?.baseFare ?? activeClass.baseFare;
+    const clsPerKm = systemSettings.classRates?.[activeClass.id]?.perKm ?? activeClass.perKm;
+    const calculatedFare = Math.round((clsBase + (distanceVal * clsPerKm)) * systemSettings.surgeMultiplier);
 
     const newRequest = {
       id: `req_${Date.now()}`,

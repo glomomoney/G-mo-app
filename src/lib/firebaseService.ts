@@ -129,3 +129,29 @@ export const saveTransactionToFirestore = async (transaction: any) => {
     console.error('Error saving transaction to Firestore:', err);
   }
 };
+
+// System Settings & Real-time Pricing Persistence
+export const saveSettingsToFirestore = async (settings: any) => {
+  try {
+    const settingsRef = doc(db, 'settings', 'pricing');
+    await setDoc(settingsRef, {
+      ...settings,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('Error saving settings to Firestore:', err);
+    throw err;
+  }
+};
+
+export const subscribeToSettings = (onUpdate: (data: any) => void) => {
+  const settingsRef = doc(db, 'settings', 'pricing');
+  return onSnapshot(settingsRef, (docSnap) => {
+    if (docSnap.exists()) {
+      onUpdate(docSnap.data());
+    }
+  }, (err) => {
+    console.warn('Firestore subscribeToSettings notice:', err?.message || err);
+  });
+};

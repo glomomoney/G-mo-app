@@ -55,6 +55,26 @@
         "createdAt": { "type": "string" }
       },
       "required": ["pickupName", "destName", "fare", "status"]
+    },
+    "settings": {
+      "title": "System Settings & Pricing Rates",
+      "description": "Global pricing configuration including base fares, per-km rates, and commission percentages",
+      "type": "object",
+      "properties": {
+        "commissionRate": { "type": "number" },
+        "surgeMultiplier": { "type": "number" },
+        "minimumWithdrawal": { "type": "number" },
+        "topupPromoActive": { "type": "boolean" },
+        "topupPromoRate": { "type": "number" },
+        "classRates": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/settings/{settingsId}": {
+      "schema": { "$ref": "#/entities/settings" },
+      "description": "System configuration documents such as pricing"
     }
   }
 }
