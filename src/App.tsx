@@ -69,6 +69,7 @@ import PaymentGateway from './components/PaymentGateway';
 import InstallPrompt from './components/InstallPrompt';
 import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
+import AdminLoginModal from './components/AdminLoginModal';
 import NoDriverModal from './components/NoDriverModal';
 import WalletCard from './components/WalletCard';
 import DriverWallet from './components/DriverWallet';
@@ -484,10 +485,13 @@ export default function App() {
 
   // 9. Modals triggers
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [isAdminPage, setIsAdminPage] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('page') === 'admin' || params.get('admin') === 'true';
+      const path = window.location.pathname.toLowerCase();
+      return params.get('page') === 'admin' || params.get('admin') === 'true' || path.endsWith('/admin') || path.includes('/admin');
     }
     return false;
   });
@@ -2404,8 +2408,19 @@ export default function App() {
     }
   };
 
-  // Render independent admin page if URL has admin param, bypassing signup requirements
+  // Render independent admin page if URL has admin param or /admin route
   if (isAdminPage) {
+    if (!isAdminAuthenticated) {
+      return (
+        <AdminLoginModal
+          onSuccess={() => setIsAdminAuthenticated(true)}
+          onClose={() => {
+            window.location.href = window.location.origin;
+          }}
+        />
+      );
+    }
+
     return (
       <AdminDashboard
         onClose={() => {
@@ -2643,7 +2658,13 @@ export default function App() {
 
           {/* Admin Switch (Independent URL Link) */}
           <button
-            onClick={() => setIsAdminOpen(true)}
+            onClick={() => {
+              if (isAdminAuthenticated) {
+                setIsAdminOpen(true);
+              } else {
+                setShowAdminLoginModal(true);
+              }
+            }}
             className="bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/20 hover:border-brand-gold/40 px-1.5 py-1 rounded-xl text-[9px] sm:text-[10px] font-black tracking-wide flex items-center gap-0.5 sm:gap-1 cursor-pointer transition shadow-sm shrink-0"
             id="admin-console-trigger"
           >
@@ -5961,8 +5982,21 @@ export default function App() {
       </AnimatePresence>
 
       {/* ========================================================================= */}
-      {/* POWERFUL ADMIN CONSOLE OVERLAY */}
+      {/* POWERFUL ADMIN CONSOLE & LOGIN OVERLAY */}
       {/* ========================================================================= */}
+      <AnimatePresence>
+        {showAdminLoginModal && (
+          <AdminLoginModal
+            onSuccess={() => {
+              setIsAdminAuthenticated(true);
+              setShowAdminLoginModal(false);
+              setIsAdminOpen(true);
+            }}
+            onClose={() => setShowAdminLoginModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {isAdminOpen && (
           <AdminDashboard
