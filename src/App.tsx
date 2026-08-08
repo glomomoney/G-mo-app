@@ -24,6 +24,7 @@ import {
   X,
   Compass,
   ChevronRight,
+  ArrowRight,
   ShieldCheck,
   AlertTriangle,
   Bell,
@@ -46,6 +47,7 @@ import {
   Sparkles,
   Globe,
   ChevronDown,
+  ChevronUp,
   ArrowUpDown,
   Ruler,
   Maximize2,
@@ -75,6 +77,7 @@ import WalletCard from './components/WalletCard';
 import DriverWallet from './components/DriverWallet';
 import NotificationDrawer from './components/NotificationDrawer';
 import NotificationPushBanner from './components/NotificationPushBanner';
+import { callRingtonePlayer } from './utils/callAudio';
 import WandaLogo from './components/WandaLogo';
 import { LiveCountdownTimer } from './components/LiveCountdownTimer';
 import { ParticleExplosion } from './components/ParticleExplosion';
@@ -350,7 +353,7 @@ export default function App() {
 
   // 6. Travel Coordinates and Booking
   const [pickup, setPickup] = useState<Location | null>(YAOUNDE_LOCATIONS[0]);
-  const [destination, setDestination] = useState<Location | null>(YAOUNDE_LOCATIONS[2]);
+  const [destination, setDestination] = useState<Location | null>(null);
   // Keyboard-safe smart autocomplete state
   const [searchModalType, setSearchModalType] = useState<'pickup' | 'destination' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -637,13 +640,6 @@ export default function App() {
       
       setPickup(newLoc);
       setIsGeolocating(false);
-
-      // Offset destination by ~1.5km so there is a nice visible route on map
-      setDestination({
-        name: slangMode ? "🏁 Destination GPS" : "🏁 GPS Destination",
-        lat: latitude + 0.012,
-        lng: longitude + 0.012
-      });
 
       console.log("Standing position successfully geolocated to:", latitude, longitude);
 
@@ -1302,6 +1298,23 @@ export default function App() {
     return () => clearInterval(interval);
   }, [callState]);
 
+  // Real Web Audio Ringtone & Vibration effect for in-app calls
+  useEffect(() => {
+    if (callState === 'incoming') {
+      callRingtonePlayer.startIncomingRingtone();
+    } else if (callState === 'outgoing') {
+      callRingtonePlayer.startOutgoingRingback();
+    } else if (callState === 'active') {
+      callRingtonePlayer.playConnectTone();
+    } else {
+      callRingtonePlayer.stop();
+    }
+
+    return () => {
+      callRingtonePlayer.stop();
+    };
+  }, [callState]);
+
   useEffect(() => {
     let timeout: any = null;
     if (callState === 'outgoing') {
@@ -1383,10 +1396,12 @@ export default function App() {
   };
 
   const declineInAppCall = () => {
+    callRingtonePlayer.stop();
     setCallState('idle');
   };
 
   const endInAppCall = () => {
+    callRingtonePlayer.stop();
     setCallState('idle');
   };
 
@@ -2096,13 +2111,16 @@ export default function App() {
     return percentage;
   };
 
-  // Passenger live chat response generator
+  // Live chat response generator for both passenger and driver
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
+    const mySender = role === 'passenger' ? 'passenger' : 'driver';
+    const otherSender = role === 'passenger' ? 'driver' : 'passenger';
+
     const newMsg: Message = {
-      sender: 'passenger',
+      sender: mySender,
       text: chatInput,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
@@ -2111,12 +2129,22 @@ export default function App() {
     setChatInput('');
 
     setTimeout(() => {
-      const randomPidgin = CHAT_PIDGIN_RESPONSES[Math.floor(Math.random() * CHAT_PIDGIN_RESPONSES.length)];
+      const responses = role === 'passenger'
+        ? CHAT_PIDGIN_RESPONSES
+        : [
+            "Ok, j'arrive !",
+            "Je suis là, j'attends au bord de la route.",
+            "D'accord, je vous vois.",
+            "S'il vous plaît dépêchez-vous, merci !",
+            "Pas de problème, je vous attends.",
+            "On se voit au carrefour !"
+          ];
+      const randomReply = responses[Math.floor(Math.random() * responses.length)];
       setMessages(prev => [
         ...prev,
         {
-          sender: 'driver',
-          text: randomPidgin,
+          sender: otherSender,
+          text: randomReply,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -2517,6 +2545,20 @@ export default function App() {
 
   // Render independent admin page if URL has admin param or /admin route
   if (isAdminPage) {
+    if (!isAdminAuthenticated) {
+      return (
+        <AdminLoginModal
+          onSuccess={() => setIsAdminAuthenticated(true)}
+          onClose={() => {
+            setIsAdminPage(false);
+            const url = new URL(window.location.href);
+            url.searchParams.delete('admin');
+            url.searchParams.delete('page');
+            window.history.pushState({}, '', url.pathname.replace(/\/admin\/?$/i, '') || '/');
+          }}
+        />
+      );
+    }
     return (
       <AdminDashboard
         onClose={() => {
@@ -2717,132 +2759,78 @@ export default function App() {
       )}
 
       {/* Header bar */}
-      <header className="bg-brand-deep border-b border-brand-card/80 px-3 sm:px-4 py-2.5 sm:py-3 shrink-0 z-50 flex items-center justify-between shadow-md">
+      <header className="bg-brand-deep border-b border-brand-card/80 px-3 sm:px-4 py-2 sm:py-2.5 shrink-0 z-50 flex items-center justify-between shadow-md">
         
-        {/* Brand identity */}
+        {/* Brand identity & Location Pill */}
         <div className="flex items-center gap-1.5 sm:gap-2.5">
-          <WandaLogo className="w-7 h-7 sm:w-9 sm:h-9 drop-shadow-[0_0_8px_rgba(226,193,141,0.25)]" />
-          <div>
-            <div className="flex items-center gap-1 sm:gap-1.5">
-              <h1 className="text-xs sm:text-sm font-black tracking-widest text-brand-gold font-sans">
-                WANDA
-              </h1>
-              {currentCity && (
-                <span className="bg-brand-gold/15 text-brand-gold border border-brand-gold/30 text-[8px] sm:text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-inner hidden sm:inline-flex">
-                  📍 {currentCity}
-                </span>
-              )}
-              <span className="bg-orange-500/20 text-orange-400 border border-orange-500/40 text-[8px] sm:text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-                Firebase Real Backend
-              </span>
-            </div>
-            <p className="text-[8px] sm:text-[9px] text-brand-text-muted italic font-bold hidden xs:block">tu Wanda on tes transporte.</p>
+          <WandaLogo className="w-7 h-7 sm:w-8 sm:h-8 drop-shadow-[0_0_8px_rgba(226,193,141,0.25)]" />
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <h1 className="text-xs sm:text-sm font-black tracking-widest text-brand-gold font-sans">
+              WANDA
+            </h1>
+            {currentCity && (
+              <button
+                onClick={() => setSearchModalType('pickup')}
+                className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/30 text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shadow-inner cursor-pointer transition-colors"
+                title="Changer de ville / position"
+              >
+                📍 {currentCity}
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Global Toolbar and Dashboard controllers */}
-        <div className="flex items-center gap-1.5 sm:gap-3">
+        {/* Global Toolbar Header Controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           
-          {/* Header PWA Install App Launcher Button */}
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('open-pwa-install'))}
-            className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/40 px-2 py-1 rounded-xl text-[9px] sm:text-[10px] font-black tracking-wide flex items-center gap-1 cursor-pointer transition shadow-sm shrink-0"
-            id="pwa-header-install-btn"
-            title={language === 'fr' ? "Installer l'application Wanda sur écran d'accueil (iOS & Android)" : "Install Wanda app on home screen (iOS & Android)"}
-          >
-            <img src="/wanda_logo.jpg" alt="Wanda icon" className="w-3.5 h-3.5 rounded object-cover border border-brand-gold/60 shrink-0" />
-            <span className="hidden xs:inline">{language === 'fr' ? "App Mobile" : "Install App"}</span>
-            <Download size={11} className="text-brand-gold animate-pulse shrink-0" />
-          </button>
+          {/* Small non-interactive Mode Indicator */}
+          <span className="bg-brand-card/60 border border-brand-input px-2 py-0.5 rounded-full text-[9px] font-bold text-brand-gold flex items-center gap-1">
+            {role === 'passenger' ? (language === 'fr' ? '👤 Passager' : '👤 Passenger') : (language === 'fr' ? '🚖 Chauffeur' : '🚖 Driver')}
+          </span>
 
-          {/* Admin Switch (Instant 1-Click Access) */}
+          {/* Notification Bell Button */}
           <button
-            onClick={() => setIsAdminOpen(true)}
-            className="bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 px-2 py-1 rounded-xl text-[9px] sm:text-[10px] font-extrabold tracking-wide flex items-center gap-1 cursor-pointer transition shadow-md shrink-0"
-            id="admin-console-trigger"
-            title="Ouvrir le Tableau de Bord Admin (Accès Direct)"
-          >
-            <ShieldCheck size={12} className="text-emerald-400 shrink-0" />
-            <span>Admin Portal</span>
-            <span className="text-[8px] bg-emerald-500/20 px-1 py-0.2 rounded text-emerald-300 font-mono">1-CLIC</span>
-          </button>
-
-          {/* Push Notification Bell Icon */}
-          <button
-            onClick={() => {
-              setIsNotificationDrawerOpen(true);
-              if (appNotifications.length > 0) {
-                localStorage.setItem('wanda_last_seen_notif_id', appNotifications[0].id);
-              }
-            }}
-            className="relative bg-brand-card/60 hover:bg-brand-card text-brand-gold border border-brand-input px-2 py-1 sm:px-2.5 sm:py-1 rounded-xl text-[9px] sm:text-[10px] font-black cursor-pointer transition shadow-sm flex items-center gap-1 shrink-0"
+            onClick={() => setIsNotificationDrawerOpen(true)}
+            className="relative p-1.5 text-brand-gold hover:text-white bg-brand-card/60 hover:bg-brand-card border border-brand-input rounded-xl transition cursor-pointer shrink-0"
+            title={language === 'fr' ? "Notifications" : "Notifications"}
             id="notification-bell-btn"
-            title="Notifications Push Wanda"
           >
-            <Bell size={13} className="text-brand-gold animate-bounce" />
-            <span className="hidden xs:inline text-[10px] font-extrabold text-brand-gold">Push</span>
-            {appNotifications.length > 0 && (
-              <span className="bg-rose-500 text-white font-mono text-[9px] font-bold px-1.5 py-0.2 rounded-full border border-brand-midnight animate-pulse">
-                {appNotifications.length}
-              </span>
+            <Bell size={13} />
+            {appNotifications.some(n => !n.read) && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-brand-gold rounded-full animate-ping" />
+            )}
+            {appNotifications.some(n => !n.read) && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-brand-gold rounded-full" />
             )}
           </button>
 
-          {/* Dual Role Selector: Passenger vs Driver */}
-          <div className="flex bg-brand-card/60 p-0.5 rounded-xl border border-brand-input text-[10px] sm:text-[11px] shrink-0">
-            <button
-              onClick={() => { setRole('passenger'); handleCancelBooking(); }}
-              className={`px-1.5 py-1 sm:px-2.5 sm:py-1 rounded-lg font-bold transition-all cursor-pointer ${role === 'passenger' ? 'bg-brand-gold text-brand-midnight shadow font-black' : 'text-brand-text-muted hover:text-white'}`}
-              id="role-passenger-btn"
-            >
-              <span className="hidden xs:inline">{language === 'fr' ? "Passager" : "Passenger"}</span>
-              <span className="xs:hidden">{language === 'fr' ? "Rider" : "Passenger"}</span>
-            </button>
-            <button
-              onClick={() => { setRole('driver'); handleCancelBooking(); }}
-              className={`px-1.5 py-1 sm:px-2.5 sm:py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-0.5 sm:gap-1 ${role === 'driver' ? 'bg-brand-input text-brand-gold shadow font-black' : 'text-brand-text-muted hover:text-white'}`}
-              id="role-driver-btn"
-            >
-              <span>{language === 'fr' ? "Chauffeur" : "Driver"}</span>
-              {driverOnline && (
-                <span className="w-1 h-1 bg-brand-gold rounded-full animate-ping"></span>
-              )}
-            </button>
-          </div>
-
-          {/* Language Toggle Group with Globe and Flags Dropdown */}
+          {/* Language Toggle Group */}
           <div className="relative shrink-0" id="language-switcher-header">
             <button
               onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-brand-card/60 hover:bg-brand-card border border-brand-input rounded-xl text-[10px] sm:text-[11px] font-black cursor-pointer transition shadow-sm text-brand-gold hover:text-white select-none"
+              className="flex items-center gap-1 px-2 py-1 bg-brand-card/60 hover:bg-brand-card border border-brand-input rounded-xl text-[10px] font-black cursor-pointer transition shadow-sm text-brand-gold hover:text-white select-none"
               id="language-dropdown-trigger"
               title={language === 'fr' ? "Changer de langue" : "Change language"}
             >
-              <Globe size={12} className="text-brand-gold shrink-0 animate-[spin_12s_linear_infinite]" />
-              <span className="flex items-center gap-1 sm:gap-1.5">
-                {language === 'fr' ? "🇫🇷" : "🇬🇧"}
-                <span className="hidden xs:inline">{language === 'fr' ? "Français" : "English"}</span>
-              </span>
-              <ChevronDown size={10} className={`text-brand-text-muted transition-transform duration-200 ${langDropdownOpen ? 'rotate-180 text-brand-gold' : ''}`} />
+              <Globe size={11} className="text-brand-gold shrink-0" />
+              <span>{language === 'fr' ? "🇫🇷" : "🇬🇧"}</span>
+              <ChevronDown size={9} className={`text-brand-text-muted transition-transform duration-200 ${langDropdownOpen ? 'rotate-180 text-brand-gold' : ''}`} />
             </button>
 
             <AnimatePresence>
               {langDropdownOpen && (
                 <>
-                  {/* Backdrop overlay to close when clicking outside */}
                   <div 
                     className="fixed inset-0 z-40 cursor-default" 
                     onClick={() => setLangDropdownOpen(false)}
                   />
                   
-                  {/* Dropdown Options List */}
                   <motion.div 
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="absolute right-0 mt-1.5 w-36 sm:w-40 bg-brand-deep border border-brand-input rounded-xl shadow-xl py-1 z-50 overflow-hidden font-sans text-[10px] sm:text-[11px]"
+                    className="absolute right-0 mt-1.5 w-36 bg-brand-deep border border-brand-input rounded-xl shadow-xl py-1 z-50 overflow-hidden font-sans text-[10px]"
                     id="language-dropdown-menu"
                   >
                     <button
@@ -2850,9 +2838,9 @@ export default function App() {
                         changeLanguage('en');
                         setLangDropdownOpen(false);
                       }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
                         language === 'en' 
-                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold hover:bg-brand-gold/25' 
+                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold' 
                           : 'text-brand-text-muted hover:text-white'
                       }`}
                       id="lang-opt-en"
@@ -2869,9 +2857,9 @@ export default function App() {
                         changeLanguage('fr');
                         setLangDropdownOpen(false);
                       }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
                         language === 'fr' 
-                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold hover:bg-brand-gold/25' 
+                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold' 
                           : 'text-brand-text-muted hover:text-white'
                       }`}
                       id="lang-opt-fr"
@@ -2894,151 +2882,45 @@ export default function App() {
             title="Log Out Profile"
             className="p-1.5 text-brand-text-muted hover:text-rose-400 bg-brand-card/30 border border-brand-input rounded-xl hover:bg-brand-input transition cursor-pointer shrink-0"
           >
-            <LogOut size={13} />
+            <LogOut size={12} />
           </button>
         </div>
 
       </header>
 
-      {/* High-visibility Dismissible Promo Banner */}
-      <AnimatePresence>
-        {showPromoBanner && systemSettings.topupPromoActive && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="overflow-hidden shrink-0"
-            id="promo-bonus-topup-banner"
-          >
-            <div className="bg-gradient-to-r from-brand-gold/20 via-brand-gold/10 to-brand-midnight border-b border-brand-gold/25 px-4 py-2 flex items-center justify-between text-xs relative z-40">
-              <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                <div className="bg-brand-gold/20 p-1 rounded-lg text-brand-gold animate-pulse shrink-0">
-                  <Gift size={15} className="fill-brand-gold/10" />
-                </div>
-                <div className="text-white truncate">
-                  <span className="font-extrabold text-brand-gold tracking-wider uppercase mr-2 bg-brand-gold/15 px-1.5 py-0.5 rounded border border-brand-gold/20 text-[9px]">
-                    {slangMode ? "PUBLICITÉ WANDA !" : "WANDA PROMO !"}
-                  </span>
-                  <span className="font-semibold text-[11px] leading-relaxed">
-                    {slangMode ? (
-                      <>
-                        ⚡ Paye par Wallet = <strong className="text-brand-gold">15% DE RÉDUCTION</strong> sur tes courses & <strong className="text-emerald-400">+{systemSettings.topupPromoRate}% DE BONUS</strong> sur tes recharges ! 🎁
-                      </>
-                    ) : (
-                      <>
-                        ⚡ Pay with Wallet = <strong className="text-brand-gold">15% RIDE DISCOUNT</strong> & <strong className="text-emerald-400">+{systemSettings.topupPromoRate}% BONUS</strong> on all deposits ! 🎁
-                      </>
-                    )}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 ml-3">
-                <button
-                  onClick={() => {
-                    const walletTrigger = document.getElementById('passenger-wallet-card') || document.getElementById('wallet-topup-trigger');
-                    if (walletTrigger) {
-                      walletTrigger.scrollIntoView({ behavior: 'smooth' });
-                    }
-                  }}
-                  className="bg-brand-gold text-brand-midnight hover:bg-white px-2 py-0.5 rounded-lg text-[9px] font-black tracking-wider transition cursor-pointer flex items-center gap-1 shrink-0 h-6"
-                >
-                  <Sparkles size={10} className="fill-brand-midnight" />
-                  {slangMode ? "RECHARGER" : "TOP UP"}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowPromoBanner(false);
-                    localStorage.setItem('wanda_topup_promo_dismissed', 'true');
-                  }}
-                  className="p-1 hover:bg-brand-gold/10 rounded-lg text-brand-text-muted hover:text-white transition cursor-pointer"
-                  title={slangMode ? "Fermer" : "Dismiss"}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Main split viewport layout */}
       <div 
         className={`flex flex-1 relative overflow-hidden ${
-          rideStatus !== 'idle' && rideStatus !== 'searching' 
+          role === 'passenger' && activeTab === 'booking'
             ? 'flex-col-reverse md:flex-row' 
-            : 'flex-col md:flex-row'
+            : rideStatus !== 'idle' && rideStatus !== 'searching' 
+              ? 'flex-col-reverse md:flex-row' 
+              : 'flex-col-reverse md:flex-row'
         }`} 
         id="app-main-view"
       >
         
-        {/* Left Side Control Panel */}
+        {/* Left Side Control Panel / Sliding Bottom Sheet */}
         <aside 
-          className={`bg-brand-deep border-r border-brand-card/80 flex flex-col shrink-0 z-10 overflow-y-auto text-white ${
+          className={`bg-brand-deep/95 backdrop-blur-md border-r border-brand-card/80 flex flex-col shrink-0 z-10 overflow-y-auto text-white rounded-t-3xl md:rounded-none shadow-2xl transition-all duration-300 ${
             isMapFullscreen || (role === 'driver' && rideStatus === 'in_progress')
               ? 'hidden md:hidden w-0 h-0 border-0'
-              : rideStatus !== 'idle' && rideStatus !== 'searching'
-                ? 'w-full md:w-96 h-[40vh] md:h-full border-t md:border-t-0 border-brand-card/80'
-                : 'w-full md:w-96 h-full'
+              : role === 'passenger' && activeTab === 'booking'
+                ? 'w-full md:w-96 h-[50vh] md:h-full border-t md:border-t-0 border-brand-card/80'
+                : rideStatus !== 'idle' && rideStatus !== 'searching'
+                  ? 'w-full md:w-96 h-[45vh] md:h-full border-t md:border-t-0 border-brand-card/80'
+                  : 'w-full md:w-96 h-[50vh] md:h-full'
           }`} 
           id="sidebar-controls"
         >
-          
-          {/* PROMINENT PASSENGER & CHAUFFEUR SWITCH PANEL */}
-          {(rideStatus === 'idle' || rideStatus === 'searching') && (
-            <div className="p-4 border-b border-brand-card bg-brand-midnight/45 space-y-2.5">
-              <div className="flex items-center justify-between text-[10px] tracking-wide">
-                <span className="font-extrabold uppercase text-brand-gold">
-                  {language === 'fr' ? "🔄 MODE D'APPLICATION" : "🔄 APPLICATION MODE"}
-                </span>
-                <span className="text-[9px] font-black uppercase text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                  🟢 {language === 'fr' ? "Actif" : "Active"}
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-2 bg-brand-input border border-brand-card/60 p-1 rounded-2xl relative shadow-inner">
-                <button
-                  onClick={() => { setRole('passenger'); handleCancelBooking(); }}
-                  className={`py-2 px-3 rounded-xl font-black text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${
-                    role === 'passenger' 
-                      ? 'bg-brand-gold text-brand-midnight shadow-lg transform scale-102 font-extrabold' 
-                      : 'text-brand-text-muted hover:text-white font-bold'
-                  }`}
-                  id="sidebar-role-passenger"
-                >
-                  👤 {language === 'fr' ? "Passager" : "Passenger"}
-                </button>
-                <button
-                  onClick={() => { setRole('driver'); handleCancelBooking(); }}
-                  className={`py-2 px-3 rounded-xl font-black text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${
-                    role === 'driver' 
-                      ? 'bg-brand-gold text-brand-midnight shadow-lg transform scale-102 font-extrabold' 
-                      : 'text-brand-text-muted hover:text-white font-bold'
-                  }`}
-                  id="sidebar-role-driver"
-                >
-                  🚖 {language === 'fr' ? "Chauffeur" : "Driver"}
-                </button>
-              </div>
-              
-              <p className="text-[9.5px] text-brand-text-muted text-center font-semibold italic leading-snug">
-                {role === 'passenger' 
-                  ? (language === 'fr' 
-                      ? "Vous êtes en mode Passager : Commandez une moto, un petit taxi ou un VIP."
-                      : "You are in Passenger mode: Order a bike, a classic taxi or a VIP ride.")
-                  : (language === 'fr' 
-                      ? "Vous êtes en mode Chauffeur : Activez votre statut en ligne pour recevoir des courses."
-                      : "You are in Driver mode: Go online to receive ride requests and start earning.")
-                }
-              </p>
-            </div>
-          )}
+          {/* Mobile Sheet Drag Handle Pill */}
+          <div className="w-10 h-1 bg-brand-card/80 rounded-full mx-auto mt-2 mb-1 md:hidden shrink-0" />
 
           {/* ========================================================================= */}
           {/* PASSENGER ROLE COMPONENT */}
           {/* ========================================================================= */}
           {role === 'passenger' && (
-            <div className="flex flex-col flex-1 p-4 space-y-4">
+            <div className="flex flex-col flex-1 p-3.5 sm:p-4 space-y-3.5">
               
               {/* Tab selector */}
               {(rideStatus === 'idle' || rideStatus === 'searching') && (
@@ -3056,7 +2938,7 @@ export default function App() {
                     }}
                     className={`flex-1 pb-1.5 font-extrabold text-center border-b-2 transition cursor-pointer flex items-center justify-center gap-1 ${activeTab === 'wallet' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-brand-text-muted hover:text-white'}`}
                   >
-                    {slangMode ? "Mon Wallet" : "My Wallet"}
+                    Wallet
                     <span 
                       className="text-[9px] bg-brand-gold/10 text-brand-gold px-1.5 py-0.5 rounded-full font-black cursor-pointer hover:bg-brand-gold/20 transition-colors animate-pulse"
                       title={slangMode ? "Cliquer pour afficher/masquer" : "Click to show/hide balance"}
@@ -3077,336 +2959,256 @@ export default function App() {
               {activeTab === 'booking' && (
                 <>
                   {rideStatus === 'idle' && (
-                    <div className="space-y-4 flex-1 flex flex-col justify-between">
-                      <div className="space-y-4">
+                    <div className="space-y-3.5 flex-1 flex flex-col justify-between">
+                      <div className="space-y-3.5">
                         
-                        {pickup && destination && (() => {
-                          const traffic = getTrafficDetails();
-                          return (
-                            <motion.div
-                              initial={{ opacity: 0, y: -10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -10 }}
-                              className="bg-brand-midnight/90 border border-brand-gold/40 rounded-2xl p-4 shadow-xl space-y-3 relative overflow-hidden"
-                              id="estimated-journey-banner"
+                        {/* YANGO UX PATTERN - STEP 1: PROMINENT "WHERE TO?" SEARCH BAR & QUICK DESTINATION CHIPS */}
+                        {!destination ? (
+                          <div className="space-y-3">
+                            {/* PROMINENT LIGHT ROUNDED "WHERE TO?" SEARCH BAR (YANGO STYLE) */}
+                            <button
+                              type="button"
+                              onClick={() => { setSearchModalType('destination'); setSearchQuery(''); }}
+                              className="w-full bg-white text-slate-900 hover:bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 shadow-xl flex items-center justify-between transition-all transform hover:scale-[1.005] active:scale-[0.995] cursor-pointer group"
+                              id="where-to-search-bar"
                             >
-                              {/* Decorative Top Accent Stripe */}
-                              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-gold via-amber-400 to-emerald-500 animate-pulse" />
-                              
-                              {/* Header Row */}
-                              <div className="flex items-center justify-between">
-                                <span className="text-[9px] uppercase font-black tracking-widest text-brand-gold flex items-center gap-1">
-                                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-gold animate-ping" />
-                                  {slangMode ? "Wanda Live Estimation" : "Live Journey Estimate"}
-                                </span>
-                                <div className={`px-2 py-0.5 rounded-full text-[8.5px] font-black border uppercase ${traffic.badgeColor}`}>
-                                  {traffic.statusLabel}
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-amber-400/25 text-amber-600 flex items-center justify-center shrink-0 group-hover:bg-amber-400 group-hover:text-slate-900 transition-colors">
+                                  <Car size={20} className="stroke-[2.5]" />
+                                </div>
+                                <div className="text-left min-w-0">
+                                  <span className="block text-[8.5px] uppercase font-mono tracking-widest text-slate-500 font-black">
+                                    {slangMode ? "DESTINATION" : "DESTINATION"}
+                                  </span>
+                                  <span className="text-base sm:text-lg font-black tracking-tight text-slate-900 leading-tight block truncate">
+                                    {slangMode ? "Où allez-vous ?" : "Where to?"}
+                                  </span>
                                 </div>
                               </div>
-
-                              {/* Core Stats Grid */}
-                              <div className="grid grid-cols-2 gap-3 divide-x divide-brand-card/60">
-                                
-                                {/* Left Side: Arrival Time & ETA */}
-                                <div className="flex flex-col justify-center">
-                                  <span className="text-[8px] uppercase font-bold text-brand-text-muted tracking-wider">
-                                    {slangMode ? "Est. Durée & Arrivée" : "Duration & ETA"}
-                                  </span>
-                                  <div className="flex items-baseline gap-1.5 mt-0.5">
-                                    <span className="text-xl font-extrabold text-white tracking-tight">
-                                      {traffic.totalDuration} <span className="text-xs font-semibold">mins</span>
-                                    </span>
-                                  </div>
-                                  <div className="text-[10px] text-brand-text-muted mt-0.5 font-medium flex items-center gap-1 flex-wrap">
-                                    <span>🕒 {slangMode ? "Arrivée vers" : "Arrive by"}</span>
-                                    <strong className="text-white font-mono font-bold bg-brand-input px-1.5 py-0.5 rounded border border-brand-card/45">
-                                      {traffic.formattedArrival}
-                                    </strong>
-                                  </div>
-                                </div>
-
-                                {/* Right Side: Estimated Cost for Selected Class */}
-                                <div className="flex flex-col justify-center pl-3">
-                                  <span className="text-[8px] uppercase font-bold text-brand-text-muted tracking-wider">
-                                    {slangMode ? "Tarif Estimé" : "Estimated Fare"} ({activeRideClass.name})
-                                  </span>
-                                  <div className="flex flex-col mt-1 gap-1">
-                                    {/* Wallet option */}
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[9px] text-brand-text-muted">
-                                        {slangMode ? "Wallet (-10%)" : "Wallet (-10%)"}
-                                      </span>
-                                      <strong className="text-[11px] text-brand-gold font-mono font-black">
-                                        {walletPrice.toLocaleString('fr-FR')} FCFA
-                                      </strong>
-                                    </div>
-                                    {/* Cash option */}
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[9px] text-brand-text-muted">
-                                        {slangMode ? "Espèces" : "Cash Pay"}
-                                      </span>
-                                      <strong className="text-[11px] text-emerald-400 font-mono font-black">
-                                        {cashPrice.toLocaleString('fr-FR')} FCFA
-                                      </strong>
-                                    </div>
-                                  </div>
-                                </div>
-
+                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 group-hover:bg-amber-400 group-hover:text-slate-900 transition-colors shrink-0 shadow-sm">
+                                <ArrowRight size={16} className="stroke-[2.5]" />
                               </div>
+                            </button>
 
-                              {/* Traffic Status description block */}
-                              <div className="pt-2 border-t border-brand-card/50 text-[10px] text-brand-text-muted flex items-center gap-1.5 leading-snug">
-                                <span className="text-xs shrink-0">{traffic.icon}</span>
-                                <p className="font-semibold italic">
-                                  {traffic.statusText}
-                                </p>
-                              </div>
-
-                            </motion.div>
-                          );
-                        })()}
-
-                        {/* Route Selection */}
-                        <div className="bg-brand-card/40 p-4 rounded-2xl border border-brand-card/80 space-y-3 shadow-inner">
-                          <h3 className="text-[10px] font-black uppercase text-brand-gold tracking-wider flex items-center gap-1.5">
-                            <Compass size={13} className="animate-pulse" />
-                            <span>{slangMode ? "Trouve ton carrefour" : "Select Travel Route"}</span>
-                          </h3>
-
-                          {/* Pickup Block */}
-                          <div className="relative">
-                            <label className="text-[9px] text-brand-text-muted font-black tracking-wider block mb-1">
-                              {slangMode ? "LIEU DE RAMASSAGE (A)" : "PICKUP LOCATION (A)"}
-                            </label>
-                            <div className="relative">
-                              <button
-                                onClick={() => { setSearchModalType('pickup'); setSearchQuery(''); }}
-                                className="w-full bg-brand-input hover:bg-brand-input/80 border border-brand-card text-left rounded-xl p-3 text-xs font-semibold flex items-center justify-between text-white transition cursor-pointer pr-16"
-                              >
-                                <div className="flex items-center gap-2 truncate">
-                                  <MapPin size={14} className="text-emerald-400 shrink-0" />
-                                  <span className="truncate">{pickup ? pickup.name : 'Select station...'}</span>
-                                </div>
-                                <Search size={12} className="text-brand-text-muted" />
-                              </button>
-
-                              {/* Map Picker flag */}
-                              <button
-                                onClick={() => setIsSettingLocationType(isSettingLocationType === 'pickup' ? null : 'pickup')}
-                                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 text-xs font-bold transition cursor-pointer ${isSettingLocationType === 'pickup' ? 'bg-brand-gold text-brand-midnight rounded-lg' : 'text-brand-text-muted hover:text-brand-gold'}`}
-                                title="Pinpoint pickup"
-                              >
-                                📍
-                              </button>
-                            </div>
-
-                            {/* Active geolocator status or button */}
-                            <div className="flex items-center justify-between mt-1 px-1.5">
-                              <span className="text-[8.5px] text-brand-text-muted/80">
-                                {isGeolocating ? (
-                                  <span className="flex items-center gap-1 text-brand-gold animate-pulse font-bold">
-                                    🌀 {slangMode ? "GPS debout en cours..." : "Acquiring standing GPS..."}
-                                  </span>
-                                ) : (
-                                  slangMode ? "GPS debout actuel" : "Standing GPS position"
-                                )}
-                              </span>
+                            {/* Single Clean Pickup Bar under "Where to?" */}
+                            <div className="bg-brand-card/40 border border-brand-card/80 rounded-2xl p-2.5 flex items-center justify-between text-xs">
                               <button
                                 type="button"
+                                onClick={() => { setSearchModalType('pickup'); setSearchQuery(''); }}
+                                className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
+                              >
+                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[8.5px] uppercase font-mono tracking-wider text-brand-text-muted font-bold">
+                                    {slangMode ? "POINT DE DÉPART (AUTO-DÉTECTÉ)" : "PICKUP (AUTO-DETECTED)"}
+                                  </p>
+                                  <p className="text-xs font-bold text-white truncate group-hover:text-brand-gold transition-colors">
+                                    {pickup ? pickup.name : (slangMode ? 'Position GPS Actuelle' : 'Current GPS Location')}
+                                  </p>
+                                </div>
+                              </button>
+                              <button 
                                 onClick={() => geolocateCurrentPosition()}
-                                disabled={isGeolocating}
-                                className="text-[10px] text-brand-gold hover:text-white font-extrabold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                                className="text-[10px] bg-brand-input hover:bg-brand-card border border-brand-card text-brand-gold font-bold px-2.5 py-1 rounded-xl transition flex items-center gap-1 cursor-pointer shrink-0 ml-2"
+                                title={slangMode ? "Recentrer GPS" : "Re-center GPS"}
                               >
-                                🎯 {slangMode ? "Détecter mon GPS" : "Detect Standing GPS"}
+                                🎯 GPS
                               </button>
                             </div>
-                          </div>
 
-                          {/* Destination Block */}
-                          <div className="relative">
-                            <label className="text-[9px] text-brand-text-muted font-black tracking-wider block mb-1">
-                              {slangMode ? "LIEU DE DÉPÔT (B)" : "DROP STATION (B)"}
-                            </label>
-                            <div className="relative">
-                              <button
-                                onClick={() => { setSearchModalType('destination'); setSearchQuery(''); }}
-                                className="w-full bg-brand-input hover:bg-brand-input/80 border border-brand-card text-left rounded-xl p-3 text-xs font-semibold flex items-center justify-between text-white transition cursor-pointer pr-16"
-                              >
-                                <div className="flex items-center gap-2 truncate">
-                                  <Navigation size={14} className="text-brand-gold shrink-0 rotate-45" />
-                                  <span className="truncate">{destination ? destination.name : 'Select destination...'}</span>
-                                </div>
-                                <Search size={12} className="text-brand-text-muted" />
-                              </button>
-
-                              {/* Map Picker flag */}
-                              <button
-                                onClick={() => setIsSettingLocationType(isSettingLocationType === 'destination' ? null : 'destination')}
-                                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 text-xs font-bold transition cursor-pointer ${isSettingLocationType === 'destination' ? 'bg-brand-gold text-brand-midnight rounded-lg' : 'text-brand-text-muted hover:text-brand-gold'}`}
-                                title="Pinpoint destination"
-                              >
-                                📍
-                              </button>
-                            </div>
-                          </div>
-
-                        </div>
-
-                        {/* Route distances */}
-                        {pickup && destination && (
-                          <div className="flex items-center justify-between px-3 py-2 bg-brand-card/30 border border-brand-card/80 rounded-xl text-[11px] text-brand-text-muted shadow-sm font-medium">
-                            <span>🏁 Distance: <strong className="text-brand-gold font-bold">{rideDistance} KM</strong></span>
-                            <span>🕒 {slangMode ? "Est. Durée:" : "Duration:"} <strong className="text-brand-gold font-bold">{Math.round(rideDistance * 1.5) + 3} mins</strong></span>
-                          </div>
-                        )}
-
-                        {isSettingLocationType && (
-                          <div className="bg-brand-gold/10 border border-brand-gold/30 text-brand-gold p-2.5 rounded-xl text-[10px] text-center animate-pulse font-bold uppercase tracking-wider">
-                            Tap map to set <strong>{isSettingLocationType}</strong> coordinate
-                          </div>
-                        )}
-
-                        {/* Choose vehicle and display DUAL PRICING (WALLET vs CASH) */}
-                        <div className="space-y-2">
-                          <h4 className="text-[10px] font-black uppercase text-brand-text-muted tracking-wider">
-                            {slangMode ? "Choisis ta catégorie" : "Choose Ride Class"}
-                          </h4>
-                          
-                          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                            {RIDE_CLASSES.map((rc) => {
-                              // Price formulas
-                              const clsBaseFare = systemSettings.classRates?.[rc.id]?.baseFare ?? rc.baseFare;
-                              const clsPerKm = systemSettings.classRates?.[rc.id]?.perKm ?? rc.perKm;
-                              const rcBaseFare = Math.round((clsBaseFare + (rideDistance * clsPerKm)) * systemSettings.surgeMultiplier);
-                              const rcWalletFare = Math.round(rcBaseFare * 0.85); // 15% discount on wallets
-                              const rcCashFare = rcBaseFare;
-                              const isSelected = selectedClassId === rc.id;
-
-                              return (
-                                <div
-                                  key={rc.id}
-                                  onClick={() => setSelectedClassId(rc.id)}
-                                  className={`p-3 rounded-2xl border transition cursor-pointer flex flex-col gap-2 ${isSelected ? 'bg-brand-gold/10 border-brand-gold' : 'bg-brand-card/40 border-brand-input hover:bg-brand-card/60'}`}
-                                >
-                                  {/* Top line category descriptions */}
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className={`p-2 rounded-lg ${isSelected ? 'bg-brand-gold text-brand-midnight' : 'bg-brand-input text-brand-text-muted'}`}>
-                                        {rc.icon === 'Bike' && <Bike size={16} />}
-                                        {rc.icon === 'Tricycle' && <span className="text-base font-bold">🛺</span>}
-                                        {rc.icon === 'Car' && <Car size={16} />}
-                                        {rc.icon === 'Suv' && <span className="text-base font-bold">🚘</span>}
-                                      </div>
-                                      <div>
-                                        <p className="text-xs font-extrabold text-white">{rc.name}</p>
-                                        <p className="text-[10px] text-brand-text-muted leading-tight line-clamp-1">{rc.description}</p>
-                                      </div>
+                            {/* FREQUENT & RECENT DESTINATIONS CHIPS */}
+                            <div className="space-y-2 pt-1">
+                              <span className="text-[9.5px] font-black uppercase text-brand-text-muted tracking-wider block">
+                                📍 {slangMode ? "DESTINATIONS POPULAIRES" : "POPULAR DESTINATIONS"}
+                              </span>
+                              <div className="grid grid-cols-2 gap-2">
+                                {activeCityLocations.slice(1, 5).map((loc) => (
+                                  <button
+                                    key={loc.name}
+                                    onClick={() => setDestination(loc)}
+                                    className="p-2.5 bg-brand-card/40 hover:bg-brand-card border border-brand-input hover:border-brand-gold/40 rounded-xl text-left transition cursor-pointer flex items-center gap-2 group"
+                                  >
+                                    <div className="w-7 h-7 rounded-lg bg-brand-input flex items-center justify-center text-brand-gold group-hover:bg-brand-gold group-hover:text-brand-midnight transition-colors shrink-0">
+                                      <Navigation size={13} className="rotate-45" />
                                     </div>
-                                    <span className="text-[9px] text-brand-text-muted font-semibold">{rc.eta} mins away</span>
-                                  </div>
-
-                                  {/* DUAL PRICING SELECTION SYSTEM - NYANGO STYLE */}
-                                  <div className="grid grid-cols-2 gap-2 mt-1">
-                                    {/* Wallet Price selection */}
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedClassId(rc.id);
-                                        setPaymentMethod('wallet');
-                                      }}
-                                      className={`py-2 px-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition cursor-pointer ${isSelected && paymentMethod === 'wallet' ? 'bg-brand-gold border-brand-gold text-brand-midnight shadow' : 'bg-brand-input/40 border-brand-card text-brand-text-muted hover:text-white hover:border-brand-input'}`}
-                                    >
-                                      <span className="text-[8px] font-black uppercase tracking-wider block">Wallet Pay (15% Off)</span>
-                                      <span className="text-xs font-black tracking-tight">{rcWalletFare.toLocaleString('fr-FR')} XAF</span>
-                                    </button>
-
-                                    {/* Cash Price selection */}
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedClassId(rc.id);
-                                        setPaymentMethod('cash');
-                                      }}
-                                      className={`py-2 px-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition cursor-pointer ${isSelected && paymentMethod === 'cash' ? 'bg-emerald-600 border-emerald-500 text-white shadow' : 'bg-brand-input/40 border-brand-card text-brand-text-muted hover:text-white hover:border-brand-input'}`}
-                                    >
-                                      <span className="text-[8px] font-black uppercase tracking-wider block">Cash Pay (Standard)</span>
-                                      <span className="text-xs font-black tracking-tight">{rcCashFare.toLocaleString('fr-FR')} XAF</span>
-                                    </button>
-                                  </div>
-
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Wanda Points Rewards Redemption Block */}
-                        <div className="bg-indigo-950/20 border border-indigo-500/25 rounded-2xl p-3 space-y-2 text-white font-sans">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm">🎁</span>
-                              <div>
-                                <span className="text-xs font-black text-indigo-300 block leading-none uppercase tracking-wider">
-                                  {slangMode ? "WANDA POINTS FIDÉLITÉ" : "WANDA POINTS REWARDS"}
-                                </span>
-                                <span className="text-[10px] text-brand-text-muted font-semibold mt-0.5 block leading-none">
-                                  {passengerPoints > 0 ? (
-                                    `${passengerPoints.toLocaleString('fr-FR')} ${passengerPoints === 1 ? 'point dispo' : 'points dispos'} (≈ ${(passengerPoints * 100).toLocaleString('fr-FR')} FCFA)`
-                                  ) : (
-                                    slangMode ? "0 point • Payez par Wallet pour gagner 1 pt (= 100 FCFA) par course !" : "0 points • Pay with Wallet to earn 1 pt (= 100 FCFA) per trip!"
-                                  )}
-                                </span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-bold text-white truncate">{loc.name}</p>
+                                      <p className="text-[8.5px] text-brand-text-muted font-semibold truncate">{currentCity}</p>
+                                    </div>
+                                  </button>
+                                ))}
                               </div>
                             </div>
-                            
-                            {passengerPoints > 0 && (
-                              <label className="relative inline-flex items-center cursor-pointer select-none">
-                                <input 
-                                  type="checkbox" 
-                                  checked={usePoints} 
-                                  onChange={(e) => setUsePoints(e.target.checked)}
-                                  className="sr-only peer"
-                                  id="redeem-points-toggle"
-                                />
-                                <div className="w-9 h-5 bg-brand-input/80 rounded-full peer peer-focus:ring-1 peer-focus:ring-indigo-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500"></div>
-                              </label>
+
+                            {/* SMALL DISMISSIBLE PROMO CARD */}
+                            {showPromoBanner && systemSettings.topupPromoActive && (
+                              <div className="bg-gradient-to-r from-brand-gold/15 via-brand-card to-brand-midnight border border-brand-gold/30 rounded-2xl p-3 flex items-center justify-between text-xs gap-2 shrink-0 shadow-sm">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="p-1.5 rounded-xl bg-brand-gold/20 text-brand-gold shrink-0">
+                                    <Gift size={14} />
+                                  </div>
+                                  <div className="min-w-0 leading-snug">
+                                    <span className="text-[9px] font-black uppercase text-brand-gold tracking-wider block">
+                                      🎁 {slangMode ? "WANDA PROMO !" : "WANDA PROMO !"}
+                                    </span>
+                                    <span className="text-[10px] text-brand-text-muted font-medium truncate block">
+                                      Paye par Wallet = <strong className="text-brand-gold">-15% sur tes courses</strong>
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    onClick={() => setActiveTab('wallet')}
+                                    className="bg-brand-gold hover:bg-white text-brand-midnight text-[9px] font-black px-2 py-1 rounded-lg transition cursor-pointer"
+                                  >
+                                    {slangMode ? "RECHARGER" : "TOP UP"}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setShowPromoBanner(false);
+                                      localStorage.setItem('wanda_topup_promo_dismissed', 'true');
+                                    }}
+                                    className="text-brand-text-muted hover:text-white p-1 cursor-pointer"
+                                    title="Fermer"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              </div>
                             )}
                           </div>
-
-                          {usePoints && maxPointsRedeemable > 0 && (
-                            <div className="flex items-center justify-between bg-indigo-500/15 border border-indigo-500/25 px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-indigo-300">
-                              <span>
-                                {slangMode ? "Réduction appliquée :" : "Discount applied :"}
-                              </span>
-                              <strong className="text-white font-black text-xs animate-pulse">
-                                -{(maxPointsRedeemable * 100).toLocaleString('fr-FR')} FCFA
-                              </strong>
+                        ) : (
+                          /* YANGO UX PATTERN - STEP 2: RIDE CLASS + DUAL PRICING (WALLET VS CASH) SELECTION */
+                          <div className="space-y-3 animate-fade-in">
+                            
+                            {/* Compact Route Summary Bar */}
+                            <div className="bg-brand-card/40 border border-brand-card/80 rounded-2xl p-3 flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                                <span className="font-extrabold text-white truncate">{pickup?.name.split('(')[0]}</span>
+                                <span className="text-brand-text-muted font-bold">→</span>
+                                <span className="w-2 h-2 rounded-full bg-brand-gold shrink-0" />
+                                <span className="font-extrabold text-brand-gold truncate">{destination?.name.split('(')[0]}</span>
+                              </div>
+                              <button
+                                onClick={() => setDestination(null)}
+                                className="text-[10px] text-brand-text-muted hover:text-white font-bold underline cursor-pointer shrink-0 ml-2"
+                              >
+                                {slangMode ? "Changer" : "Edit"}
+                              </button>
                             </div>
-                          )}
-                        </div>
+
+                            {/* Route Distance & Duration Pill */}
+                            <div className="flex items-center justify-between px-3 py-1.5 bg-brand-input/40 border border-brand-card rounded-xl text-[10px] text-brand-text-muted font-semibold">
+                              <span>🏁 {rideDistance} KM</span>
+                              <span>🕒 {Math.round(rideDistance * 1.5) + 3} mins</span>
+                              {/* Subtle Traffic Delay Badge */}
+                              <span className="text-amber-400 font-bold bg-amber-400/10 px-1.5 py-0.2 rounded border border-amber-400/20">
+                                🚦 {slangMode ? "Trafic normal" : "Normal traffic"}
+                              </span>
+                            </div>
+
+                            {/* DUAL PRICING TOGGLE (WALLET VS CASH) */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[9px] font-black uppercase text-brand-text-muted tracking-wider">
+                                <span>{slangMode ? "MODE DE PAIEMENT" : "PAYMENT METHOD"}</span>
+                              </div>
+                              <div className="grid grid-cols-2 bg-brand-input border border-brand-card/80 p-1 rounded-xl gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setPaymentMethod('wallet')}
+                                  className={`py-1.5 px-2 rounded-lg font-black text-xs transition cursor-pointer flex items-center justify-center gap-1 ${paymentMethod === 'wallet' ? 'bg-brand-gold text-brand-midnight shadow' : 'text-brand-text-muted hover:text-white'}`}
+                                >
+                                  <span>💰 Wallet</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPaymentMethod('cash')}
+                                  className={`py-1.5 px-2 rounded-lg font-black text-xs transition cursor-pointer flex items-center justify-center gap-1 ${paymentMethod === 'cash' ? 'bg-emerald-600 text-white shadow' : 'text-brand-text-muted hover:text-white'}`}
+                                >
+                                  <span>💵 Cash</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* RIDE CLASS CARDS LIST */}
+                            <div className="space-y-2 py-1">
+                              {RIDE_CLASSES.map((rc) => {
+                                const clsBaseFare = systemSettings.classRates?.[rc.id]?.baseFare ?? rc.baseFare;
+                                const clsPerKm = systemSettings.classRates?.[rc.id]?.perKm ?? rc.perKm;
+                                const rcBaseFare = Math.round((clsBaseFare + (rideDistance * clsPerKm)) * systemSettings.surgeMultiplier);
+                                const rcWalletFare = Math.round(rcBaseFare * 0.85);
+                                const isSelected = selectedClassId === rc.id;
+
+                                return (
+                                  <div
+                                    key={rc.id}
+                                    onClick={() => setSelectedClassId(rc.id)}
+                                    className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-2.5 ${isSelected ? 'bg-brand-gold/10 border-brand-gold shadow-md' : 'bg-brand-card/40 border-brand-input hover:bg-brand-card/60'}`}
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div className={`p-2 rounded-lg shrink-0 ${isSelected ? 'bg-brand-gold text-brand-midnight' : 'bg-brand-input text-brand-text-muted'}`}>
+                                        {rc.icon === 'Bike' && <Bike size={18} />}
+                                        {rc.icon === 'Tricycle' && <span className="text-lg font-bold">🛺</span>}
+                                        {rc.icon === 'Car' && <Car size={18} />}
+                                        {rc.icon === 'Suv' && <span className="text-lg font-bold">🚘</span>}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-black text-white truncate">{rc.name}</p>
+                                        <p className="text-[9.5px] text-brand-text-muted font-semibold truncate">{rc.eta} min • {rc.description}</p>
+                                      </div>
+                                    </div>
+
+                                    {/* Both Actual Prices Displayed in FCFA (Wallet vs Cash) */}
+                                    <div className="text-right shrink-0 flex flex-col justify-center items-end space-y-0.5">
+                                      {/* Wallet Price - Emphasized & Bold */}
+                                      <div className="flex items-center justify-end gap-1 font-mono">
+                                        <span className="text-[9px] uppercase font-black text-brand-gold tracking-tight">Wallet:</span>
+                                        <span className={`font-mono font-black ${paymentMethod === 'wallet' ? 'text-brand-gold text-xs sm:text-sm' : 'text-emerald-400 text-xs'}`}>
+                                          {rcWalletFare.toLocaleString('fr-FR')} FCFA
+                                        </span>
+                                      </div>
+                                      {/* Cash Price - Clearly Readable Actual Amount */}
+                                      <div className="flex items-center justify-end gap-1 font-mono">
+                                        <span className="text-[9px] uppercase font-bold text-brand-text-muted tracking-tight">Cash:</span>
+                                        <span className={`font-mono font-bold ${paymentMethod === 'cash' ? 'text-white text-xs' : 'text-slate-300 text-[10.5px]'}`}>
+                                          {rcBaseFare.toLocaleString('fr-FR')} FCFA
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                          </div>
+                        )}
 
                       </div>
 
-                      {/* SOS Button triggers */}
-                      <div className="flex gap-2 shrink-0">
+                      {/* CONFIRMation & SOS BUTTONS FOOTER */}
+                      <div className="pt-2 border-t border-brand-card/80 flex items-center gap-2 shrink-0">
                         <button
                           onClick={triggerSOS}
-                          className="bg-rose-950/40 border border-rose-900 text-rose-400 p-3 rounded-2xl flex items-center justify-center gap-1.5 font-bold text-xs hover:bg-rose-900 hover:text-white cursor-pointer transition flex-1"
+                          className="w-10 h-10 rounded-xl bg-rose-950/40 hover:bg-rose-900 border border-rose-900/60 text-rose-400 hover:text-white flex items-center justify-center cursor-pointer transition shrink-0 shadow-sm"
+                          title="Sécurité SOS"
                         >
-                          <span>🚨 Sécurité SOS</span>
+                          <span className="text-xs font-black">🚨</span>
                         </button>
 
                         {/* Submit Request */}
                         <button
                           onClick={handleBookRide}
                           disabled={!pickup || !destination}
-                          className="bg-brand-gold hover:bg-brand-gold/90 disabled:opacity-50 disabled:pointer-events-none text-brand-midnight font-black py-3 px-5 rounded-2xl flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-brand-gold/25 hover:scale-[1.01] active:scale-[0.99] transition flex-[2]"
+                          className="flex-1 bg-gradient-to-r from-brand-gold via-amber-400 to-yellow-500 hover:from-amber-400 hover:to-brand-gold text-brand-midnight font-black py-2.5 px-3.5 rounded-xl flex items-center justify-between cursor-pointer shadow-md shadow-brand-gold/15 hover:scale-[1.005] active:scale-[0.99] transition disabled:opacity-50 disabled:pointer-events-none"
                           id="book-ride-main-btn"
                         >
-                          <span>{slangMode ? "Lancer la course" : "Confirm Taxi"} • {finalFareToPay.toLocaleString('fr-FR')} FCFA</span>
-                          <ChevronRight size={16} />
+                          <span className="text-xs font-black uppercase tracking-wider">
+                            {slangMode ? "Commander Wanda" : "Confirm Taxi"}
+                          </span>
+                          <span className="text-xs font-black font-mono bg-brand-midnight text-brand-gold px-2.5 py-0.5 rounded-lg">
+                            {finalFareToPay.toLocaleString('fr-FR')} FCFA
+                          </span>
                         </button>
                       </div>
 
@@ -4029,88 +3831,21 @@ export default function App() {
                         })()}
                       </div>
 
-                      {/* Live Chat drawer */}
-                      <div className="flex-1 flex flex-col min-h-48 max-h-64 bg-brand-card/20 border border-brand-card rounded-2xl overflow-hidden shadow-inner">
-                        <div className="bg-brand-card px-3 py-2 border-b border-brand-input flex items-center justify-between text-[11px] font-black shadow-sm">
-                          <span className="flex items-center gap-1">
-                            <MessageSquare size={12} className="text-brand-gold" />
-                            {slangMode ? "Tchatter avec le djo" : "Message Driver"}
-                          </span>
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                        </div>
-
-                        {/* Messages */}
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2 text-[11px]">
-                          {messages.length === 0 ? (
-                            <p className="text-brand-text-muted text-center py-6 italic font-medium">Say hello to the chauffeur! (Franglais or Pidgin accepted!)</p>
-                          ) : (
-                            messages.map((m, index) => (
-                              <div
-                                key={index}
-                                className={`flex flex-col max-w-[80%] rounded-xl p-2.5 shadow-sm ${m.sender === 'passenger' ? 'bg-brand-gold text-brand-midnight self-end ml-auto font-bold' : 'bg-brand-input border border-brand-card text-white self-start mr-auto font-medium'}`}
-                              >
-                                <p className="leading-relaxed">{m.text}</p>
-                                <span className={`text-[8px] text-right mt-1 ${m.sender === 'passenger' ? 'text-brand-midnight/70' : 'text-brand-text-muted'}`}>{m.timestamp}</span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-
-                        {/* Preset Quick replies for simple one-tap messaging */}
-                        <div className="px-2 py-1.5 bg-brand-deep/30 border-t border-brand-input/40 flex gap-1 overflow-x-auto scrollbar-none shrink-0">
-                          {[
-                            slangMode ? "Je suis déjà là djo !" : "I am outside!",
-                            slangMode ? "Tu es où ?" : "Where are you?",
-                            slangMode ? "J'arrive, attends moi stp" : "On my way, please wait!",
-                            slangMode ? "Je suis au carrefour" : "I am at the carrefour"
-                          ].map((presetText) => (
-                            <button
-                              key={presetText}
-                              type="button"
-                              onClick={() => {
-                                const newMsg: Message = {
-                                  sender: 'passenger',
-                                  text: presetText,
-                                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                };
-                                setMessages(prev => [...prev, newMsg]);
-                                setTimeout(() => {
-                                  const randomPidgin = CHAT_PIDGIN_RESPONSES[Math.floor(Math.random() * CHAT_PIDGIN_RESPONSES.length)];
-                                  setMessages(prev => [
-                                    ...prev,
-                                    {
-                                      sender: 'driver',
-                                      text: randomPidgin,
-                                      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                    }
-                                  ]);
-                                }, 1500);
-                              }}
-                              className="text-[9px] font-bold bg-brand-input hover:bg-brand-card text-brand-gold border border-brand-card rounded-full px-2.5 py-1 whitespace-nowrap cursor-pointer transition shrink-0"
-                            >
-                              {presetText}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Input form */}
-                        <form onSubmit={handleSendChat} className="p-1.5 border-t border-brand-input bg-brand-card flex gap-1.5 shadow-md">
-                          <input
-                            type="text"
-                            value={chatInput}
-                            onChange={(e) => setChatInput(e.target.value)}
-                            placeholder={slangMode ? "Tchatter en Pidgin / Franglais..." : "Type a message..."}
-                            className="flex-1 bg-brand-input border border-brand-card rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-gold focus:bg-brand-input"
-                            id="driver-chat-input"
-                          />
-                          <button
-                            type="submit"
-                            className="p-2 bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight rounded-xl cursor-pointer"
-                          >
-                            <Send size={12} className="stroke-[2.5]" />
-                          </button>
-                        </form>
-                      </div>
+                      {/* Message Driver CTA Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowChat(true)}
+                        className="w-full py-3 px-3.5 bg-brand-gold/10 hover:bg-brand-gold/20 border border-brand-gold/40 hover:border-brand-gold text-brand-gold rounded-2xl flex items-center justify-between font-black text-xs transition cursor-pointer active:scale-98 shadow-sm group"
+                      >
+                        <span className="flex items-center gap-2">
+                          <MessageSquare size={16} className="text-brand-gold group-hover:scale-110 transition-transform" />
+                          <span>{slangMode ? "Tchatter avec le djo" : "Message Driver"}</span>
+                        </span>
+                        <span className="flex items-center gap-1.5 text-[10px] bg-brand-gold text-brand-midnight px-2.5 py-0.5 rounded-full font-black">
+                          {messages.length > 0 ? `${messages.length} msgs` : (slangMode ? "Ouvrir Chat" : "Open Chat")}
+                          <ChevronUp size={12} className="stroke-[3]" />
+                        </span>
+                      </button>
 
                       {/* Share My Ride CTA Banner */}
                       <div className="bg-gradient-to-r from-brand-gold/15 to-brand-gold/5 border border-brand-gold/25 rounded-2xl p-3 flex items-center justify-between shadow-sm shrink-0 animate-pulse-subtle">
@@ -4490,75 +4225,21 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* Driver chat container */}
-                      <div className="flex-1 bg-brand-card/20 border border-brand-card rounded-2xl flex flex-col justify-between overflow-hidden min-h-[220px]">
-                        <div className="bg-brand-card px-3 py-2 border-b border-brand-input text-[11px] font-black text-white flex justify-between items-center">
-                          <span className="flex items-center gap-1">
-                            <MessageSquare size={12} className="text-brand-gold" />
-                            {slangMode ? "Tchatter avec le client" : "Chat with Passenger"}
-                          </span>
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                        </div>
-                        
-                        {/* Messages List */}
-                        <div className="p-3 text-[11px] flex-1 space-y-2 overflow-y-auto max-h-[160px]">
-                          {messages.length === 0 ? (
-                            <p className="text-brand-text-muted text-center py-4 italic font-medium">No messages yet. Greet your passenger!</p>
-                          ) : (
-                            messages.map((m, index) => (
-                              <div
-                                key={index}
-                                className={`flex flex-col max-w-[80%] rounded-xl p-2 shadow-sm ${m.sender === 'driver' ? 'bg-brand-gold text-brand-midnight self-end ml-auto font-bold' : 'bg-brand-input border border-brand-card text-white self-start mr-auto font-medium'}`}
-                              >
-                                <p className="leading-relaxed">{m.text}</p>
-                                <span className={`text-[8px] text-right mt-1 ${m.sender === 'driver' ? 'text-brand-midnight/70' : 'text-brand-text-muted'}`}>{m.timestamp}</span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-
-                        {/* Preset Quick replies for simple one-tap messaging */}
-                        <div className="px-2 py-1.5 bg-brand-deep/30 border-t border-brand-input/40 flex gap-1 overflow-x-auto scrollbar-none shrink-0">
-                          {[
-                            slangMode ? "Je suis déjà en route !" : "I'm on my way!",
-                            slangMode ? "Tu es où exactement ?" : "Where exactly are you?",
-                            slangMode ? "Je suis arrivé au carrefour" : "I have arrived at the carrefour",
-                            slangMode ? "Attends moi 2 min stp" : "Please wait 2 mins"
-                          ].map((presetText) => (
-                            <button
-                              key={presetText}
-                              type="button"
-                              onClick={() => handleSendDriverChat(presetText)}
-                              className="text-[9px] font-bold bg-brand-input hover:bg-brand-card text-brand-gold border border-brand-card rounded-full px-2.5 py-1 whitespace-nowrap cursor-pointer transition shrink-0"
-                            >
-                              {presetText}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Input form */}
-                        <form 
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            handleSendDriverChat(driverChatInput);
-                          }} 
-                          className="p-1.5 border-t border-brand-input bg-brand-card flex gap-1.5 shadow-md shrink-0"
-                        >
-                          <input
-                            type="text"
-                            value={driverChatInput}
-                            onChange={(e) => setDriverChatInput(e.target.value)}
-                            placeholder={slangMode ? "Écrire un message..." : "Type a message..."}
-                            className="flex-1 bg-brand-input border border-brand-card rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-gold"
-                          />
-                          <button
-                            type="submit"
-                            className="p-2 bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight rounded-xl cursor-pointer"
-                          >
-                            <Send size={12} className="stroke-[2.5]" />
-                          </button>
-                        </form>
-                      </div>
+                      {/* Message Passenger Trigger Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowChat(true)}
+                        className="w-full py-3 px-3.5 bg-brand-gold/10 hover:bg-brand-gold/20 border border-brand-gold/40 hover:border-brand-gold text-brand-gold rounded-2xl flex items-center justify-between font-black text-xs transition cursor-pointer active:scale-98 shadow-sm group"
+                      >
+                        <span className="flex items-center gap-2">
+                          <MessageSquare size={16} className="text-brand-gold group-hover:scale-110 transition-transform" />
+                          <span>{slangMode ? "Tchatter avec le client" : "Chat with Passenger"}</span>
+                        </span>
+                        <span className="flex items-center gap-1.5 text-[10px] bg-brand-gold text-brand-midnight px-2.5 py-0.5 rounded-full font-black">
+                          {messages.length > 0 ? `${messages.length} msgs` : (slangMode ? "Ouvrir Chat" : "Open Chat")}
+                          <ChevronUp size={12} className="stroke-[3]" />
+                        </span>
+                      </button>
 
                       {/* Control buttons */}
                       <div className="flex gap-2 shrink-0">
@@ -4938,133 +4619,138 @@ export default function App() {
           }`} 
           id="map-viewport"
         >
-          {/* Fullscreen Toggle Button */}
-          <button
-            onClick={() => setIsMapFullscreen(prev => !prev)}
-            className="absolute top-[72px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 rounded-lg text-brand-gold hover:text-white shadow-md hover:shadow-brand-gold/20 transition-all duration-200 active:scale-95 cursor-pointer group"
-            title={isMapFullscreen ? (slangMode ? "Quitter le plein écran" : "Exit Fullscreen") : (slangMode ? "Plein écran" : "Fullscreen")}
-            id="map-fullscreen-toggle"
-          >
-            {isMapFullscreen ? <Minimize2 size={16} className="group-hover:scale-110 transition-transform" /> : <Maximize2 size={16} className="group-hover:scale-110 transition-transform" />}
-          </button>
+          {/* Developer / Driver Map Controls */}
+          {role !== 'passenger' && (
+            <>
+              {/* Fullscreen Toggle Button */}
+              <button
+                onClick={() => setIsMapFullscreen(prev => !prev)}
+                className="absolute top-[72px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 rounded-lg text-brand-gold hover:text-white shadow-md hover:shadow-brand-gold/20 transition-all duration-200 active:scale-95 cursor-pointer group"
+                title={isMapFullscreen ? (slangMode ? "Quitter le plein écran" : "Exit Fullscreen") : (slangMode ? "Plein écran" : "Fullscreen")}
+                id="map-fullscreen-toggle"
+              >
+                {isMapFullscreen ? <Minimize2 size={16} className="group-hover:scale-110 transition-transform" /> : <Maximize2 size={16} className="group-hover:scale-110 transition-transform" />}
+              </button>
 
-          {/* Tactical Coordinate Grid Toggle Button */}
-          <button
-            onClick={() => setShowMapGrid(prev => !prev)}
-            className={`absolute top-[114px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] border rounded-lg shadow-md transition-all duration-200 active:scale-95 cursor-pointer group ${
-              showMapGrid
-                ? 'bg-brand-gold/15 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.35)]'
-                : 'bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
-            }`}
-            title={showMapGrid 
-              ? (slangMode ? "Masquer la grille tactique" : "Hide Tactical Grid") 
-              : (slangMode ? "Afficher la grille tactique" : "Show Tactical Grid")
-            }
-            id="map-grid-toggle"
-          >
-            <Grid size={16} className={`transition-transform duration-300 ${showMapGrid ? 'rotate-90 text-brand-gold' : 'group-hover:scale-110'}`} />
-          </button>
-
-          {/* Small Circular 3D Tilt Control Button */}
-          <button
-            onClick={() => {
-              setIsMapTilted(prev => {
-                if (prev === true || prev === 'tilted' || prev === 'isometric') {
-                  return false;
+              {/* Tactical Coordinate Grid Toggle Button */}
+              <button
+                onClick={() => setShowMapGrid(prev => !prev)}
+                className={`absolute top-[114px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] border rounded-lg shadow-md transition-all duration-200 active:scale-95 cursor-pointer group ${
+                  showMapGrid
+                    ? 'bg-brand-gold/15 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.35)]'
+                    : 'bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
+                }`}
+                title={showMapGrid 
+                  ? (slangMode ? "Masquer la grille tactique" : "Hide Tactical Grid") 
+                  : (slangMode ? "Afficher la grille tactique" : "Show Tactical Grid")
                 }
-                return 'tilted';
-              });
-              if (isAutoPitchEnabled) {
-                setIsAutoPitchEnabled(false);
-              }
-            }}
-            className={`absolute top-[156px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[34px] h-[34px] rounded-full border shadow-lg transition-all duration-200 active:scale-95 cursor-pointer group ${
-              (isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric')
-                ? 'bg-gradient-to-br from-amber-400 via-brand-gold to-yellow-500 border-amber-300 text-brand-midnight shadow-[0_0_12px_rgba(255,211,67,0.7)] ring-2 ring-brand-gold/50'
-                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
-            }`}
-            title={
-              isMapTilted
-                ? (slangMode ? "Désactiver Inclinaison 3D (Retour Vue 2D)" : "Switch to 2D Flat View")
-                : (slangMode ? "Inclinaison 3D + Transparence Bâtiments (Translucide à Ndokoti & Bastos)" : "3D Tilt & Translucent Building Footprints (See-through in Ndokoti & Bastos)")
-            }
-            id="map-3d-tilt-toggle"
-          >
-            <Box size={15} className={`transition-transform duration-300 ${(isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric') ? 'rotate-12 scale-110 text-brand-midnight' : 'group-hover:scale-110'}`} />
-            <span className="sr-only">
-              {(isMapTilted === true || isMapTilted === 'tilted') ? '54°' : isMapTilted === 'isometric' ? '45°' : '2D'}
-            </span>
-          </button>
+                id="map-grid-toggle"
+              >
+                <Grid size={16} className={`transition-transform duration-300 ${showMapGrid ? 'rotate-90 text-brand-gold' : 'group-hover:scale-110'}`} />
+              </button>
 
-          {/* Small Secondary Preset View Button (0° <-> 45° Isometric) */}
-          <button
-            onClick={() => {
-              setIsMapTilted(prev => prev === 'isometric' ? false : 'isometric');
-              if (isAutoPitchEnabled) {
-                setIsAutoPitchEnabled(false);
-              }
-            }}
-            className={`absolute top-[159px] right-[52px] z-[1000] flex flex-col items-center justify-center w-[28px] h-[28px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
-              isMapTilted === 'isometric'
-                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.3)]'
-                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-white shadow-md'
-            }`}
-            title={slangMode ? "Vue Standard 45° (Isométrique)" : "Preset View (45° Isometric)"}
-            id="map-pitch-preset"
-          >
-            <Eye size={10} className={`transition-transform duration-300 ${isMapTilted === 'isometric' ? 'scale-110 text-brand-gold' : 'group-hover:scale-110 text-brand-text-muted'}`} />
-            <span className="text-[5.5px] font-bold font-mono tracking-tighter leading-none mt-0.5">
-              45°
-            </span>
-          </button>
+              {/* Small Circular 3D Tilt Control Button */}
+              <button
+                onClick={() => {
+                  setIsMapTilted(prev => {
+                    if (prev === true || prev === 'tilted' || prev === 'isometric') {
+                      return false;
+                    }
+                    return 'tilted';
+                  });
+                  if (isAutoPitchEnabled) {
+                    setIsAutoPitchEnabled(false);
+                  }
+                }}
+                className={`absolute top-[156px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[34px] h-[34px] rounded-full border shadow-lg transition-all duration-200 active:scale-95 cursor-pointer group ${
+                  (isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric')
+                    ? 'bg-gradient-to-br from-amber-400 via-brand-gold to-yellow-500 border-amber-300 text-brand-midnight shadow-[0_0_12px_rgba(255,211,67,0.7)] ring-2 ring-brand-gold/50'
+                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
+                }`}
+                title={
+                  isMapTilted
+                    ? (slangMode ? "Désactiver Inclinaison 3D (Retour Vue 2D)" : "Switch to 2D Flat View")
+                    : (slangMode ? "Inclinaison 3D + Transparence Bâtiments (Translucide à Ndokoti & Bastos)" : "3D Tilt & Translucent Building Footprints (See-through in Ndokoti & Bastos)")
+                }
+                id="map-3d-tilt-toggle"
+              >
+                <Box size={15} className={`transition-transform duration-300 ${(isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric') ? 'rotate-12 scale-110 text-brand-midnight' : 'group-hover:scale-110'}`} />
+                <span className="sr-only">
+                  {(isMapTilted === true || isMapTilted === 'tilted') ? '54°' : isMapTilted === 'isometric' ? '45°' : '2D'}
+                </span>
+              </button>
 
-          {/* Floating Map Auto-Pitch Lock Control Button */}
-          <button
-            onClick={() => setIsAutoPitchEnabled(prev => !prev)}
-            className={`absolute top-[210px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
-              isAutoPitchEnabled
-                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
-                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
-            }`}
-            title={slangMode ? "Verrouillage automatique de l'inclinaison (3D en transit rapide, 2D en ramassage)" : "Auto-Pitch Lock (3D during transit, 2D in pickup/dropoff zones)"}
-            id="map-auto-pitch-control"
-          >
-            <div className="relative">
-              <Gauge size={14} className={`transition-transform duration-300 ${isAutoPitchEnabled ? 'animate-pulse scale-105' : 'group-hover:scale-110'}`} />
-              {isAutoPitchEnabled && (
-                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
-              )}
-            </div>
-            <span className="text-[6px] font-black tracking-widest mt-0.5 leading-none uppercase">
-              Auto
-            </span>
-          </button>
+              {/* Small Secondary Preset View Button (0° <-> 45° Isometric) */}
+              <button
+                onClick={() => {
+                  setIsMapTilted(prev => prev === 'isometric' ? false : 'isometric');
+                  if (isAutoPitchEnabled) {
+                    setIsAutoPitchEnabled(false);
+                  }
+                }}
+                className={`absolute top-[159px] right-[52px] z-[1000] flex flex-col items-center justify-center w-[28px] h-[28px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
+                  isMapTilted === 'isometric'
+                    ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.3)]'
+                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-white shadow-md'
+                }`}
+                title={slangMode ? "Vue Standard 45° (Isométrique)" : "Preset View (45° Isometric)"}
+                id="map-pitch-preset"
+              >
+                <Eye size={10} className={`transition-transform duration-300 ${isMapTilted === 'isometric' ? 'scale-110 text-brand-gold' : 'group-hover:scale-110 text-brand-text-muted'}`} />
+                <span className="text-[5.5px] font-bold font-mono tracking-tighter leading-none mt-0.5">
+                  45°
+                </span>
+              </button>
 
-          {/* Floating Map Zoom Lock Control Button */}
-          <button
-            onClick={() => setIsZoomLocked(prev => !prev)}
-            className={`absolute top-[256px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
-              isZoomLocked
-                ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
-                : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
-            }`}
-            title={slangMode ? "Verrouiller le zoom de la carte (Empêche l'auto-ajustement)" : "Keep Zoom Locked (Prevents map auto-adjusting zoom)"}
-            id="map-zoom-lock-control"
-          >
-            <div className="relative">
-              {isZoomLocked ? (
-                <Lock size={14} className="transition-transform duration-300 scale-105" />
-              ) : (
-                <Unlock size={14} className="transition-transform duration-300 group-hover:scale-110" />
-              )}
-              {isZoomLocked && (
-                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
-              )}
-            </div>
-            <span className="text-[5.5px] font-black tracking-widest mt-0.5 leading-none uppercase font-mono">
-              {isZoomLocked ? "Lock" : "Free"}
-            </span>
-          </button>
+              {/* Floating Map Auto-Pitch Lock Control Button */}
+              <button
+                onClick={() => setIsAutoPitchEnabled(prev => !prev)}
+                className={`absolute top-[210px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
+                  isAutoPitchEnabled
+                    ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
+                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
+                }`}
+                title={slangMode ? "Verrouillage automatique de l'inclinaison (3D en transit rapide, 2D en ramassage)" : "Auto-Pitch Lock (3D during transit, 2D in pickup/dropoff zones)"}
+                id="map-auto-pitch-control"
+              >
+                <div className="relative">
+                  <Gauge size={14} className={`transition-transform duration-300 ${isAutoPitchEnabled ? 'animate-pulse scale-105' : 'group-hover:scale-110'}`} />
+                  {isAutoPitchEnabled && (
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
+                  )}
+                </div>
+                <span className="text-[6px] font-black tracking-widest mt-0.5 leading-none uppercase">
+                  Auto
+                </span>
+              </button>
+
+              {/* Floating Map Zoom Lock Control Button */}
+              <button
+                onClick={() => setIsZoomLocked(prev => !prev)}
+                className={`absolute top-[256px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
+                  isZoomLocked
+                    ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
+                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
+                }`}
+                title={slangMode ? "Verrouiller le zoom de la carte (Empêche l'auto-ajustement)" : "Keep Zoom Locked (Prevents map auto-adjusting zoom)"}
+                id="map-zoom-lock-control"
+              >
+                <div className="relative">
+                  {isZoomLocked ? (
+                    <Lock size={14} className="transition-transform duration-300 scale-105" />
+                  ) : (
+                    <Unlock size={14} className="transition-transform duration-300 group-hover:scale-110" />
+                  )}
+                  {isZoomLocked && (
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
+                  )}
+                </div>
+                <span className="text-[5.5px] font-black tracking-widest mt-0.5 leading-none uppercase font-mono">
+                  {isZoomLocked ? "Lock" : "Free"}
+                </span>
+              </button>
+            </>
+          )}
 
           {/* Compass Backdrop to capture click outside and collapse */}
           <AnimatePresence>
@@ -5634,42 +5320,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Map instructions floating banner */}
-          {rideStatus === 'idle' && (
-            <div className="absolute top-4 left-4 right-4 md:left-auto md:w-80 bg-brand-deep/95 backdrop-blur border border-brand-card/80 p-3.5 rounded-2xl shadow-xl z-[1000] text-xs space-y-1 pointer-events-none text-white">
-              <p className="font-extrabold text-brand-gold flex items-center gap-1">
-                <span>📍</span> Map Coordinates Selector
-              </p>
-              <p className="text-brand-text-muted leading-relaxed text-[11px] font-semibold">
-                Saisissez vos stations de départ et de dépôt dans la barre latérale, ou **tapez directement sur la carte de Douala** pour placer vos repères de voyage !
-              </p>
-            </div>
-          )}
 
-          {/* Map Zoom Level Scale Indicator */}
-          <div 
-            className="absolute bottom-3 left-3 z-[1000] bg-brand-midnight/90 backdrop-blur-md border border-brand-input/50 hover:border-brand-gold/60 rounded-xl px-2.5 py-1.5 flex items-center gap-2 shadow-lg transition-all duration-300 pointer-events-auto select-none"
-            id="map-zoom-scale-indicator"
-          >
-            <div className="flex flex-col">
-              <span className="text-[7.5px] font-black text-brand-gold uppercase tracking-widest leading-none font-sans">
-                {slangMode ? "ÉCHELLE ZOOM" : "ZOOM LEVEL"}
-              </span>
-              <span className="text-[9.5px] font-bold text-white leading-none mt-1 font-sans">
-                {(() => {
-                  if (mapZoom <= 11) return slangMode ? "Vue Globale" : "Wide View";
-                  if (mapZoom >= 12 && mapZoom <= 13) return slangMode ? "Secteur" : "District View";
-                  if (mapZoom >= 14 && mapZoom <= 15) return slangMode ? "Quartier" : "Neighborhood";
-                  return slangMode ? "Détail Rue" : "Street Detail";
-                })()}
-              </span>
-            </div>
-            <div className="h-6 w-[1px] bg-brand-input/40" />
-            <div className="flex items-baseline gap-0.5 font-mono">
-              <span className="text-sm font-black text-white">{mapZoom}</span>
-              <span className="text-[8px] font-bold text-brand-text-muted">z</span>
-            </div>
-          </div>
         </section>
 
       </div>
@@ -6424,7 +6075,7 @@ export default function App() {
                   </h4>
                   <p className="text-xs text-brand-text-muted font-bold mt-1">
                     {role === 'passenger'
-                      ? `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${activeDriver ? activeDriver.vehicleClass.toUpperCase() : 'TAXI'})`
+                      ? `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${(activeDriver?.vehicleType || activeDriver?.vehicleModel || 'TAXI').toUpperCase()})`
                       : (slangMode ? 'Client Passager' : 'Passenger Client')}
                   </p>
                 </div>
@@ -6513,9 +6164,200 @@ export default function App() {
                     </button>
                   )}
                 </div>
+
+                {/* Background permissions info note */}
+                <p className="text-[9px] text-brand-text-muted/80 text-center px-2 italic font-medium">
+                  ℹ️ {language === 'fr' 
+                    ? "Sonneries & vibrations Web Audio. Pour la sonnerie en arrière-plan écran éteint, autorisez les notifications Push."
+                    : "In-app ringtone & vibration active via Web Audio. Background ringing when app closed requires push permissions."}
+                </p>
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Half-Screen Sliding Chat Panel Overlay */}
+      <AnimatePresence>
+        {showChat && (
+          <>
+            {/* Semi-transparent Backdrop overlay covering map & trip status above */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowChat(false)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-[1400] cursor-pointer"
+            />
+
+            {/* Bottom Sheet Sliding Panel */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 z-[1500] w-full max-w-lg mx-auto bg-brand-midnight border-t-2 border-brand-gold/50 rounded-t-3xl shadow-[0_-12px_48px_rgba(0,0,0,0.85)] flex flex-col h-[55vh] min-h-[380px] max-h-[550px] overflow-hidden"
+              id="half-screen-chat-panel"
+            >
+              {/* Swipe/Drag top handle */}
+              <div 
+                onClick={() => setShowChat(false)}
+                className="w-full py-2 flex justify-center items-center cursor-pointer hover:bg-brand-card/30 transition shrink-0 group"
+                title={slangMode ? "Fermer le tchat" : "Dismiss chat"}
+              >
+                <div className="w-12 h-1.5 bg-brand-input group-hover:bg-brand-gold rounded-full transition-colors" />
+              </div>
+
+              {/* Panel Header */}
+              <div className="px-4 py-2.5 bg-brand-card border-b border-brand-input flex items-center justify-between shadow-sm shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="relative shrink-0">
+                    <img
+                      src={
+                        role === 'passenger'
+                          ? (activeDriver?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150')
+                          : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150'
+                      }
+                      alt="Avatar"
+                      className="w-8 h-8 rounded-full object-cover border border-brand-gold"
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-brand-card rounded-full animate-pulse" />
+                  </div>
+
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-black text-white truncate">
+                      {role === 'passenger'
+                        ? (activeDriver?.name || (slangMode ? "Chauffeur Wanda" : "Wanda Driver"))
+                        : (driverRideRequest?.passengerName || user?.name || "Passenger Client")}
+                    </h4>
+                    <p className="text-[10px] text-brand-gold font-bold">
+                      {role === 'passenger' 
+                        ? (activeDriver?.vehicleModel || "Taxi") 
+                        : (slangMode ? "Client Wanda" : "Active Passenger")}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Header Action Buttons: Direct Call & Close */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => startInAppCall(role === 'passenger' ? 'passenger' : 'driver')}
+                    className="py-1.5 px-3 bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black text-xs rounded-xl flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md shadow-brand-gold/20"
+                    title={slangMode ? "Lancer un appel direct" : "Call directly"}
+                  >
+                    <Phone size={13} className="stroke-[2.5]" />
+                    <span>{slangMode ? "Appeler" : "Call"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowChat(false)}
+                    className="p-1.5 text-brand-text-muted hover:text-white bg-brand-input hover:bg-brand-card border border-brand-card rounded-xl transition cursor-pointer"
+                    title={slangMode ? "Fermer" : "Close"}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Message History */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2.5 text-xs bg-brand-deep/30">
+                {messages.length === 0 ? (
+                  <div className="text-center py-8 px-4 space-y-2">
+                    <p className="text-brand-gold text-xl">💬</p>
+                    <p className="text-brand-text-muted italic font-medium text-xs">
+                      {role === 'passenger'
+                        ? (slangMode ? "Envoie un message au djo !" : "Send a message to your driver!")
+                        : (slangMode ? "Envoie un message au client !" : "Send a message to your passenger!")}
+                    </p>
+                  </div>
+                ) : (
+                  messages.map((m, index) => {
+                    const isMe = (role === 'passenger' && m.sender === 'passenger') || (role === 'driver' && m.sender === 'driver');
+                    return (
+                      <div
+                        key={index}
+                        className={`flex flex-col max-w-[82%] rounded-2xl p-3 shadow-sm ${
+                          isMe
+                            ? 'bg-brand-gold text-brand-midnight self-end ml-auto font-bold rounded-br-none'
+                            : 'bg-brand-card border border-brand-input text-white self-start mr-auto font-medium rounded-bl-none'
+                        }`}
+                      >
+                        <p className="leading-relaxed text-xs">{m.text}</p>
+                        <span className={`text-[8px] text-right mt-1 font-mono ${isMe ? 'text-brand-midnight/70' : 'text-brand-text-muted'}`}>
+                          {m.timestamp}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Quick Preset Replies */}
+              <div className="px-3 py-2 bg-brand-midnight border-t border-brand-input/40 flex gap-1.5 overflow-x-auto scrollbar-none shrink-0">
+                {(role === 'passenger' ? [
+                  slangMode ? "Je suis déjà là djo !" : "I am outside!",
+                  slangMode ? "Tu es où ?" : "Where are you?",
+                  slangMode ? "J'arrive, attends moi stp" : "On my way, please wait!",
+                  slangMode ? "Je suis au carrefour" : "I am at the carrefour"
+                ] : [
+                  slangMode ? "Je suis arrivé mon frère !" : "I have arrived!",
+                  slangMode ? "Embouteillage sur la route" : "Heavy traffic, arriving soon!",
+                  slangMode ? "Je suis garé au repère" : "Parked at pickup landmark",
+                  slangMode ? "D'accord, bien reçu !" : "Okay, copy that!"
+                ]).map((presetText) => (
+                  <button
+                    key={presetText}
+                    type="button"
+                    onClick={() => {
+                      const mySender = role === 'passenger' ? 'passenger' : 'driver';
+                      const otherSender = role === 'passenger' ? 'driver' : 'passenger';
+                      const newMsg: Message = {
+                        sender: mySender,
+                        text: presetText,
+                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      };
+                      setMessages(prev => [...prev, newMsg]);
+                      setTimeout(() => {
+                        const randomPidgin = CHAT_PIDGIN_RESPONSES[Math.floor(Math.random() * CHAT_PIDGIN_RESPONSES.length)];
+                        setMessages(prev => [
+                          ...prev,
+                          {
+                            sender: otherSender,
+                            text: randomPidgin,
+                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          }
+                        ]);
+                      }, 1400);
+                    }}
+                    className="text-[10px] font-bold bg-brand-input hover:bg-brand-card text-brand-gold border border-brand-card rounded-full px-3 py-1 whitespace-nowrap cursor-pointer transition shrink-0 active:scale-95"
+                  >
+                    {presetText}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input Form */}
+              <form onSubmit={handleSendChat} className="p-2.5 border-t border-brand-input bg-brand-card flex gap-2 shadow-md shrink-0">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder={slangMode ? "Tchatter en Pidgin / Franglais..." : "Type your message..."}
+                  className="flex-1 bg-brand-input border border-brand-card rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-brand-gold focus:bg-brand-input"
+                  id="driver-chat-input"
+                />
+                <button
+                  type="submit"
+                  className="px-3.5 py-2 bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black rounded-xl cursor-pointer flex items-center justify-center transition active:scale-95 shadow-md"
+                >
+                  <Send size={14} className="stroke-[2.5]" />
+                </button>
+              </form>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 

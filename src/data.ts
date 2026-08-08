@@ -43,7 +43,7 @@ export const YAOUNDE_LOCATIONS: Location[] = [
 export const RIDE_CLASSES: RideClass[] = [
   {
     id: 'okada',
-    name: 'Moto-Taxi (Okada)',
+    name: 'Bike',
     icon: 'Bike',
     description: 'Avoid Douala traffic jams on a bike',
     baseFare: 250,
@@ -52,7 +52,7 @@ export const RIDE_CLASSES: RideClass[] = [
   },
   {
     id: 'keke',
-    name: 'Petit Taxi (Yellow Cab)',
+    name: 'Yellow Taxi',
     icon: 'Tricycle',
     description: 'Shared city taxi experience',
     baseFare: 300,
@@ -61,7 +61,7 @@ export const RIDE_CLASSES: RideClass[] = [
   },
   {
     id: 'ecoride',
-    name: 'EcoRide (Private Sedan)',
+    name: 'EcoRide',
     icon: 'Car',
     description: 'Private air-conditioned ride',
     baseFare: 1500,
@@ -70,7 +70,7 @@ export const RIDE_CLASSES: RideClass[] = [
   },
   {
     id: 'comfort',
-    name: 'VIP Ride (SUV)',
+    name: 'VIP Ride',
     icon: 'Suv',
     description: 'Premium ride with top-notch comfort',
     baseFare: 3000,

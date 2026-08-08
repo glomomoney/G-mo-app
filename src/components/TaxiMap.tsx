@@ -453,7 +453,7 @@ export default function TaxiMap({
     const map = mapRef.current;
     if (!map) return;
 
-    if (showRoadNames) {
+    if (showRoadNames && role !== 'passenger') {
       if (roadNamesLayerGroupRef.current && !map.hasLayer(roadNamesLayerGroupRef.current)) {
         roadNamesLayerGroupRef.current.addTo(map);
       }
@@ -462,13 +462,13 @@ export default function TaxiMap({
         roadNamesLayerGroupRef.current.remove();
       }
     }
-  }, [showRoadNames]);
+  }, [showRoadNames, role]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (showBuildingPois) {
+    if (showBuildingPois && role !== 'passenger') {
       if (buildingPoisLayerGroupRef.current && !map.hasLayer(buildingPoisLayerGroupRef.current)) {
         buildingPoisLayerGroupRef.current.addTo(map);
       }
@@ -477,13 +477,13 @@ export default function TaxiMap({
         buildingPoisLayerGroupRef.current.remove();
       }
     }
-  }, [showBuildingPois]);
+  }, [showBuildingPois, role]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (showPublicTransit) {
+    if (showPublicTransit && role !== 'passenger') {
       if (publicTransitLayerGroupRef.current && !map.hasLayer(publicTransitLayerGroupRef.current)) {
         publicTransitLayerGroupRef.current.addTo(map);
       }
@@ -492,7 +492,7 @@ export default function TaxiMap({
         publicTransitLayerGroupRef.current.remove();
       }
     }
-  }, [showPublicTransit]);
+  }, [showPublicTransit, role]);
 
   // Collapsible Passenger ETA Status Card States, Refs and Handlers
   const [isEtaCardExpanded, setIsEtaCardExpanded] = useState(false);
@@ -640,11 +640,13 @@ export default function TaxiMap({
     publicTransitLayerGroupRef.current = publicTransitLayerGroup;
     buildingFootprintsLayerGroupRef.current = buildingFootprintsLayerGroup;
 
-    // Add them to map initially
-    roadNamesLayerGroup.addTo(map);
-    buildingPoisLayerGroup.addTo(map);
-    publicTransitLayerGroup.addTo(map);
-    buildingFootprintsLayerGroup.addTo(map);
+    // Add them to map initially (only for driver or dev mode)
+    if (role !== 'passenger') {
+      roadNamesLayerGroup.addTo(map);
+      buildingPoisLayerGroup.addTo(map);
+      publicTransitLayerGroup.addTo(map);
+      buildingFootprintsLayerGroup.addTo(map);
+    }
 
     // High-density urban building footprints (Ndokoti Junction, Bastos Embassy Quarter, Akwa, Bonanjo)
     const buildingFootprintsData = [
@@ -794,10 +796,12 @@ export default function TaxiMap({
       L.marker([transit.lat, transit.lng], { icon }).addTo(publicTransitLayerGroup);
     });
 
-    // Add clean zoom control at bottom-right
-    L.control.zoom({
-      position: 'bottomright'
-    }).addTo(map);
+    // Add clean zoom control at bottom-right for driver/dev
+    if (role !== 'passenger') {
+      L.control.zoom({
+        position: 'bottomright'
+      }).addTo(map);
+    }
 
     mapRef.current = map;
 
@@ -1150,9 +1154,10 @@ export default function TaxiMap({
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
     const isRideActive = (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && role !== 'driver';
+    const isPassengerMode = role === 'passenger';
 
-    // Clear everything if heatmap is hidden or a ride is active
-    if (!showHeatmap || isRideActive) {
+    // Clear everything if heatmap is hidden, a ride is active, or in passenger mode
+    if (!showHeatmap || isRideActive || isPassengerMode) {
       (Object.values(polygonLayersRef.current) as L.Polygon[]).forEach(layer => {
         if (layer && map.hasLayer(layer)) {
           layer.remove();
@@ -1256,9 +1261,10 @@ export default function TaxiMap({
     if (!overlayPane) return;
 
     const isRideActive = (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && role !== 'driver';
+    const isPassengerMode = role === 'passenger';
 
-    // If heatmap is disabled or a ride is active, clear any existing D3 overlays and return
-    if (!showHeatmap || isRideActive) {
+    // If heatmap is disabled, a ride is active, or in passenger mode, clear any existing D3 overlays and return
+    if (!showHeatmap || isRideActive || isPassengerMode) {
       if (d3OverlayRef.current) {
         d3.select(d3OverlayRef.current).remove();
         d3OverlayRef.current = null;
@@ -1461,8 +1467,8 @@ export default function TaxiMap({
     }
     nearbyDriverMarkersRef.current = [];
 
-    // Only show nearby available drivers when there is no active booking
-    if (status === 'idle' || status === 'searching') {
+    // Only show nearby available drivers when searching or idle (hide during ride selection when pickup & dest are both set for passenger)
+    if ((status === 'idle' || status === 'searching') && (role !== 'passenger' || !pickup || !destination)) {
       // Determine active city based on pickup coordinate, default to Yaoundé
       const isYaounde = pickup ? (Math.abs(pickup.lat - 3.86) < Math.abs(pickup.lat - 4.04)) : true;
       const currentCityName = isYaounde ? 'Yaoundé' : 'Douala';
@@ -1524,10 +1530,34 @@ export default function TaxiMap({
 
     if (pickup && isValidCoords(pickup.lat, pickup.lng)) {
       const isTransit = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+      
+      // Calculate driver proximity minutes to pickup point
+      let driverProximityMins = 4;
+      if (driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) {
+        const dist = getHaversineDistanceInMeters(pickup, driverLocation);
+        driverProximityMins = Math.max(1, Math.round(dist / 350));
+      } else {
+        let minDist = Infinity;
+        AVAILABLE_DRIVERS_DATA.forEach(d => {
+          if (isValidCoords(d.lat, d.lng)) {
+            const dist = getHaversineDistanceInMeters(pickup, d);
+            if (dist < minDist) minDist = dist;
+          }
+        });
+        if (minDist !== Infinity) {
+          driverProximityMins = Math.max(2, Math.round(minDist / 380));
+        }
+      }
+
       const pickupIcon = L.divIcon({
         className: 'custom-pin-pickup',
         html: `
           <div class="relative flex items-center justify-center">
+            <!-- RED DRIVER PROXIMITY BADGE AT PICKUP PIN (YANGO STYLE) -->
+            <div class="absolute -top-7 left-1/2 -translate-x-1/2 bg-rose-600 text-white font-extrabold text-[10.5px] px-2.5 py-0.5 rounded-full shadow-xl border-2 border-white whitespace-nowrap flex items-center gap-1 z-30 pointer-events-none">
+              <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+              <span>${driverProximityMins} min</span>
+            </div>
             ${isTransit 
               ? `<div class="absolute w-9 h-9 rounded-full bg-emerald-500/25 animate-pulse border border-emerald-500/40"></div>
                  <div class="absolute w-12 h-12 rounded-full bg-emerald-500/10 animate-ping"></div>`
@@ -1561,7 +1591,7 @@ export default function TaxiMap({
         pickupMarkerRef.current = null;
       }
     }
-  }, [pickup, destination, status]);
+  }, [pickup, destination, driverLocation, status, slangMode]);
 
   // Update Destination Marker
   useEffect(() => {
@@ -1571,10 +1601,46 @@ export default function TaxiMap({
     if (destination && isValidCoords(destination.lat, destination.lng)) {
       const isCompleted = status === 'completed';
       const isTransit = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+      // Calculate estimated arrival time at destination
+      let formattedArrivalTime = '';
+      if (pickup && isValidCoords(pickup.lat, pickup.lng)) {
+        let driverProximityMins = 4;
+        if (driverLocation && isValidCoords(driverLocation.lat, driverLocation.lng)) {
+          const dist = getHaversineDistanceInMeters(pickup, driverLocation);
+          driverProximityMins = Math.max(1, Math.round(dist / 350));
+        } else {
+          let minDist = Infinity;
+          AVAILABLE_DRIVERS_DATA.forEach(d => {
+            if (isValidCoords(d.lat, d.lng)) {
+              const dist = getHaversineDistanceInMeters(pickup, d);
+              if (dist < minDist) minDist = dist;
+            }
+          });
+          if (minDist !== Infinity) {
+            driverProximityMins = Math.max(2, Math.round(minDist / 380));
+          }
+        }
+
+        const tripDistMeters = getHaversineDistanceInMeters(pickup, destination);
+        const tripMins = Math.max(3, Math.round(tripDistMeters / 420));
+        const totalDurationMins = driverProximityMins + tripMins;
+        
+        const arrDate = new Date(Date.now() + totalDurationMins * 60000);
+        formattedArrivalTime = arrDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+
       const destIcon = L.divIcon({
         className: 'custom-pin-dest',
         html: `
           <div class="relative flex items-center justify-center">
+            ${formattedArrivalTime ? `
+              <!-- WHITE FLOATING ARRIVAL TIME BADGE -->
+              <div class="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-slate-900 font-extrabold text-[10.5px] px-2.5 py-0.5 rounded-full shadow-xl border-2 border-slate-200 whitespace-nowrap flex items-center gap-1 z-30 pointer-events-none">
+                <span class="text-amber-500 font-black">🏁</span>
+                <span>${slangMode ? "Arrivée à" : "Arrive at"} ${formattedArrivalTime}</span>
+              </div>
+            ` : ''}
             ${isCompleted
               ? `<div class="absolute w-12 h-12 rounded-full bg-emerald-500/40 animate-ping"></div>
                  <div class="absolute w-16 h-16 rounded-full bg-amber-400/30 animate-pulse border-2 border-amber-400/60"></div>
@@ -1612,7 +1678,7 @@ export default function TaxiMap({
         destMarkerRef.current = null;
       }
     }
-  }, [destination, status]);
+  }, [destination, pickup, driverLocation, status, etaMinutes, slangMode]);
 
   // Update Route Polylines & Fit Bounds
   useEffect(() => {
@@ -1702,18 +1768,21 @@ export default function TaxiMap({
         if (routeLineRef.current && map.hasLayer(routeLineRef.current)) {
           routeLineRef.current.setLatLngs(mainPoints);
           routeLineRef.current.setStyle({
-            color: '#a39bc9', // faded brand-text-muted
-            weight: 3,
-            opacity: 0.35,
+            color: '#10b981',
+            weight: 6,
+            opacity: 0.95,
+            dashArray: '',
+            lineJoin: 'round',
+            lineCap: 'round',
             className: ''
           } as any);
         } else {
           routeLineRef.current = L.polyline(mainPoints, {
-            color: '#a39bc9',
-            weight: 3,
-            opacity: 0.35,
-            dashArray: '4, 8',
-            lineJoin: 'round'
+            color: '#10b981',
+            weight: 6,
+            opacity: 0.95,
+            lineJoin: 'round',
+            lineCap: 'round'
           }).addTo(map);
         }
       }
@@ -2416,8 +2485,8 @@ export default function TaxiMap({
         }}
       />
 
-      {/* Tactical Coordinate Grid Overlay */}
-      {showMapGrid && (
+      {/* Tactical Coordinate Grid Overlay (Developer/Driver mode) */}
+      {showMapGrid && role !== 'passenger' && (
         <div 
           className="absolute inset-0 z-[499] pointer-events-none overflow-hidden select-none"
           id="map-coordinate-grid"
@@ -2507,8 +2576,8 @@ export default function TaxiMap({
         )}
       </AnimatePresence>
 
-      {/* Persistent 3D & Auto-Detected Building Translucency Status Chip */}
-      {(autoDetectedZone || isTilted === true || isTilted === 'tilted' || isTilted === 'isometric') && (
+      {/* Persistent 3D & Auto-Detected Building Translucency Status Chip (Driver / Dev mode) */}
+      {role !== 'passenger' && (autoDetectedZone || isTilted === true || isTilted === 'tilted' || isTilted === 'isometric') && (
         <motion.div
           initial={{ opacity: 0, y: -8, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -2520,8 +2589,8 @@ export default function TaxiMap({
           <span>
             {autoDetectedZone
               ? (slangMode
-                  ? `⚡ AUTO-DÉTECTION : ${autoDetectedZone.name.toUpperCase()} (${autoDetectedZone.city}) — BÂTIMENTS TRANSLUCIDES (20%)`
-                  : `⚡ AUTO-DETECTED HIGH-DENSITY: ${autoDetectedZone.name.toUpperCase()} (${autoDetectedZone.city}) — SEE-THROUGH FOOTPRINTS (20%)`)
+                  ? `⚡ AUTO-DÉTECTION : ${(autoDetectedZone.name || '').toUpperCase()} (${autoDetectedZone.city}) — BÂTIMENTS TRANSLUCIDES (20%)`
+                  : `⚡ AUTO-DETECTED HIGH-DENSITY: ${(autoDetectedZone.name || '').toUpperCase()} (${autoDetectedZone.city}) — SEE-THROUGH FOOTPRINTS (20%)`)
               : (slangMode
                   ? "🏢 Emprises Bâtiments Translucides (20% Opacité) — Mode 3D Actif"
                   : "🏢 See-Through Building Footprints (20% Opacity) — 3D Tilt Active")}
@@ -2529,287 +2598,299 @@ export default function TaxiMap({
         </motion.div>
       )}
 
-      {/* Map Detail Mode Adaptive Badge */}
-      <div 
-        id="map-detail-badge"
-        className="absolute top-4 left-4 z-[1010] flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-brand-midnight/95 backdrop-blur-md border border-brand-input/40 shadow-2xl transition-all duration-300 pointer-events-auto"
-      >
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-            mapDetailMode === 'clean' 
-              ? 'bg-emerald-400' 
-              : mapDetailMode === 'moderate' 
-                ? 'bg-sky-400' 
-                : 'bg-brand-gold/80'
-          }`}></span>
-          <span className={`relative inline-flex rounded-full h-2 w-2 ${
-            mapDetailMode === 'clean' 
-              ? 'bg-emerald-500' 
-              : mapDetailMode === 'moderate' 
-                ? 'bg-sky-500' 
-                : 'bg-brand-gold'
-          }`}></span>
-        </span>
-        <div className="flex flex-col">
-          <span className="text-[7.5px] font-extrabold uppercase tracking-widest text-white leading-none">
-            {slangMode ? "Densité Détails" : "Label Density"}
-          </span>
-          <span className="text-[8.5px] font-bold text-brand-text-muted mt-0.5 leading-none">
-            {mapDetailMode === 'clean' 
-              ? (slangMode ? "Épuré (Zoom éloigné)" : "Minimal (High Speed)") 
-              : mapDetailMode === 'moderate'
-                ? (slangMode ? "Modéré (Rues principales)" : "Medium (Transit)")
-                : (slangMode ? "Complet (Arrêt/POI)" : "Full Detail (Approach)")
-            }
-          </span>
-        </div>
-      </div>
-
-      {/* Dynamic Custom Map Layer & Advanced Settings Controller */}
-      <div 
-        ref={layersMenuRef}
-        id="map-layers-settings-control"
-        className="absolute top-4 right-4 z-[1010] flex flex-col items-end pointer-events-auto"
-      >
-        {/* Toggle Floating Action Button */}
-        <button
-          onClick={() => setIsLayersMenuExpanded(prev => !prev)}
-          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shadow-2xl border active:scale-95 cursor-pointer ${
-            isLayersMenuExpanded
-              ? 'bg-brand-gold text-brand-midnight border-brand-gold shadow-[0_0_12px_rgba(255,211,67,0.45)]'
-              : 'bg-brand-midnight/95 text-brand-text-muted hover:text-brand-gold border-brand-input/40'
-          }`}
-          title={slangMode ? "Calques et réglages avancés" : "Layers & Advanced Map Details"}
+      {/* Map Detail Mode Adaptive Badge (Driver / Dev mode) */}
+      {role !== 'passenger' && (
+        <div 
+          id="map-detail-badge"
+          className="absolute top-4 left-4 z-[1010] flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-brand-midnight/95 backdrop-blur-md border border-brand-input/40 shadow-2xl transition-all duration-300 pointer-events-auto"
         >
-          <Layers size={18} className={isLayersMenuExpanded ? "scale-110" : "group-hover:scale-110"} />
-        </button>
-
-        {/* Dropdown settings panel */}
-        {isLayersMenuExpanded && (
-          <div className="mt-2 w-64 bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/30 rounded-2xl shadow-2xl p-4 text-white text-xs space-y-3.5 animate-fade-in animate-duration-200">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-brand-input/40 pb-2">
-              <span className="font-extrabold uppercase text-[10px] tracking-wider text-brand-gold">
-                {slangMode ? "Calques de la carte" : "Map Layer & Theme"}
-              </span>
-              <span className="text-[9px] text-brand-text-muted font-mono uppercase">
-                {selectedBaseLayer}
-              </span>
-            </div>
-
-            {/* Base Layer Selection */}
-            <div className="space-y-1.5">
-              <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">
-                {slangMode ? "Style de Fond" : "Map Styles"}
-              </span>
-              <div className="grid grid-cols-2 gap-1.5">
-                {/* Wanda Dark */}
-                <button
-                  onClick={() => setSelectedBaseLayer('dark')}
-                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
-                    selectedBaseLayer === 'dark'
-                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
-                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
-                  }`}
-                >
-                  <Layers size={11} />
-                  <span>Wanda Dark</span>
-                </button>
-
-                {/* OpenStreetMap */}
-                <button
-                  onClick={() => setSelectedBaseLayer('streets')}
-                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
-                    selectedBaseLayer === 'streets'
-                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
-                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
-                  }`}
-                >
-                  <MapIcon size={11} />
-                  <span>OSM Streets</span>
-                </button>
-
-                {/* Esri WorldImagery */}
-                <button
-                  onClick={() => setSelectedBaseLayer('satellite')}
-                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
-                    selectedBaseLayer === 'satellite'
-                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
-                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
-                  }`}
-                >
-                  <Globe size={11} />
-                  <span>Satellite</span>
-                </button>
-
-                {/* OpenTopoMap */}
-                <button
-                  onClick={() => setSelectedBaseLayer('terrain')}
-                  className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
-                    selectedBaseLayer === 'terrain'
-                      ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
-                      : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
-                  }`}
-                >
-                  <Mountain size={11} />
-                  <span>Terrain</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Overlays / Heatmap Toggle */}
-            <div className="flex items-center justify-between pt-1 border-t border-brand-input/35">
-              <div className="flex flex-col">
-                <span className="font-extrabold text-[10px] text-white">
-                  {slangMode ? "Surintensité (Zones)" : "Heatmap Overlay"}
-                </span>
-                <span className="text-[8.5px] text-brand-text-muted">
-                  {slangMode ? "Visualiser la forte demande" : "View active demand zones"}
-                </span>
-              </div>
-              <button
-                onClick={() => setShowHeatmap(!showHeatmap)}
-                className={`w-8 h-4 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
-                  showHeatmap ? 'bg-brand-gold' : 'bg-brand-input/50'
-                }`}
-              >
-                <div className={`w-3 h-3 rounded-full bg-brand-midnight transition-transform duration-200 ${
-                  showHeatmap ? 'translate-x-4' : 'translate-x-0'
-                }`} />
-              </button>
-            </div>
-
-            {/* Advanced Settings Expandable Header */}
-            <div className="pt-2 border-t border-brand-input/35 space-y-2">
-              <button
-                onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
-                className="w-full flex items-center justify-between text-brand-text-muted hover:text-white font-extrabold uppercase text-[9px] tracking-wider cursor-pointer"
-              >
-                <span>{slangMode ? "Réglages Avancés" : "Advanced Map Settings"}</span>
-                {showAdvancedSettings ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              </button>
-
-              {/* Advanced Settings Switch list */}
-              {showAdvancedSettings && (
-                <div className="space-y-2 pt-1.5 pl-0.5 animate-fade-in">
-                  {/* Road Names Toggle */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9.5px] text-brand-text-muted font-bold">
-                      {slangMode ? "Noms des routes" : "Road Names"}
-                    </span>
-                    <button
-                      onClick={() => setShowRoadNames(!showRoadNames)}
-                      className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
-                        showRoadNames ? 'bg-emerald-500' : 'bg-brand-input/50'
-                      }`}
-                    >
-                      <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
-                        showRoadNames ? 'translate-x-3.5' : 'translate-x-0'
-                      }`} />
-                    </button>
-                  </div>
-
-                  {/* Building POIs Toggle */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9.5px] text-brand-text-muted font-bold">
-                      {slangMode ? "Monuments / POI" : "Building POIs"}
-                    </span>
-                    <button
-                      onClick={() => setShowBuildingPois(!showBuildingPois)}
-                      className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
-                        showBuildingPois ? 'bg-emerald-500' : 'bg-brand-input/50'
-                      }`}
-                    >
-                      <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
-                        showBuildingPois ? 'translate-x-3.5' : 'translate-x-0'
-                      }`} />
-                    </button>
-                  </div>
-
-                  {/* Public Transit Icons Toggle */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9.5px] text-brand-text-muted font-bold">
-                      {slangMode ? "Icônes de Transport" : "Public Transit Icons"}
-                    </span>
-                    <button
-                      onClick={() => setShowPublicTransit(!showPublicTransit)}
-                      className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
-                        showPublicTransit ? 'bg-emerald-500' : 'bg-brand-input/50'
-                      }`}
-                    >
-                      <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
-                        showPublicTransit ? 'translate-x-3.5' : 'translate-x-0'
-                      }`} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+              mapDetailMode === 'clean' 
+                ? 'bg-emerald-400' 
+                : mapDetailMode === 'moderate' 
+                  ? 'bg-sky-400' 
+                  : 'bg-brand-gold/80'
+            }`}></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${
+              mapDetailMode === 'clean' 
+                ? 'bg-emerald-500' 
+                : mapDetailMode === 'moderate' 
+                  ? 'bg-sky-500' 
+                  : 'bg-brand-gold'
+            }`}></span>
+          </span>
+          <div className="flex flex-col">
+            <span className="text-[7.5px] font-extrabold uppercase tracking-widest text-white leading-none">
+              {slangMode ? "Densité Détails" : "Label Density"}
+            </span>
+            <span className="text-[8.5px] font-bold text-brand-text-muted mt-0.5 leading-none">
+              {mapDetailMode === 'clean' 
+                ? (slangMode ? "Épuré (Zoom éloigné)" : "Minimal (High Speed)") 
+                : mapDetailMode === 'moderate'
+                  ? (slangMode ? "Modéré (Rues principales)" : "Medium (Transit)")
+                  : (slangMode ? "Complet (Arrêt/POI)" : "Full Detail (Approach)")
+              }
+            </span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Dynamic Custom Map Layer & Advanced Settings Controller (Driver / Dev mode) */}
+      {role !== 'passenger' && (
+        <div 
+          ref={layersMenuRef}
+          id="map-layers-settings-control"
+          className="absolute top-4 right-4 z-[1010] flex flex-col items-end pointer-events-auto"
+        >
+          {/* Toggle Floating Action Button */}
+          <button
+            onClick={() => setIsLayersMenuExpanded(prev => !prev)}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shadow-2xl border active:scale-95 cursor-pointer ${
+              isLayersMenuExpanded
+                ? 'bg-brand-gold text-brand-midnight border-brand-gold shadow-[0_0_12px_rgba(255,211,67,0.45)]'
+                : 'bg-brand-midnight/95 text-brand-text-muted hover:text-brand-gold border-brand-input/40'
+            }`}
+            title={slangMode ? "Calques et réglages avancés" : "Layers & Advanced Map Details"}
+          >
+            <Layers size={18} className={isLayersMenuExpanded ? "scale-110" : "group-hover:scale-110"} />
+          </button>
+
+          {/* Dropdown settings panel */}
+          {isLayersMenuExpanded && (
+            <div className="mt-2 w-64 bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/30 rounded-2xl shadow-2xl p-4 text-white text-xs space-y-3.5 animate-fade-in animate-duration-200">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-brand-input/40 pb-2">
+                <span className="font-extrabold uppercase text-[10px] tracking-wider text-brand-gold">
+                  {slangMode ? "Calques de la carte" : "Map Layer & Theme"}
+                </span>
+                <span className="text-[9px] text-brand-text-muted font-mono uppercase">
+                  {selectedBaseLayer}
+                </span>
+              </div>
+
+              {/* Base Layer Selection */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">
+                  {slangMode ? "Style de Fond" : "Map Styles"}
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {/* Wanda Dark */}
+                  <button
+                    onClick={() => setSelectedBaseLayer('dark')}
+                    className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                      selectedBaseLayer === 'dark'
+                        ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                        : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                    }`}
+                  >
+                    <Layers size={11} />
+                    <span>Wanda Dark</span>
+                  </button>
+
+                  {/* OpenStreetMap */}
+                  <button
+                    onClick={() => setSelectedBaseLayer('streets')}
+                    className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                      selectedBaseLayer === 'streets'
+                        ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                        : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                    }`}
+                  >
+                    <MapIcon size={11} />
+                    <span>OSM Streets</span>
+                  </button>
+
+                  {/* Esri WorldImagery */}
+                  <button
+                    onClick={() => setSelectedBaseLayer('satellite')}
+                    className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                      selectedBaseLayer === 'satellite'
+                        ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                        : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                    }`}
+                  >
+                    <Globe size={11} />
+                    <span>Satellite</span>
+                  </button>
+
+                  {/* OpenTopoMap */}
+                  <button
+                    onClick={() => setSelectedBaseLayer('terrain')}
+                    className={`px-2.5 py-1.5 rounded-xl border font-bold text-left transition flex items-center gap-1.5 text-[10px] cursor-pointer ${
+                      selectedBaseLayer === 'terrain'
+                        ? 'border-brand-gold bg-brand-gold/15 text-brand-gold'
+                        : 'border-brand-input/30 hover:border-brand-gold/45 text-brand-text-muted'
+                    }`}
+                  >
+                    <Mountain size={11} />
+                    <span>Terrain</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Overlays / Heatmap Toggle */}
+              <div className="flex items-center justify-between pt-1 border-t border-brand-input/35">
+                <div className="flex flex-col">
+                  <span className="font-extrabold text-[10px] text-white">
+                    {slangMode ? "Surintensité (Zones)" : "Heatmap Overlay"}
+                  </span>
+                  <span className="text-[8.5px] text-brand-text-muted">
+                    {slangMode ? "Visualiser la forte demande" : "View active demand zones"}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowHeatmap(!showHeatmap)}
+                  className={`w-8 h-4 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                    showHeatmap ? 'bg-brand-gold' : 'bg-brand-input/50'
+                  }`}
+                >
+                  <div className={`w-3 h-3 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                    showHeatmap ? 'translate-x-4' : 'translate-x-0'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Advanced Settings Expandable Header */}
+              <div className="pt-2 border-t border-brand-input/35 space-y-2">
+                <button
+                  onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                  className="w-full flex items-center justify-between text-brand-text-muted hover:text-white font-extrabold uppercase text-[9px] tracking-wider cursor-pointer"
+                >
+                  <span>{slangMode ? "Réglages Avancés" : "Advanced Map Settings"}</span>
+                  {showAdvancedSettings ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+
+                {/* Advanced Settings Switch list */}
+                {showAdvancedSettings && (
+                  <div className="space-y-2 pt-1.5 pl-0.5 animate-fade-in">
+                    {/* Road Names Toggle */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-brand-text-muted font-bold">
+                        {slangMode ? "Noms des routes" : "Road Names"}
+                      </span>
+                      <button
+                        onClick={() => setShowRoadNames(!showRoadNames)}
+                        className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                          showRoadNames ? 'bg-emerald-500' : 'bg-brand-input/50'
+                        }`}
+                      >
+                        <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                          showRoadNames ? 'translate-x-3.5' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+
+                    {/* Building POIs Toggle */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-brand-text-muted font-bold">
+                        {slangMode ? "Monuments / POI" : "Building POIs"}
+                      </span>
+                      <button
+                        onClick={() => setShowBuildingPois(!showBuildingPois)}
+                        className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                          showBuildingPois ? 'bg-emerald-500' : 'bg-brand-input/50'
+                        }`}
+                      >
+                        <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                          showBuildingPois ? 'translate-x-3.5' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+
+                    {/* Public Transit Icons Toggle */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-brand-text-muted font-bold">
+                        {slangMode ? "Icônes de Transport" : "Public Transit Icons"}
+                      </span>
+                      <button
+                        onClick={() => setShowPublicTransit(!showPublicTransit)}
+                        className={`w-7 h-3.5 rounded-full p-0.5 transition-all duration-200 cursor-pointer ${
+                          showPublicTransit ? 'bg-emerald-500' : 'bg-brand-input/50'
+                        }`}
+                      >
+                        <div className={`w-2.5 h-2.5 rounded-full bg-brand-midnight transition-transform duration-200 ${
+                          showPublicTransit ? 'translate-x-3.5' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Floating GPS Re-center Viewport Button */}
       <button
         onClick={handleRecenterGPS}
-        className="absolute top-[302px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white shadow-lg"
-        title={slangMode ? "Recentrer sur ma position GPS (Vol fluide)" : "Re-center Map on My GPS (Smooth fly)"}
+        className={`absolute z-[1000] flex flex-col items-center justify-center rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white shadow-xl ${
+          role === 'passenger'
+            ? 'bottom-5 right-4 w-11 h-11 border-brand-gold/50 shadow-2xl bg-brand-midnight/95 text-brand-gold hover:text-white'
+            : 'top-[302px] right-[10px] w-[40px] h-[40px]'
+        }`}
+        title={slangMode ? "Recentrer sur ma position GPS" : "Re-center Map on My GPS"}
         id="map-recenter-gps-control"
       >
         <div className="relative">
-          <Locate size={14} className={`transition-transform duration-300 group-hover:scale-115 ${isResolving ? 'animate-spin text-brand-gold' : ''}`} />
+          <Locate size={role === 'passenger' ? 18 : 14} className={`transition-transform duration-300 group-hover:scale-115 ${isResolving ? 'animate-spin text-brand-gold' : ''}`} />
           {liveCoords && (
             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
           )}
         </div>
-        <span className="text-[5.5px] font-black tracking-widest mt-0.5 leading-none uppercase font-mono">
-          {isResolving ? "Find" : "Gps"}
-        </span>
+        {role !== 'passenger' && (
+          <span className="text-[5.5px] font-black tracking-widest mt-0.5 leading-none uppercase font-mono">
+            {isResolving ? "Find" : "Gps"}
+          </span>
+        )}
       </button>
 
-      {/* FLOATING METALLIC GOLD ZOOM LEVEL CHIP OVERLAY IN MAP VIEWPORT */}
-      <motion.div
-        id="map-zoom-indicator"
-        key={`zoom-ind-${currentZoom}`}
-        initial={{ scale: 0.92, opacity: 0 }}
-        animate={{ 
-          scale: isIntegerGlow ? [1, 1.15, 1.05, 1] : 1,
-          opacity: 1,
-          boxShadow: isIntegerGlow
-            ? "0 0 25px rgba(255,211,67,0.85)"
-            : "0 6px 20px rgba(0, 0, 0, 0.45)"
-        }}
-        transition={{ duration: 0.25, ease: "easeOut" }}
-        className="absolute top-3.5 left-3.5 z-[1010] flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-200/90 bg-gradient-to-r from-amber-300 via-brand-gold to-yellow-500 text-brand-midnight shadow-[0_4px_16px_rgba(255,211,67,0.4)] select-none transition-all duration-300 backdrop-blur-md"
-        title={slangMode ? "Niveau de Zoom Leaflet Actuel (Échelle Visuelle)" : "Current Leaflet Map Visual Zoom Scale"}
-      >
-        <div className="relative flex items-center justify-center">
-          <span className={`w-2 h-2 rounded-full ${isIntegerGlow ? 'bg-brand-midnight animate-ping' : 'bg-brand-midnight/90'}`} />
-          <span className="w-1.5 h-1.5 rounded-full bg-brand-midnight absolute" />
-        </div>
+      {/* FLOATING METALLIC GOLD ZOOM LEVEL CHIP OVERLAY IN MAP VIEWPORT (Driver/Dev mode) */}
+      {role !== 'passenger' && (
+        <motion.div
+          id="map-zoom-indicator"
+          key={`zoom-ind-${currentZoom}`}
+          initial={{ scale: 0.92, opacity: 0 }}
+          animate={{ 
+            scale: isIntegerGlow ? [1, 1.15, 1.05, 1] : 1,
+            opacity: 1,
+            boxShadow: isIntegerGlow
+              ? "0 0 25px rgba(255,211,67,0.85)"
+              : "0 6px 20px rgba(0, 0, 0, 0.45)"
+          }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="absolute top-3.5 left-3.5 z-[1010] flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-200/90 bg-gradient-to-r from-amber-300 via-brand-gold to-yellow-500 text-brand-midnight shadow-[0_4px_16px_rgba(255,211,67,0.4)] select-none transition-all duration-300 backdrop-blur-md"
+          title={slangMode ? "Niveau de Zoom Leaflet Actuel" : "Current Leaflet Map Visual Zoom Scale"}
+        >
+          <div className="relative flex items-center justify-center">
+            <span className={`w-2 h-2 rounded-full ${isIntegerGlow ? 'bg-brand-midnight animate-ping' : 'bg-brand-midnight/90'}`} />
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-midnight absolute" />
+          </div>
 
-        <div className="flex items-center gap-1 font-mono">
-          <span className="text-[9px] font-black uppercase tracking-wider text-brand-midnight/80 font-sans">
-            {slangMode ? "ZOOM" : "ZOOM"}
-          </span>
-          <strong className="text-xs font-black tracking-tight text-brand-midnight">
-            {currentZoom.toFixed(1)}x
-          </strong>
-        </div>
+          <div className="flex items-center gap-1 font-mono">
+            <span className="text-[9px] font-black uppercase tracking-wider text-brand-midnight/80 font-sans">
+              ZOOM
+            </span>
+            <strong className="text-xs font-black tracking-tight text-brand-midnight">
+              {currentZoom.toFixed(1)}x
+            </strong>
+          </div>
 
-        {/* Momentary Integer Zoom Pulse Ring Effect */}
-        {isIntegerGlow && (
-          <motion.span
-            initial={{ scale: 0.8, opacity: 1 }}
-            animate={{ scale: 1.5, opacity: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="absolute inset-0 rounded-full border-2 border-brand-midnight pointer-events-none"
-          />
-        )}
-      </motion.div>
+          {/* Momentary Integer Zoom Pulse Ring Effect */}
+          {isIntegerGlow && (
+            <motion.span
+              initial={{ scale: 0.8, opacity: 1 }}
+              animate={{ scale: 1.5, opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="absolute inset-0 rounded-full border-2 border-brand-midnight pointer-events-none"
+            />
+          )}
+        </motion.div>
+      )}
 
       {/* HIGH-VISIBILITY FLOATING ROUTE INSTRUCTION CHIP IN MAP VIEWPORT */}
-      {(() => {
+      {(status !== 'idle' || role !== 'passenger') && (() => {
         const activeNavStep = navInstructions[currentStepIndex];
         let dynamicManeuverIcon = <Navigation size={16} className="text-brand-midnight animate-pulse" />;
         let cueText = slangMode ? "Suivez l'itinéraire principal" : "Follow main route polyline";
@@ -3176,130 +3257,98 @@ export default function TaxiMap({
         )}
       </AnimatePresence>
 
-      {/* FLOATING GPS CONSOLE WIDGET */}
-      <div className="absolute bottom-4 left-4 z-[1010] max-w-[285px] w-auto">
-        {!isConsoleExpanded ? (
-          /* Minimized circular float button */
-          <button
-            onClick={() => setIsConsoleExpanded(true)}
-            className="w-12 h-12 rounded-full bg-brand-midnight/95 backdrop-blur border border-brand-gold/30 flex items-center justify-center text-brand-gold shadow-2xl hover:bg-brand-card transition cursor-pointer active:scale-95"
-            title={slangMode ? "Ouvrir Console GPS" : "Open GPS Console"}
-          >
-            <Locate size={20} className={isTracking ? "text-emerald-400 animate-pulse" : "text-brand-gold animate-spin-slow"} />
-          </button>
-        ) : (
-          /* Fully expanded elegant GPS Console */
-          <div className="bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/30 p-3.5 rounded-2xl shadow-2xl text-white text-xs space-y-3 w-72 transition-all">
-            {/* Console Header */}
-            <div className="flex items-center justify-between border-b border-brand-input/40 pb-2">
-              <span className="font-black text-brand-gold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                <Compass size={14} className={isTracking ? "animate-spin" : ""} />
-                {slangMode ? "Wanda Terminal GPS" : "Wanda GPS Terminal"}
-              </span>
-              <button
-                onClick={() => setIsConsoleExpanded(false)}
-                className="text-brand-text-muted hover:text-white p-0.5 rounded cursor-pointer"
-              >
-                <ChevronDown size={14} />
-              </button>
-            </div>
-
-            {/* Error notifications */}
-            {gpsError && (
-              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] p-2 rounded-xl">
-                ⚠️ {gpsError}. Please authorize GPS services.
-              </div>
-            )}
-
-            {/* Main Action buttons */}
-            <div className="space-y-2">
-              {/* Locate Me button */}
-              <button
-                onClick={handleLocateMe}
-                disabled={isResolving}
-                className="w-full bg-brand-gold hover:bg-brand-gold/90 disabled:bg-brand-card/50 disabled:text-brand-text-muted text-brand-midnight font-black py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition text-xs shadow-md"
-              >
-                {isResolving ? (
-                  <>
-                    <RefreshCw size={12} className="animate-spin" />
-                    {slangMode ? "Recherche du signal..." : "Locating GPS..."}
-                  </>
-                ) : (
-                  <>
-                    <Locate size={13} />
-                    {slangMode ? "Me localiser (GPS Live)" : "Locate My Phone"}
-                  </>
-                )}
-              </button>
-
-              {/* Real-time Tracking Toggle */}
-              <button
-                onClick={toggleTracking}
-                className={`w-full py-2 px-3 rounded-xl font-bold flex items-center justify-between text-[11px] border transition cursor-pointer ${
-                  isTracking
-                    ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400'
-                    : 'bg-brand-input/40 border-brand-card text-brand-text-muted hover:text-white'
-                }`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Activity size={12} className={isTracking ? "animate-pulse text-emerald-400" : ""} />
-                  {slangMode ? "Suivi en temps réel" : "Continuous Live Tracking"}
+      {/* FLOATING GPS CONSOLE WIDGET (Developer/Driver mode) */}
+      {role !== 'passenger' && (
+        <div className="absolute bottom-4 left-4 z-[1010] max-w-[285px] w-auto">
+          {!isConsoleExpanded ? (
+            /* Minimized circular float button */
+            <button
+              onClick={() => setIsConsoleExpanded(true)}
+              className="w-12 h-12 rounded-full bg-brand-midnight/95 backdrop-blur border border-brand-gold/30 flex items-center justify-center text-brand-gold shadow-2xl hover:bg-brand-card transition cursor-pointer active:scale-95"
+              title={slangMode ? "Ouvrir Console GPS" : "Open GPS Console"}
+            >
+              <Locate size={20} className={isTracking ? "text-emerald-400 animate-pulse" : "text-brand-gold animate-spin-slow"} />
+            </button>
+          ) : (
+            /* Fully expanded elegant GPS Console */
+            <div className="bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/30 p-3.5 rounded-2xl shadow-2xl text-white text-xs space-y-3 w-72 transition-all">
+              {/* Console Header */}
+              <div className="flex items-center justify-between border-b border-brand-input/40 pb-2">
+                <span className="font-black text-brand-gold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                  <Compass size={14} className={isTracking ? "animate-spin" : ""} />
+                  {slangMode ? "Wanda Terminal GPS" : "Wanda GPS Terminal"}
                 </span>
-                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${isTracking ? 'bg-emerald-500 text-white' : 'bg-brand-card text-brand-text-muted'}`}>
-                  {isTracking ? 'ON' : 'OFF'}
-                </span>
-              </button>
-            </div>
-
-            {/* Coordinates display or placeholder */}
-            {liveCoords ? (
-              <div className="bg-brand-input/40 border border-brand-card p-2 rounded-xl text-[10px] font-mono flex items-center justify-between text-brand-text-muted">
-                <span>Lat: {liveCoords.lat.toFixed(6)}</span>
-                <span>Lng: {liveCoords.lng.toFixed(6)}</span>
-                <span className="text-emerald-400">● Live</span>
+                <button
+                  onClick={() => setIsConsoleExpanded(false)}
+                  className="text-brand-text-muted hover:text-white p-0.5 rounded cursor-pointer"
+                >
+                  <ChevronDown size={14} />
+                </button>
               </div>
-            ) : (
-              <div className="text-[10px] text-brand-text-muted text-center italic py-1 font-medium">
-                {slangMode ? "Tapez 'Me localiser' pour capter le signal" : "Tap 'Locate My Phone' to acquire signal"}
+
+              {/* Error notifications */}
+              {gpsError && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] p-2 rounded-xl">
+                  ⚠️ {gpsError}. Please authorize GPS services.
+                </div>
+              )}
+
+              {/* Main Action buttons */}
+              <div className="space-y-2">
+                {/* Locate Me button */}
+                <button
+                  onClick={handleLocateMe}
+                  disabled={isResolving}
+                  className="w-full bg-brand-gold hover:bg-brand-gold/90 disabled:bg-brand-card/50 disabled:text-brand-text-muted text-brand-midnight font-black py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition text-xs shadow-md"
+                >
+                  {isResolving ? (
+                    <>
+                      <RefreshCw size={12} className="animate-spin" />
+                      {slangMode ? "Recherche du signal..." : "Locating GPS..."}
+                    </>
+                  ) : (
+                    <>
+                      <Locate size={13} />
+                      {slangMode ? "Me localiser (GPS Live)" : "Locate My Phone"}
+                    </>
+                  )}
+                </button>
+
+                {/* Real-time Tracking Toggle */}
+                <button
+                  onClick={toggleTracking}
+                  className={`w-full py-2 px-3 rounded-xl font-bold flex items-center justify-between text-[11px] border transition cursor-pointer ${
+                    isTracking
+                      ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400'
+                      : 'bg-brand-input/40 border-brand-card text-brand-text-muted hover:text-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Activity size={12} className={isTracking ? "animate-pulse text-emerald-400" : ""} />
+                    {slangMode ? "Suivi en temps réel" : "Continuous Live Tracking"}
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${isTracking ? 'bg-emerald-500 text-white' : 'bg-brand-card text-brand-text-muted'}`}>
+                    {isTracking ? 'ON' : 'OFF'}
+                  </span>
+                </button>
               </div>
-            )}
 
-            {/* Conditional Role actions */}
-            {liveCoords && (
-              <div className="border-t border-brand-input/40 pt-2.5 space-y-2">
-                {role === 'passenger' ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        onClick={handleSetAsPickup}
-                        className="bg-brand-input hover:bg-brand-card text-white hover:text-brand-gold border border-brand-card py-2 rounded-xl text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
-                      >
-                        <MapPin size={10} className="text-emerald-400" />
-                        {slangMode ? "Fixer Départ" : "Set Pickup"}
-                      </button>
-                      <button
-                        onClick={handleSetAsDestination}
-                        className="bg-brand-input hover:bg-brand-card text-white hover:text-brand-gold border border-brand-card py-2 rounded-xl text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
-                      >
-                        <Navigation size={10} className="text-brand-gold" />
-                        {slangMode ? "Fixer Dépôt" : "Set Dropoff"}
-                      </button>
-                    </div>
+              {/* Coordinates display or placeholder */}
+              {liveCoords ? (
+                <div className="bg-brand-input/40 border border-brand-card p-2 rounded-xl text-[10px] font-mono flex items-center justify-between text-brand-text-muted">
+                  <span>Lat: {liveCoords.lat.toFixed(6)}</span>
+                  <span>Lng: {liveCoords.lng.toFixed(6)}</span>
+                  <span className="text-emerald-400">● Live</span>
+                </div>
+              ) : (
+                <div className="text-[10px] text-brand-text-muted text-center italic py-1 font-medium">
+                  {slangMode ? "Tapez 'Me localiser' pour capter le signal" : "Tap 'Locate My Phone' to acquire signal"}
+                </div>
+              )}
 
-                    {isTracking && (
-                      <label className="flex items-center gap-2 text-[10px] text-brand-text-muted cursor-pointer hover:text-white font-semibold select-none pt-0.5">
-                        <input
-                          type="checkbox"
-                          checked={isPassengerTrackingPickup}
-                          onChange={(e) => setIsPassengerTrackingPickup(e.target.checked)}
-                          className="rounded border-brand-card text-brand-gold focus:ring-0 cursor-pointer bg-brand-input"
-                        />
-                        <span>{slangMode ? "Verrouiller le Départ à mon GPS" : "Bind Active Pickup to GPS"}</span>
-                      </label>
-                    )}
-                  </>
-                ) : (
-                  /* Driver actions */
+              {/* Conditional Role actions */}
+              {liveCoords && (
+                <div className="border-t border-brand-input/40 pt-2.5 space-y-2">
                   <div className="space-y-2">
                     <button
                       onClick={() => {
@@ -3316,12 +3365,12 @@ export default function TaxiMap({
                         : "Enable continuous live tracking to sync your physical coordinates with the passenger client as you move!"}
                     </p>
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CELEBRATORY COMPLETED RIDE MAP BANNER OVERLAY */}
       <AnimatePresence>
@@ -3581,8 +3630,8 @@ export default function TaxiMap({
         </div>
       )}
 
-      {/* FLOATING TACTICAL TURN-BY-TURN INSTRUCTION CARD (Optional & Interactive) */}
-      {navInstructions.length > 0 && (
+      {/* FLOATING TACTICAL TURN-BY-TURN INSTRUCTION CARD (Only visible for Drivers) */}
+      {navInstructions.length > 0 && role === 'driver' && (
         <div 
           id="floating-turn-instruction-card" 
           className="absolute top-4 left-4 z-[1010] max-w-xs w-72 transition-all duration-300"

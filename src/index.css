@@ -41,6 +41,11 @@
 }
 
 /* Custom Leaflet dark popups for Heatmap demand zones */
+.custom-pin-pickup, .custom-pin-dest {
+  overflow: visible !important;
+  z-index: 500 !important;
+}
+
 .custom-heatmap-popup .leaflet-popup-content-wrapper {
   background: #0a081d !important;
   color: #ffffff !important;

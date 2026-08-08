@@ -84,7 +84,7 @@ export default function WalletCard({
         <div className="flex justify-between items-start">
           <div className="space-y-1">
             <span className="text-[10px] text-brand-text-muted font-black tracking-wider uppercase block">
-              {slangMode ? "Mon Portefeuille" : "Integrated Wallet"}
+              Wallet
             </span>
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-black text-brand-gold tracking-tight mt-1 min-h-[1.75rem] flex items-center">
