@@ -472,6 +472,7 @@ export default function App() {
   const [etaStatusText, setEtaStatusText] = useState<string>('');
   const [summaryMetricMode, setSummaryMetricMode] = useState<'time' | 'distance'>('time');
   const [isProgressExpanded, setIsProgressExpanded] = useState<boolean>(false);
+  const [isDriverDetailsExpanded, setIsDriverDetailsExpanded] = useState<boolean>(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet'); // defaults to wallet as requested!
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [transactionId, setTransactionId] = useState<string | null>(null);
@@ -495,6 +496,7 @@ export default function App() {
   const [userRating, setUserRating] = useState<number>(5);
   const [userPraise, setUserPraise] = useState<string>('');
   const [tipAmount, setTipAmount] = useState<number>(0);
+  const [isRulerExpanded, setIsRulerExpanded] = useState<boolean>(false);
 
   // 11. Waiting Time Tracking
   const [waitingTime, setWaitingTime] = useState<number>(0);
@@ -2904,8 +2906,8 @@ export default function App() {
         {/* Left Side Control Panel / Sliding Bottom Sheet */}
         <aside 
           className={`bg-brand-deep/95 backdrop-blur-md border-r border-brand-card/80 flex flex-col shrink-0 z-10 overflow-y-auto text-white rounded-t-3xl md:rounded-none shadow-2xl transition-all duration-300 ${
-            isMapFullscreen || (role === 'driver' && rideStatus === 'in_progress')
-              ? 'hidden md:hidden w-0 h-0 border-0'
+            isMapFullscreen || (role === 'driver' && rideStatus !== 'idle')
+              ? 'hidden md:hidden w-0 h-0 border-0 pointer-events-none'
               : role === 'passenger' && activeTab === 'booking'
                 ? 'w-full md:w-96 h-[50vh] md:h-full border-t md:border-t-0 border-brand-card/80'
                 : rideStatus !== 'idle' && rideStatus !== 'searching'
@@ -4119,32 +4121,46 @@ export default function App() {
               {driverActiveTab === 'orders' && (
                 <>
                   {rideStatus === 'idle' && (
-                    <div className="bg-brand-card/40 p-4 rounded-2xl border border-brand-card/80 space-y-3.5 shadow-md">
+                    <div className="bg-brand-card/40 p-3.5 sm:p-4 rounded-2xl border border-brand-card/80 space-y-3 shadow-md">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black text-brand-gold flex items-center gap-1.5 tracking-wider uppercase">
                           <TrendingUp size={13} />
                           Wanda Chauffeur Portal
                         </span>
                         
-                        {/* Driver Status Toggle */}
+                        {/* Driver Status Toggle Pill */}
                         <button
                           onClick={() => setDriverOnline(!driverOnline)}
-                          className={`px-3 py-1 rounded-full text-[9px] font-black transition cursor-pointer ${driverOnline ? 'bg-emerald-600 text-white' : 'bg-brand-input text-brand-text-muted'}`}
+                          className={`px-3 py-1 rounded-full text-[9px] font-black transition cursor-pointer flex items-center gap-1.5 ${
+                            driverOnline ? 'bg-emerald-500 text-white shadow-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          }`}
                         >
-                          {driverOnline ? '● ONLINE' : '○ OFFLINE'}
+                          <span className={`w-2 h-2 rounded-full ${driverOnline ? 'bg-white animate-pulse' : 'bg-rose-400'}`} />
+                          {driverOnline ? 'ONLINE' : 'OFFLINE'}
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2.5 text-center">
-                        <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
+                      {/* Prominent Immediately-Visible "GO ONLINE" Banner Button when Offline */}
+                      {!driverOnline && (
+                        <button
+                          onClick={() => setDriverOnline(true)}
+                          className="w-full bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-white font-black py-3 px-4 rounded-xl text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer border border-emerald-300/40"
+                        >
+                          <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
+                          <span>{slangMode ? "PASSER EN LIGNE (SE CONNECTER)" : "GO ONLINE (START ACCEPTING RIDES)"}</span>
+                        </button>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-brand-input/40 border border-brand-card p-2 rounded-xl">
                           <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Earnings</span>
                           <span className="text-xs font-black text-white">{driverStats.earnings.toLocaleString('fr-FR')} XAF</span>
                         </div>
-                        <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
+                        <div className="bg-brand-input/40 border border-brand-card p-2 rounded-xl">
                           <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Trips Completed</span>
                           <span className="text-xs font-black text-white">{driverStats.trips}</span>
                         </div>
-                        <div className="bg-brand-input/40 border border-brand-card p-2.5 rounded-xl">
+                        <div className="bg-brand-input/40 border border-brand-card p-2 rounded-xl">
                           <span className="text-[8px] text-brand-text-muted block uppercase font-bold">Fleet Rating</span>
                           <span className="text-xs font-black text-brand-gold flex items-center justify-center gap-0.5">★ {driverStats.rating}</span>
                         </div>
@@ -4153,21 +4169,22 @@ export default function App() {
                   )}
 
                   {!driverOnline ? (
-                    <div className="text-center py-10 space-y-3 flex-1 flex flex-col justify-center">
-                      <span className="text-3xl animate-bounce block">😴</span>
+                    <div className="text-center py-3 space-y-2 flex-1 flex flex-col justify-center bg-brand-card/20 rounded-2xl border border-brand-card/50 p-3">
+                      <span className="text-2xl block">😴</span>
                       <h4 className="text-xs font-extrabold text-white">{slangMode ? "Tu es déconnecté" : "You are Offline"}</h4>
-                      <p className="text-[11px] text-brand-text-muted max-w-xs mx-auto leading-relaxed font-medium">
+                      <p className="text-[10px] text-brand-text-muted max-w-xs mx-auto leading-relaxed font-medium">
                         {slangMode ? (
-                          `Active ton statut pour recevoir les demandes de courses en temps réel à ${currentCity} !`
+                          `Passe en ligne pour recevoir les demandes de courses en temps réel à ${currentCity} !`
                         ) : (
-                          `Go online to receive and coordinate passenger bookings across ${currentCity}'s dynamic grids.`
+                          `Go online to start receiving passenger ride requests in ${currentCity}.`
                         )}
                       </p>
                       <button
                         onClick={() => setDriverOnline(true)}
-                        className="mx-auto bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-2.5 px-5 rounded-xl text-xs shadow transition cursor-pointer"
+                        className="mx-auto bg-emerald-500 hover:bg-emerald-400 text-white font-black py-2.5 px-6 rounded-xl text-xs shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center gap-2"
                       >
-                        {slangMode ? "Se connecter" : "Go Online"}
+                        <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                        <span>{slangMode ? "Se connecter maintenant" : "Go Online Now"}</span>
                       </button>
                     </div>
                   ) : rideStatus !== 'idle' ? (
@@ -4336,95 +4353,6 @@ export default function App() {
                             )}
                           </AnimatePresence>
                         </div>
-                      </div>
-                    </div>
-                  ) : driverRideRequest ? (
-                    /* Elegant Incoming Ride Request UI Panel */
-                    <div className="bg-gradient-to-br from-brand-midnight to-brand-card/90 border-2 border-brand-gold p-4 rounded-2xl space-y-3.5 shadow-2xl relative animate-pulse-subtle">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] bg-brand-gold text-brand-midnight px-2 py-0.5 rounded-full font-black animate-pulse flex items-center gap-1">
-                          ⚡ DEMANDE ENTRANTE
-                        </span>
-                        <span className="font-mono text-xs text-brand-gold font-black bg-brand-midnight border border-brand-gold/30 px-2 py-0.5 rounded-lg">
-                          ⏱️ {requestCountdown}s
-                        </span>
-                      </div>
-
-                      {/* Passenger Profile */}
-                      <div className="flex items-center gap-2.5 border-b border-brand-input/40 pb-2.5">
-                        <div className="w-9 h-9 rounded-full bg-brand-input border border-brand-card flex items-center justify-center text-lg shadow-inner font-bold">
-                          👤
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-black text-white flex items-center gap-1.5">
-                            {driverRideRequest.passengerName}
-                            <span className="text-[9px] text-brand-gold font-black">★ 4.9</span>
-                          </h4>
-                          <p className="text-[9px] text-brand-text-muted font-bold">
-                            {slangMode ? "Passager vérifié" : "Verified Rider"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Travel Details */}
-                      <div className="space-y-2 text-[11px] font-semibold">
-                        <div className="flex items-start gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 mt-1 animate-pulse"></span>
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[8px] text-brand-text-muted block uppercase">
-                              {language === 'fr' ? "Départ (A)" : "Pickup (A)"}
-                            </span>
-                            <p className="font-extrabold text-white truncate">{driverRideRequest.pickupName}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <span className="w-2 h-2 rounded-full bg-brand-gold shrink-0 mt-1"></span>
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[8px] text-brand-text-muted block uppercase">
-                              {language === 'fr' ? "Dépôt (B)" : "Dropoff (B)"}
-                            </span>
-                            <p className="font-extrabold text-white truncate">{driverRideRequest.destName}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* REAL-TIME MAP PREVIEW CONTAINER */}
-                      <div className="space-y-1">
-                        <span className="text-[8.5px] text-brand-text-muted block uppercase font-bold tracking-wider">
-                          {slangMode ? "APERCU CARTE GPS (RAMASSAGE RELATIF)" : "MAP PREVIEW (GPS TO PICKUP)"}
-                        </span>
-                        <div 
-                          id="driver-request-map-preview" 
-                          className="w-full h-36 rounded-xl overflow-hidden border border-brand-card bg-brand-input/40 relative z-10"
-                        />
-                      </div>
-
-                      {/* Payout & Payment Method */}
-                      <div className="flex justify-between items-center bg-brand-input/40 border border-brand-card p-2 rounded-xl text-xs">
-                        <div>
-                          <p className="text-[9px] text-brand-text-muted font-bold uppercase">{slangMode ? "Paiement" : "Payment"}</p>
-                          {getPaymentBadge(driverRideRequest.payment)}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[9px] text-brand-text-muted font-bold uppercase">{slangMode ? "Gains" : "Fare"}</p>
-                          <strong className="text-brand-gold text-xs font-black">{driverRideRequest.fare.toLocaleString('fr-FR')} FCFA</strong>
-                        </div>
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={handleDeclineRequest}
-                          className="bg-brand-input hover:bg-brand-card border border-brand-card text-brand-text-muted hover:text-white py-2.5 rounded-xl text-[11px] font-bold cursor-pointer transition"
-                        >
-                          {slangMode ? "Décliner" : "Decline"}
-                        </button>
-                        <button
-                          onClick={handleAcceptRequest}
-                          className="bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight py-2.5 rounded-xl text-[11px] font-black cursor-pointer shadow transition active:scale-95"
-                        >
-                          {slangMode ? "Accepter" : "Accept"}
-                        </button>
                       </div>
                     </div>
                   ) : (
@@ -4654,405 +4582,24 @@ export default function App() {
         {/* Right Side Map Viewport */}
         <section 
           className={`relative transition-all duration-300 ${
-            isMapFullscreen || (role === 'driver' && rideStatus === 'in_progress')
-              ? 'fixed inset-0 z-[9999] w-screen h-screen'
+            isMapFullscreen || (role === 'driver' && rideStatus !== 'idle')
+              ? 'fixed inset-0 z-[100] w-screen h-screen'
               : rideStatus !== 'idle' && rideStatus !== 'searching'
                 ? 'flex-1 h-[60vh] md:h-full w-full'
                 : 'flex-1 h-full w-full'
           }`} 
           id="map-viewport"
         >
-          {/* Developer / Driver Map Controls */}
-          {role !== 'passenger' && (
-            <>
-              {/* Fullscreen Toggle Button */}
-              <button
-                onClick={() => setIsMapFullscreen(prev => !prev)}
-                className="absolute top-[72px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 rounded-lg text-brand-gold hover:text-white shadow-md hover:shadow-brand-gold/20 transition-all duration-200 active:scale-95 cursor-pointer group"
-                title={isMapFullscreen ? (slangMode ? "Quitter le plein écran" : "Exit Fullscreen") : (slangMode ? "Plein écran" : "Fullscreen")}
-                id="map-fullscreen-toggle"
-              >
-                {isMapFullscreen ? <Minimize2 size={16} className="group-hover:scale-110 transition-transform" /> : <Maximize2 size={16} className="group-hover:scale-110 transition-transform" />}
-              </button>
+          {/* Clean Map Viewport Controls (Fullscreen toggle only) */}
+          <button
+            onClick={() => setIsMapFullscreen(prev => !prev)}
+            className="absolute top-4 right-4 z-[1000] flex items-center justify-center w-[34px] h-[34px] bg-brand-midnight/90 backdrop-blur-md border border-brand-input/60 hover:border-brand-gold/80 rounded-xl text-brand-gold hover:text-white shadow-lg transition-all duration-200 active:scale-95 cursor-pointer group"
+            title={isMapFullscreen ? (slangMode ? "Quitter le plein écran" : "Exit Fullscreen") : (slangMode ? "Plein écran" : "Fullscreen")}
+            id="map-fullscreen-toggle"
+          >
+            {isMapFullscreen ? <Minimize2 size={16} className="group-hover:scale-110 transition-transform" /> : <Maximize2 size={16} className="group-hover:scale-110 transition-transform" />}
+          </button>
 
-              {/* Tactical Coordinate Grid Toggle Button */}
-              <button
-                onClick={() => setShowMapGrid(prev => !prev)}
-                className={`absolute top-[114px] right-[10px] z-[1000] flex items-center justify-center w-[34px] h-[34px] border rounded-lg shadow-md transition-all duration-200 active:scale-95 cursor-pointer group ${
-                  showMapGrid
-                    ? 'bg-brand-gold/15 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.35)]'
-                    : 'bg-brand-midnight border border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
-                }`}
-                title={showMapGrid 
-                  ? (slangMode ? "Masquer la grille tactique" : "Hide Tactical Grid") 
-                  : (slangMode ? "Afficher la grille tactique" : "Show Tactical Grid")
-                }
-                id="map-grid-toggle"
-              >
-                <Grid size={16} className={`transition-transform duration-300 ${showMapGrid ? 'rotate-90 text-brand-gold' : 'group-hover:scale-110'}`} />
-              </button>
-
-              {/* Small Circular 3D Tilt Control Button */}
-              <button
-                onClick={() => {
-                  setIsMapTilted(prev => {
-                    if (prev === true || prev === 'tilted' || prev === 'isometric') {
-                      return false;
-                    }
-                    return 'tilted';
-                  });
-                  if (isAutoPitchEnabled) {
-                    setIsAutoPitchEnabled(false);
-                  }
-                }}
-                className={`absolute top-[156px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[34px] h-[34px] rounded-full border shadow-lg transition-all duration-200 active:scale-95 cursor-pointer group ${
-                  (isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric')
-                    ? 'bg-gradient-to-br from-amber-400 via-brand-gold to-yellow-500 border-amber-300 text-brand-midnight shadow-[0_0_12px_rgba(255,211,67,0.7)] ring-2 ring-brand-gold/50'
-                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-gold hover:text-white'
-                }`}
-                title={
-                  isMapTilted
-                    ? (slangMode ? "Désactiver Inclinaison 3D (Retour Vue 2D)" : "Switch to 2D Flat View")
-                    : (slangMode ? "Inclinaison 3D + Transparence Bâtiments (Translucide à Ndokoti & Bastos)" : "3D Tilt & Translucent Building Footprints (See-through in Ndokoti & Bastos)")
-                }
-                id="map-3d-tilt-toggle"
-              >
-                <Box size={15} className={`transition-transform duration-300 ${(isMapTilted === true || isMapTilted === 'tilted' || isMapTilted === 'isometric') ? 'rotate-12 scale-110 text-brand-midnight' : 'group-hover:scale-110'}`} />
-                <span className="sr-only">
-                  {(isMapTilted === true || isMapTilted === 'tilted') ? '54°' : isMapTilted === 'isometric' ? '45°' : '2D'}
-                </span>
-              </button>
-
-              {/* Small Secondary Preset View Button (0° <-> 45° Isometric) */}
-              <button
-                onClick={() => {
-                  setIsMapTilted(prev => prev === 'isometric' ? false : 'isometric');
-                  if (isAutoPitchEnabled) {
-                    setIsAutoPitchEnabled(false);
-                  }
-                }}
-                className={`absolute top-[159px] right-[52px] z-[1000] flex flex-col items-center justify-center w-[28px] h-[28px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
-                  isMapTilted === 'isometric'
-                    ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_8px_rgba(255,211,67,0.3)]'
-                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-white shadow-md'
-                }`}
-                title={slangMode ? "Vue Standard 45° (Isométrique)" : "Preset View (45° Isometric)"}
-                id="map-pitch-preset"
-              >
-                <Eye size={10} className={`transition-transform duration-300 ${isMapTilted === 'isometric' ? 'scale-110 text-brand-gold' : 'group-hover:scale-110 text-brand-text-muted'}`} />
-                <span className="text-[5.5px] font-bold font-mono tracking-tighter leading-none mt-0.5">
-                  45°
-                </span>
-              </button>
-
-              {/* Floating Map Auto-Pitch Lock Control Button */}
-              <button
-                onClick={() => setIsAutoPitchEnabled(prev => !prev)}
-                className={`absolute top-[210px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
-                  isAutoPitchEnabled
-                    ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
-                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
-                }`}
-                title={slangMode ? "Verrouillage automatique de l'inclinaison (3D en transit rapide, 2D en ramassage)" : "Auto-Pitch Lock (3D during transit, 2D in pickup/dropoff zones)"}
-                id="map-auto-pitch-control"
-              >
-                <div className="relative">
-                  <Gauge size={14} className={`transition-transform duration-300 ${isAutoPitchEnabled ? 'animate-pulse scale-105' : 'group-hover:scale-110'}`} />
-                  {isAutoPitchEnabled && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
-                  )}
-                </div>
-                <span className="text-[6px] font-black tracking-widest mt-0.5 leading-none uppercase">
-                  Auto
-                </span>
-              </button>
-
-              {/* Floating Map Zoom Lock Control Button */}
-              <button
-                onClick={() => setIsZoomLocked(prev => !prev)}
-                className={`absolute top-[256px] right-[10px] z-[1000] flex flex-col items-center justify-center w-[40px] h-[40px] rounded-full border transition-all duration-200 active:scale-95 cursor-pointer group ${
-                  isZoomLocked
-                    ? 'bg-brand-gold/10 border-brand-gold text-brand-gold shadow-[0_0_10px_rgba(255,211,67,0.4)]'
-                    : 'bg-brand-midnight/95 border-brand-input/60 hover:border-brand-gold/80 text-brand-text-muted hover:text-brand-gold'
-                }`}
-                title={slangMode ? "Verrouiller le zoom de la carte (Empêche l'auto-ajustement)" : "Keep Zoom Locked (Prevents map auto-adjusting zoom)"}
-                id="map-zoom-lock-control"
-              >
-                <div className="relative">
-                  {isZoomLocked ? (
-                    <Lock size={14} className="transition-transform duration-300 scale-105" />
-                  ) : (
-                    <Unlock size={14} className="transition-transform duration-300 group-hover:scale-110" />
-                  )}
-                  {isZoomLocked && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]" />
-                  )}
-                </div>
-                <span className="text-[5.5px] font-black tracking-widest mt-0.5 leading-none uppercase font-mono">
-                  {isZoomLocked ? "Lock" : "Free"}
-                </span>
-              </button>
-            </>
-          )}
-
-          {/* Compass Backdrop to capture click outside and collapse */}
-          <AnimatePresence>
-            {isCompassExpanded && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsCompassExpanded(false)}
-                className="absolute inset-0 bg-transparent z-[998]"
-              />
-            )}
-          </AnimatePresence>
-
-          {/* Compass Orientation Control */}
-          <AnimatePresence mode="wait">
-            {!isCompassExpanded ? (
-              /* Collapsed view (small pilot gauge boussole button) */
-              <motion.button
-                key="collapsed-compass"
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                onClick={handleCompassToggle}
-                className="absolute top-[114px] right-[10px] z-[999] flex items-center justify-center w-[40px] h-[40px] bg-brand-midnight/95 backdrop-blur-md border border-brand-input/60 hover:border-brand-gold/80 rounded-full text-brand-gold hover:text-white shadow-lg cursor-pointer transition-all duration-200 active:scale-95 group"
-                title={slangMode ? "Boussole (Cliquez pour agrandir)" : "Compass (Click to expand)"}
-                id="map-compass-control-collapsed"
-              >
-                {/* Mini Rotating Dial */}
-                <div 
-                  className="w-7 h-7 rounded-full border border-brand-gold/30 group-hover:border-brand-gold/60 relative flex items-center justify-center transition-transform duration-300 ease-out"
-                  style={{ transform: `rotate(${-continuousHeading}deg)` }}
-                >
-                  {/* Small North indicator (N) */}
-                  <span className="absolute top-0 text-[6px] font-black text-rose-500 leading-none select-none">N</span>
-                  <span className="absolute bottom-0 text-[5px] font-black text-brand-text-muted/60 leading-none select-none">S</span>
-                  
-                  {/* Small physical needle */}
-                  <div className="w-1 h-5 relative flex items-center justify-center">
-                    {/* Red needle tip pointing north */}
-                    <div className="absolute top-0 w-0 h-0 border-l-[1.5px] border-l-transparent border-r-[1.5px] border-r-transparent border-b-[8px] border-b-rose-500" />
-                    {/* Gray needle tip pointing south */}
-                    <div className="absolute bottom-0 w-0 h-0 border-l-[1.5px] border-l-transparent border-r-[1.5px] border-r-transparent border-t-[8px] border-t-brand-text-muted/60" />
-                    {/* Pin pivot */}
-                    <div className="w-1 h-1 rounded-full bg-brand-midnight border border-brand-gold/80 z-10" />
-                  </div>
-                </div>
-              </motion.button>
-            ) : (
-              /* Expanded view */
-              <motion.div
-                key="expanded-compass"
-                initial={{ scale: 0.9, opacity: 0, y: -10 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: -10 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCompassInteraction();
-                }}
-                className="absolute top-[114px] right-[10px] z-[999] flex flex-col items-center bg-brand-midnight/95 backdrop-blur-md border border-brand-input/60 p-2.5 rounded-2xl shadow-2xl w-32"
-                id="map-compass-control"
-              >
-                {/* Compass Heading Indicator with Collapse Button */}
-                <div className="font-mono text-[9px] font-black text-brand-gold leading-none pb-1.5 flex items-center gap-0.5 select-none justify-between w-full">
-                  <span className="flex items-center gap-0.5">
-                    {compassLockMode === 'magnetic' && <Magnet size={9} className="text-brand-gold animate-pulse" />}
-                    <span>{compassHeading}°</span>
-                    <span className="text-white bg-brand-deep px-1 rounded-sm text-[8px] ml-1">{(() => {
-                      const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-                      const index = Math.round(((compassHeading % 360) / 45)) % 8;
-                      return directions[index];
-                    })()}</span>
-                  </span>
-                  
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsCompassExpanded(false);
-                    }}
-                    className="text-brand-text-muted hover:text-white transition-colors cursor-pointer p-0.5"
-                    title={slangMode ? "Réduire" : "Collapse"}
-                  >
-                    <Minimize2 size={10} />
-                  </button>
-                </div>
-
-                {/* Rotating Dial */}
-                <div 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCompassLockMode('north');
-                    setCompassHeading(0);
-                    handleCompassInteraction();
-                  }}
-                  className="w-12 h-12 rounded-full border border-brand-gold/40 hover:border-brand-gold bg-brand-deep/80 relative flex items-center justify-center shadow-inner cursor-pointer active:scale-95 transition-all duration-200 group"
-                  title={slangMode ? "Cliquez pour réorienter vers le Nord" : "Click to reset map orientation to North"}
-                >
-                  {/* Spinning Ring */}
-                  <div 
-                    className="absolute inset-0 rounded-full border border-dashed border-brand-gold/20 group-hover:animate-[spin_10s_linear_infinite]"
-                  />
-
-                  {/* Cardinal letters inside the rotating dial */}
-                  <div 
-                    className="absolute inset-0 flex items-center justify-center transition-transform duration-300 ease-out"
-                    style={{ transform: `rotate(${-continuousHeading}deg)` }}
-                  >
-                    <span className="absolute top-1 text-[8px] font-black text-rose-500 leading-none">N</span>
-                    <span className="absolute right-1 text-[8px] font-black text-brand-text-muted/80 leading-none">E</span>
-                    <span className="absolute bottom-1 text-[8px] font-black text-brand-text-muted/80 leading-none">S</span>
-                    <span className="absolute left-1 text-[8px] font-black text-brand-text-muted/80 leading-none">W</span>
-                    
-                    {/* Visual graduation marks on the edge */}
-                    <div className="absolute top-0 bottom-0 left-1/2 w-[1px] border-l border-brand-gold/10" />
-                    <div className="absolute left-0 right-0 top-1/2 h-[1px] border-t border-brand-gold/10" />
-
-                    {/* Central stylized physical needle */}
-                    <div className="w-1.5 h-8 relative flex items-center justify-center">
-                      {/* Top half: Red North needle */}
-                      <div className="absolute top-0 w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[16px] border-b-rose-500" />
-                      {/* Bottom half: Grey/Gold South needle */}
-                      <div className="absolute bottom-0 w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[16px] border-t-brand-text-muted/60" />
-                      {/* Pivot pin */}
-                      <div className="w-2 h-2 rounded-full bg-brand-deep border border-brand-gold z-10 shadow-sm" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mode selection indicators */}
-                <div className="flex gap-1 mt-2 border-t border-brand-card/40 pt-1.5 justify-center w-full">
-                  {/* North lock mode */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCompassLockMode('north');
-                      setCompassHeading(0);
-                      handleCompassInteraction();
-                    }}
-                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-black transition-all cursor-pointer ${
-                      compassLockMode === 'north'
-                        ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
-                        : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
-                    }`}
-                    title={slangMode ? "Verrouiller au Nord" : "Lock to True North"}
-                  >
-                    N
-                  </button>
-
-                  {/* Trajectory / Travel alignment mode */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (rideStatus === 'in_progress') {
-                        setCompassLockMode('bearing');
-                      }
-                      handleCompassInteraction();
-                    }}
-                    disabled={rideStatus !== 'in_progress'}
-                    className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer ${
-                      rideStatus !== 'in_progress'
-                        ? 'opacity-30 cursor-not-allowed text-brand-text-muted/40 bg-brand-deep/20'
-                        : compassLockMode === 'bearing'
-                          ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
-                          : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
-                    }`}
-                    title={slangMode ? "Suivre l'itinéraire" : "Track Travel Direction"}
-                  >
-                    <Navigation size={9} className={compassLockMode === 'bearing' ? 'fill-brand-midnight' : 'fill-brand-text-muted'} />
-                  </button>
-
-                  {/* Device gyro orientation mode */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCompassLockMode('device');
-                      requestDeviceOrientationPermission();
-                      handleCompassInteraction();
-                    }}
-                    className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer relative ${
-                      compassLockMode === 'device'
-                        ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
-                        : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
-                    }`}
-                    title={slangMode ? "Capteur de l'appareil" : "Use Gyro/Device Compass"}
-                  >
-                    <Smartphone size={9} />
-                    {isUsingDeviceOrientation && (
-                      <span className="absolute -top-0.5 -right-0.5 w-1 h-1 bg-emerald-500 rounded-full animate-ping" />
-                    )}
-                  </button>
-
-                  {/* Magnetic Sensor Mode */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCompassLockMode('magnetic');
-                      handleCompassInteraction();
-                    }}
-                    className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer relative ${
-                      compassLockMode === 'magnetic'
-                        ? 'bg-brand-gold text-brand-midnight shadow-[0_0_8px_rgba(255,211,67,0.4)]'
-                        : 'bg-brand-deep/60 text-brand-text-muted hover:text-white hover:bg-brand-card/80'
-                    }`}
-                    title={slangMode ? "Capteur Magnétique (Magnetometer)" : "Use Magnetic Sensor"}
-                  >
-                    <Magnet size={9} />
-                    {isMagnetometerCalibrated && (
-                      <span className="absolute -top-0.5 -right-0.5 w-1 h-1 bg-emerald-400 rounded-full" />
-                    )}
-                  </button>
-                </div>
-
-                {/* Magnetic Mode Calibration and Details */}
-                {compassLockMode === 'magnetic' && (
-                  <div className="flex flex-col items-center gap-1.5 mt-2 border-t border-brand-card/40 pt-1.5 w-full">
-                    {/* Accuracy & Calibration status */}
-                    <div className="flex items-center justify-between w-full px-0.5">
-                      <span className="text-[7px] font-black uppercase text-brand-text-muted">Sensor</span>
-                      <span className={`text-[6px] font-black uppercase px-1 rounded-sm leading-none py-0.5 ${
-                        magnetometerAccuracy === 'high' 
-                          ? 'bg-emerald-500/20 text-emerald-400' 
-                          : magnetometerAccuracy === 'medium'
-                            ? 'bg-amber-500/20 text-amber-400'
-                            : 'bg-rose-500/20 text-rose-400 animate-pulse'
-                      }`}>
-                        {magnetometerAccuracy === 'high' ? 'Calibrated' : `Acc: ${magnetometerAccuracy}`}
-                      </span>
-                    </div>
-
-                    {/* Calibrate action button */}
-                    {!isCalibrating ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMagnetometerCalibration();
-                        }}
-                        className="w-full flex items-center justify-center gap-1 py-1 rounded bg-brand-deep border border-brand-gold/30 hover:border-brand-gold hover:bg-brand-card/50 text-[7px] font-black uppercase tracking-wider text-brand-gold transition-all duration-200 cursor-pointer active:scale-95"
-                        title={slangMode ? "Lancer la calibration en 8" : "Calibrate with Figure-8 Motion"}
-                      >
-                        <Magnet size={8} className="animate-pulse text-brand-gold" />
-                        <span>{isMagnetometerCalibrated ? (slangMode ? "Ré-étalonner" : "Recalibrate") : (slangMode ? "Étalonner" : "Calibrate")}</span>
-                      </button>
-                    ) : (
-                      <div className="w-full bg-brand-deep border border-brand-gold/30 p-1 rounded flex flex-col gap-1 items-center justify-center">
-                        <span className="text-[6px] text-brand-gold font-bold uppercase animate-pulse text-center leading-tight">Wave phone in Figure-8</span>
-                        <div className="w-full bg-brand-card/50 h-1 rounded-full overflow-hidden">
-                          <div 
-                            className="bg-brand-gold h-full transition-all duration-300" 
-                            style={{ width: `${calibrationProgress}%` }}
-                          />
-                        </div>
-                        <span className="text-[6px] text-brand-text-muted font-mono">{calibrationProgress}%</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Magnetometer Calibration Fullscreen Figure-8 Visual Guide Overlay */}
           <AnimatePresence>
@@ -5222,7 +4769,161 @@ export default function App() {
             }}
           />
 
-          {/* Floating Dynamic Distance Ruler */}
+          {/* FLOATING DRIVER ACTIVE NAVIGATION CONTROL BAR */}
+          {role === 'driver' && rideStatus !== 'idle' && (
+            <AnimatePresence>
+              <motion.div
+                initial={{ y: 60, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 60, opacity: 0 }}
+                className="absolute bottom-4 inset-x-3 sm:inset-x-6 max-w-lg mx-auto z-[1010] pointer-events-auto"
+                id="floating-driver-navigation-bar"
+              >
+                <div className="bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 rounded-2xl p-3 sm:p-3.5 shadow-2xl space-y-2.5 text-white">
+                  {!isDriverDetailsExpanded ? (
+                    /* COLLAPSED DRIVER BAR (Clean 1-line summary) */
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[9px] font-black uppercase text-brand-gold tracking-widest block truncate">
+                            {rideStatus === 'driver_found' && (slangMode ? 'Vers le point de ramassage' : 'Driving to Pickup')}
+                            {rideStatus === 'arriving' && (slangMode ? 'Au point de rendez-vous' : 'Arrived at Pickup Station')}
+                            {rideStatus === 'in_progress' && (slangMode ? 'Transport du passager' : 'Driving to Dropoff')}
+                          </span>
+                          <p className="text-xs font-black text-white truncate leading-snug">
+                            {rideStatus === 'in_progress' ? destination?.name : pickup?.name}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-xs font-black text-brand-gold bg-brand-gold/10 px-2.5 py-1 rounded-xl border border-brand-gold/30 font-mono">
+                          {activeFareToCharge.toLocaleString('fr-FR')} FCFA
+                        </span>
+
+                        {/* Call button */}
+                        <button
+                          onClick={() => startInAppCall('driver')}
+                          className="p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-xl border border-emerald-500/30 transition cursor-pointer active:scale-95"
+                          title={slangMode ? "Appeler le client" : "Call Passenger"}
+                        >
+                          <Phone size={15} />
+                        </button>
+
+                        {/* Chat button */}
+                        <button
+                          onClick={() => setShowChat(true)}
+                          className="p-2 bg-brand-gold/20 hover:bg-brand-gold/30 text-brand-gold rounded-xl border border-brand-gold/30 transition cursor-pointer active:scale-95"
+                          title={slangMode ? "Tchatter avec le client" : "Chat Passenger"}
+                        >
+                          <MessageSquare size={15} />
+                        </button>
+
+                        {/* Expand Details button */}
+                        <button
+                          onClick={() => setIsDriverDetailsExpanded(true)}
+                          className="px-2.5 py-2 bg-brand-input hover:bg-brand-card text-brand-text-muted hover:text-white rounded-xl border border-brand-card transition cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                          title="Expand details"
+                        >
+                          <span>Détails</span>
+                          <ChevronUp size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* EXPANDED DRIVER DETAILS BAR */
+                    <div className="space-y-3">
+                      {/* Top Header */}
+                      <div className="flex items-center justify-between border-b border-brand-input/40 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-brand-gold bg-brand-gold/10 px-2.5 py-0.5 rounded-full border border-brand-gold/20">
+                            {rideStatus === 'driver_found' && 'Driving to Pickup'}
+                            {rideStatus === 'arriving' && 'Waiting at Pickup'}
+                            {rideStatus === 'in_progress' && 'Transporting Dropoff'}
+                          </span>
+                          {getPaymentBadge(paymentMethod)}
+                        </div>
+                        <button
+                          onClick={() => setIsDriverDetailsExpanded(false)}
+                          className="text-brand-text-muted hover:text-white transition p-1 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                        >
+                          <span>Masquer</span>
+                          <ChevronDown size={14} />
+                        </button>
+                      </div>
+
+                      {/* Pickup & Destination Addresses */}
+                      <div className="space-y-2 text-xs font-semibold bg-brand-input/40 p-2.5 rounded-xl border border-brand-card/80">
+                        <div className="flex items-start gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 mt-1 animate-pulse" />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[8px] text-brand-text-muted block uppercase">RAMASSAGE (A)</span>
+                            <p className="font-extrabold text-white truncate">{pickup?.name}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="w-2 h-2 rounded-full bg-brand-gold shrink-0 mt-1" />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[8px] text-brand-text-muted block uppercase">DÉPÔT (B)</span>
+                            <p className="font-extrabold text-white truncate">{destination?.name}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Waiting time meter if status is arriving */}
+                      {rideStatus === 'arriving' && (
+                        <div className="bg-amber-500/10 border border-brand-gold/40 p-3 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-brand-gold font-black uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-brand-gold animate-ping" />
+                              {slangMode ? "Compteur d'Attente" : "Waiting Meter"}
+                            </span>
+                            <span className="text-sm font-black font-mono text-white">
+                              {String(Math.floor(waitingTime / 60)).padStart(2, '0')}:{String(waitingTime % 60).padStart(2, '0')}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => setRideStatus('in_progress')}
+                            className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer transition active:scale-95"
+                          >
+                            <Play size={13} className="fill-brand-midnight" />
+                            {slangMode ? "Démarrer la course (Client à bord)" : "Start Trip (Passenger Onboard)"}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Fare details & action buttons */}
+                      <div className="flex items-center justify-between border-t border-brand-input/40 pt-2 text-xs">
+                        <div>
+                          <span className="text-brand-text-muted text-[10px]">Gain estimé : </span>
+                          <strong className="text-brand-gold font-black text-xs">{activeFareToCharge.toLocaleString('fr-FR')} FCFA</strong>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleCancelBooking}
+                            className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition cursor-pointer"
+                          >
+                            Annuler
+                          </button>
+                          <button
+                            onClick={() => setShowChat(true)}
+                            className="px-3 py-1.5 bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight rounded-xl text-xs font-black flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <MessageSquare size={13} />
+                            <span>Chat ({messages.length})</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          )}
+
+          {/* Floating Dynamic Distance Ruler (Collapsible) */}
           {rideStatus === 'in_progress' && pickup && destination && driverLoc && (() => {
             const remaining = getDistanceKm(driverLoc.lat, driverLoc.lng, destination.lat, destination.lng);
             const isUrgent = remaining < 1;
@@ -5238,6 +4939,22 @@ export default function App() {
             }
             const displayValue = isUrgent ? `${Math.round(remaining * 1000)} m` : `${remaining.toFixed(2)} km`;
             
+            if (!isRulerExpanded) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => setIsRulerExpanded(true)}
+                  className="absolute top-4 left-4 z-[1000] bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 hover:border-brand-gold px-3 py-1.5 rounded-2xl text-white text-xs font-bold flex items-center gap-2 shadow-2xl hover:scale-105 transition active:scale-95 cursor-pointer"
+                  title={slangMode ? "Afficher la réglette de distance" : "Show Distance Ruler"}
+                  id="toggle-distance-ruler-btn"
+                >
+                  <Ruler size={13} className="text-brand-gold" />
+                  <span className="font-mono text-brand-gold font-black">{progressPct}%</span>
+                  <ChevronDown size={13} className="text-brand-text-muted" />
+                </button>
+              );
+            }
+
             return (
               <motion.div
                 initial={{ opacity: 0, y: -20 }}
@@ -5261,13 +4978,18 @@ export default function App() {
                       </span>
                     )}
                   </div>
-                  <div className="text-right font-mono">
+                  <div className="flex items-center gap-2 font-mono">
                     <span className={`text-xs font-black transition-all duration-300 ${colorClass}`}>
                       {displayValue}
                     </span>
-                    <span className="text-[9px] text-brand-text-muted ml-1">
-                      {slangMode ? "restant" : "left"}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsRulerExpanded(false)}
+                      className="p-1 text-brand-text-muted hover:text-white bg-brand-card border border-brand-input rounded-lg transition cursor-pointer"
+                      title={slangMode ? "Réduire" : "Collapse"}
+                    >
+                      <ChevronUp size={12} />
+                    </button>
                   </div>
                 </div>
 
@@ -5324,8 +5046,8 @@ export default function App() {
             );
           })()}
 
-          {/* Smooth Journey Progress Bar Animation */}
-          {rideStatus === 'in_progress' && (
+          {/* Smooth Journey Progress Bar Animation (Passenger side only) */}
+          {rideStatus === 'in_progress' && role === 'passenger' && (
             <div className="absolute bottom-3 left-3 right-3 md:left-auto md:right-4 md:w-80 bg-brand-midnight/95 backdrop-blur border border-brand-card/80 p-3 rounded-xl shadow-xl z-[1000] text-white">
               <div className="space-y-2">
                 {/* Header info */}
@@ -5380,10 +5102,10 @@ export default function App() {
       />
 
       {/* ========================================================================= */}
-      {/* COMPLETED RIDE RECEIPT & RATING MODAL */}
+      {/* COMPLETED RIDE RECEIPT & RATING MODAL (Passenger Side Only) */}
       {/* ========================================================================= */}
       <AnimatePresence>
-        {showReceipt && pickup && destination && activeDriver && (
+        {showReceipt && role === 'passenger' && pickup && destination && activeDriver && (
           <div className="fixed inset-0 bg-brand-midnight/80 backdrop-blur-md z-[2000] flex items-center justify-center p-4" id="receipt-modal">
             <ParticleExplosion particleCount={75} />
             <motion.div
@@ -5593,6 +5315,75 @@ export default function App() {
                     Confirm & Close Receipt
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* DRIVER END-OF-TRIP EARNINGS SUMMARY MODAL */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {role === 'driver' && rideStatus === 'completed' && (
+          <div className="fixed inset-0 bg-brand-midnight/80 backdrop-blur-md z-[2000] flex items-center justify-center p-4" id="driver-completed-modal">
+            <ParticleExplosion particleCount={60} />
+            <motion.div
+              initial={{ scale: 0.7, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 20 }}
+              className="bg-brand-deep border border-brand-gold/40 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl text-white font-sans relative z-[2001]"
+            >
+              <div className="p-5 text-center border-b border-brand-input/40 bg-gradient-to-b from-emerald-500/15 via-brand-gold/10 to-transparent space-y-2">
+                <div className="w-12 h-12 bg-emerald-500 text-brand-midnight rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30">
+                  <Check size={26} className="stroke-[3.5]" />
+                </div>
+                <span className="inline-block bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider border border-emerald-500/30">
+                  {slangMode ? "🎉 Course Terminée !" : "🎉 Trip Completed!"}
+                </span>
+                <h3 className="text-base font-black text-white">{slangMode ? "Résumé des Gains Chauffeur" : "Driver Earnings Summary"}</h3>
+              </div>
+
+              <div className="p-5 space-y-4 text-xs font-semibold">
+                <div className="space-y-2.5 bg-brand-input/40 p-3 rounded-2xl border border-brand-card/80">
+                  <div className="flex justify-between">
+                    <span className="text-brand-text-muted">Ramassage (A) :</span>
+                    <strong className="text-white text-right max-w-[170px] truncate">{pickup?.name || driverRideRequest?.pickupName || "Lieu d'embarquement"}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-brand-text-muted">Dépôt (B) :</span>
+                    <strong className="text-white text-right max-w-[170px] truncate">{destination?.name || driverRideRequest?.destName || "Destination"}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-brand-text-muted">Mode de paiement :</span>
+                    {getPaymentBadge(paymentMethod)}
+                  </div>
+                </div>
+
+                <div className="bg-brand-gold/10 border border-brand-gold/30 p-3.5 rounded-2xl text-center space-y-1">
+                  <span className="text-[10px] text-brand-text-muted font-bold uppercase tracking-wider block">
+                    {slangMode ? "Votre Gain Net (Portefeuille Wanda)" : "Your Net Payout"}
+                  </span>
+                  <p className="text-2xl font-black text-brand-gold font-mono">
+                    {activeFareToCharge.toLocaleString('fr-FR')} FCFA
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setRideStatus('idle');
+                    setDriverRideRequest(null);
+                    setDriverLoc(null);
+                    setShowChat(false);
+                    setCurrentRideWaitingTime(0);
+                    setCurrentRideWaitingFare(0);
+                  }}
+                  className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-3 rounded-2xl text-xs transition cursor-pointer shadow-lg shadow-brand-gold/25 flex items-center justify-center gap-2"
+                  id="driver-back-online-btn"
+                >
+                  <RotateCcw size={14} />
+                  <span>{slangMode ? "Prêt pour la prochaine course" : "Back Online for Next Ride"}</span>
+                </button>
               </div>
             </motion.div>
           </div>
@@ -6059,44 +5850,44 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-brand-midnight/95 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/90 backdrop-blur-2xl"
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-brand-card/90 border border-brand-gold/20 w-full max-w-sm rounded-3xl p-6 shadow-2xl flex flex-col items-center justify-between min-h-[480px] text-white relative overflow-hidden"
+              className="bg-gradient-to-b from-brand-midnight via-brand-card to-brand-midnight border-2 border-brand-gold/40 w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-[0_0_80px_rgba(0,0,0,0.95)] flex flex-col items-center justify-between min-h-[480px] text-white relative overflow-hidden my-auto"
             >
               {/* Elegant ambient glow background */}
-              <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-gold/15 rounded-full blur-3xl pointer-events-none"></div>
 
               {/* Header Status */}
-              <div className="text-center w-full">
-                <span className="text-[10px] font-black uppercase tracking-widest text-brand-gold bg-brand-gold/10 px-3 py-1 rounded-full border border-brand-gold/20">
-                  Wanda In-App Call
+              <div className="text-center w-full z-10">
+                <span className="text-[11px] font-black uppercase tracking-widest text-brand-gold bg-brand-gold/10 px-3.5 py-1.5 rounded-full border border-brand-gold/30 shadow-md">
+                  WANDA IN-APP CALL
                 </span>
-                <p className="text-xs text-brand-text-muted mt-3 font-semibold">
-                  {callState === 'outgoing' && 'Appel en cours / Ringing...'}
-                  {callState === 'incoming' && 'Appel entrant / Incoming...'}
-                  {callState === 'active' && 'Appel actif / Active Call'}
-                </p>
+                <h3 className="text-sm font-black text-white mt-3 tracking-wide">
+                  {callState === 'outgoing' && (slangMode ? 'Appel en cours...' : 'Outgoing Call...')}
+                  {callState === 'incoming' && (slangMode ? 'Appel Entrant' : 'Incoming Call')}
+                  {callState === 'active' && (slangMode ? 'Appel Actif' : 'Active Call')}
+                </h3>
               </div>
 
               {/* Calling Avatar/Logo Pulsing animation */}
-              <div className="flex flex-col items-center gap-4 my-auto">
+              <div className="flex flex-col items-center gap-4 my-auto z-10">
                 <div className="relative">
                   {/* Multiple pulsing rings */}
                   {(callState === 'outgoing' || callState === 'incoming') && (
                     <>
                       <div className="absolute inset-0 bg-brand-gold/30 rounded-full animate-ping scale-125"></div>
-                      <div className="absolute inset-0 bg-brand-gold/15 rounded-full animate-ping scale-150"></div>
+                      <div className="absolute inset-0 bg-brand-gold/20 rounded-full animate-ping scale-150"></div>
                     </>
                   )}
                   {callState === 'active' && (
-                    <div className="absolute inset-0 bg-emerald-500/10 rounded-full animate-pulse scale-110"></div>
+                    <div className="absolute inset-0 bg-emerald-500/20 rounded-full animate-pulse scale-125"></div>
                   )}
 
-                  <div className="relative w-24 h-24 rounded-full bg-brand-deep border-4 border-brand-gold p-1 flex items-center justify-center shadow-2xl shadow-brand-gold/20">
+                  <div className="relative w-28 h-28 rounded-full bg-brand-deep border-4 border-brand-gold p-1 flex items-center justify-center shadow-2xl shadow-brand-gold/30">
                     <img
                       src={
                         role === 'passenger'
@@ -6111,27 +5902,27 @@ export default function App() {
                 </div>
 
                 <div className="text-center">
-                  <h4 className="text-lg font-black text-white uppercase tracking-tight">
+                  <h4 className="text-xl font-black text-white uppercase tracking-tight">
                     {role === 'passenger'
                       ? (activeDriver?.name || (language === 'fr' ? 'Chauffeur Wanda' : 'Wanda Driver'))
-                      : (driverRideRequest?.passengerName || user?.name || 'Passenger Client')}
+                      : (driverRideRequest?.passengerName || user?.name || 'Passager Client')}
                   </h4>
-                  <p className="text-xs text-brand-text-muted font-bold mt-1">
+                  <p className="text-xs text-brand-gold font-bold mt-1 uppercase tracking-wider">
                     {role === 'passenger'
                       ? `${language === 'fr' ? 'Chauffeur' : 'Driver'} (${(activeDriver?.vehicleType || activeDriver?.vehicleModel || 'TAXI').toUpperCase()})`
-                      : (slangMode ? 'Client Passager' : 'Passenger Client')}
+                      : (slangMode ? 'Client Passager Wanda' : 'Wanda Passenger')}
                   </p>
                 </div>
 
                 {/* Duration indicator or Ringing Waveform */}
                 {callState === 'active' ? (
                   <div className="flex flex-col items-center gap-2">
-                    <span className="font-mono text-xl font-black text-brand-gold">
+                    <span className="font-mono text-2xl font-black text-brand-gold">
                       {Math.floor(callDuration / 60).toString().padStart(2, '0')}:
                       {(callDuration % 60).toString().padStart(2, '0')}
                     </span>
                     {/* Animated sound waves */}
-                    <div className="flex items-center gap-1 h-4 mt-1">
+                    <div className="flex items-center gap-1.5 h-5 mt-1">
                       {[1, 2, 3, 4, 5, 4, 3, 2, 1].map((val, idx) => (
                         <motion.span
                           key={idx}
@@ -6143,17 +5934,17 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-brand-text-muted animate-pulse font-medium">
-                    Securing encrypted connection...
+                  <p className="text-xs text-brand-text-muted animate-pulse font-medium">
+                    {slangMode ? "Connexion sécurisée en cours..." : "Securing encrypted connection..."}
                   </p>
                 )}
               </div>
 
               {/* Calling Controls */}
-              <div className="w-full space-y-6">
+              <div className="w-full space-y-4 z-10">
                 {/* Speaker & Mute Buttons */}
                 {callState === 'active' && (
-                  <div className="flex justify-center gap-8">
+                  <div className="flex justify-center gap-6 mb-2">
                     <button
                       onClick={() => setIsMuted(!isMuted)}
                       className={`p-3.5 rounded-2xl border transition cursor-pointer ${
@@ -6178,44 +5969,161 @@ export default function App() {
                 )}
 
                 {/* Decline, Accept, End Buttons */}
-                <div className="flex justify-center items-center gap-6">
+                <div className="w-full">
                   {callState === 'incoming' ? (
-                    <>
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full">
                       {/* Decline Call */}
                       <button
                         onClick={declineInAppCall}
-                        className="w-16 h-16 bg-rose-600 hover:bg-rose-500 rounded-full flex items-center justify-center text-white shadow-xl shadow-rose-600/25 transition cursor-pointer"
+                        className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 rounded-2xl flex items-center justify-center gap-2 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30 transition cursor-pointer active:scale-95 border border-rose-400/30"
                       >
-                        <PhoneOff size={24} className="stroke-[2.5]" />
+                        <PhoneOff size={18} className="stroke-[2.5]" />
+                        <span>{slangMode ? "Refuser" : "Decline"}</span>
                       </button>
 
                       {/* Answer Call */}
                       <button
                         onClick={answerInAppCall}
-                        className="w-16 h-16 bg-emerald-500 hover:bg-emerald-400 rounded-full flex items-center justify-center text-white shadow-xl shadow-emerald-500/25 transition cursor-pointer animate-bounce"
+                        className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 rounded-2xl flex items-center justify-center gap-2 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/30 transition cursor-pointer active:scale-95 border border-emerald-300/30 animate-pulse"
                       >
-                        <Phone size={24} className="stroke-[2.5]" />
+                        <Phone size={18} className="stroke-[2.5]" />
+                        <span>{slangMode ? "Accepter" : "Accept"}</span>
                       </button>
-                    </>
+                    </div>
                   ) : (
                     /* End Call (for outgoing & active states) */
                     <button
                       onClick={endInAppCall}
-                      className="w-16 h-16 bg-rose-600 hover:bg-rose-500 rounded-full flex items-center justify-center text-white shadow-xl shadow-rose-600/25 transition cursor-pointer"
+                      className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 rounded-2xl flex items-center justify-center gap-2 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30 transition cursor-pointer active:scale-95 border border-rose-400/30"
                     >
-                      <PhoneOff size={24} className="stroke-[2.5]" />
+                      <PhoneOff size={18} className="stroke-[2.5]" />
+                      <span>{slangMode ? "Raccrocher" : "End Call"}</span>
                     </button>
                   )}
                 </div>
 
                 {/* Background permissions info note */}
-                <p className="text-[9px] text-brand-text-muted/80 text-center px-2 italic font-medium">
+                <p className="text-[9.5px] text-brand-text-muted text-center px-2 italic font-medium">
                   ℹ️ {language === 'fr' 
-                    ? "Sonneries & vibrations Web Audio. Pour la sonnerie en arrière-plan écran éteint, autorisez les notifications Push."
-                    : "In-app ringtone & vibration active via Web Audio. Background ringing when app closed requires push permissions."}
+                    ? "Audio chiffré de bout en bout Wanda In-App."
+                    : "Wanda In-App encrypted audio connection."}
                 </p>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* FULL-SCREEN TAKEOVER MODAL FOR INCOMING RIDE REQUEST */}
+      <AnimatePresence>
+        {role === 'driver' && driverRideRequest && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed inset-0 z-[9999] bg-brand-midnight/98 backdrop-blur-2xl flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+          >
+            <div className="w-full max-w-md bg-gradient-to-b from-brand-midnight via-brand-card to-brand-midnight border-2 border-brand-gold/70 rounded-3xl p-4 sm:p-5 shadow-[0_0_80px_rgba(234,179,8,0.3)] flex flex-col justify-between space-y-3.5 my-auto relative overflow-hidden text-white">
+              
+              {/* Top ambient glow */}
+              <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-gold/15 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Top Header & Countdown Timer */}
+              <div className="flex items-center justify-between border-b border-brand-gold/30 pb-2.5 z-10">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-brand-gold animate-ping" />
+                  <span className="text-xs font-black uppercase tracking-widest text-brand-gold">
+                    ⚡ {slangMode ? "DEMANDE ENTRANTE" : "INCOMING RIDE REQUEST"}
+                  </span>
+                </div>
+                <span className="font-mono text-sm text-brand-gold font-black bg-brand-gold/10 border border-brand-gold/40 px-3 py-1 rounded-xl shadow-inner">
+                  ⏱️ {requestCountdown}s
+                </span>
+              </div>
+
+              {/* Passenger Profile */}
+              <div className="flex items-center gap-3 bg-brand-input/60 border border-brand-card p-3 rounded-2xl z-10">
+                <div className="w-11 h-11 rounded-full bg-brand-deep border-2 border-brand-gold flex items-center justify-center text-xl shadow-md shrink-0 font-bold">
+                  👤
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-black text-white flex items-center justify-between gap-1.5">
+                    <span className="truncate">{driverRideRequest.passengerName}</span>
+                    <span className="text-xs text-brand-gold font-black bg-brand-gold/10 px-2 py-0.5 rounded-lg shrink-0 border border-brand-gold/20">★ 4.9</span>
+                  </h4>
+                  <p className="text-[11px] text-brand-text-muted font-bold mt-0.5">
+                    {slangMode ? "Passager vérifié Wanda" : "Verified Wanda Rider"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Pickup & Dropoff Addresses */}
+              <div className="space-y-2.5 bg-brand-input/40 border border-brand-card/80 p-3 rounded-2xl text-xs font-semibold z-10">
+                <div className="flex items-start gap-2.5">
+                  <span className="w-3 h-3 rounded-full bg-emerald-400 shrink-0 mt-0.5 animate-pulse" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[8.5px] text-brand-text-muted block uppercase font-bold tracking-wider">
+                      {language === 'fr' ? "POINT DE RAMASSAGE (A)" : "PICKUP LOCATION (A)"}
+                    </span>
+                    <p className="font-extrabold text-white text-xs sm:text-sm truncate">{driverRideRequest.pickupName}</p>
+                  </div>
+                </div>
+
+                <div className="w-full border-t border-brand-card/50 my-1" />
+
+                <div className="flex items-start gap-2.5">
+                  <span className="w-3 h-3 rounded-full bg-brand-gold shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[8.5px] text-brand-text-muted block uppercase font-bold tracking-wider">
+                      {language === 'fr' ? "POINT DE DÉPÔT (B)" : "DROPOFF LOCATION (B)"}
+                    </span>
+                    <p className="font-extrabold text-white text-xs sm:text-sm truncate">{driverRideRequest.destName}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Real-Time Mini Map Preview */}
+              <div className="space-y-1 z-10">
+                <span className="text-[8.5px] text-brand-text-muted block uppercase font-black tracking-wider">
+                  {slangMode ? "APERCU ITINÉRAIRE GPS" : "GPS ROUTE PREVIEW"}
+                </span>
+                <div 
+                  id="driver-request-map-preview" 
+                  className="w-full h-24 sm:h-28 rounded-2xl overflow-hidden border border-brand-gold/40 bg-brand-input/60 relative z-10"
+                />
+              </div>
+
+              {/* Fare & Payment Badge */}
+              <div className="flex justify-between items-center bg-brand-gold/10 border border-brand-gold/40 p-3 rounded-2xl text-xs z-10">
+                <div>
+                  <p className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider">{slangMode ? "Mode de Paiement" : "Payment Method"}</p>
+                  <div className="mt-0.5">{getPaymentBadge(driverRideRequest.payment)}</div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] text-brand-text-muted font-bold uppercase tracking-wider">{slangMode ? "Gain Estimé" : "Fare Payout"}</p>
+                  <strong className="text-brand-gold text-base sm:text-lg font-black font-mono">
+                    {driverRideRequest.fare.toLocaleString('fr-FR')} FCFA
+                  </strong>
+                </div>
+              </div>
+
+              {/* Accept & Decline Buttons */}
+              <div className="grid grid-cols-2 gap-3 pt-1 z-10">
+                <button
+                  onClick={handleDeclineRequest}
+                  className="w-full py-3.5 px-3 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-2xl text-xs sm:text-sm font-black uppercase tracking-wider transition cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  ✕ {slangMode ? "Refuser" : "Decline"}
+                </button>
+                <button
+                  onClick={handleAcceptRequest}
+                  className="w-full py-3.5 px-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg shadow-emerald-500/30 transition cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 border border-emerald-300/40 animate-pulse"
+                >
+                  ✓ {slangMode ? "Accepter" : "Accept Ride"}
+                </button>
+              </div>
+
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

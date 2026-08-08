@@ -389,9 +389,9 @@ export default function TaxiMap({
   const [isLayersMenuExpanded, setIsLayersMenuExpanded] = useState(false);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [selectedBaseLayer, setSelectedBaseLayer] = useState<'dark' | 'streets' | 'satellite' | 'terrain'>('dark');
-  const [showRoadNames, setShowRoadNames] = useState(true);
-  const [showBuildingPois, setShowBuildingPois] = useState(true);
-  const [showPublicTransit, setShowPublicTransit] = useState(true);
+  const [showRoadNames, setShowRoadNames] = useState(false);
+  const [showBuildingPois, setShowBuildingPois] = useState(false);
+  const [showPublicTransit, setShowPublicTransit] = useState(false);
 
   const layersMenuRef = useRef<HTMLDivElement>(null);
 
@@ -453,7 +453,9 @@ export default function TaxiMap({
     const map = mapRef.current;
     if (!map) return;
 
-    if (showRoadNames && role !== 'passenger') {
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+    if (showRoadNames && role !== 'passenger' && !isRideActive) {
       if (roadNamesLayerGroupRef.current && !map.hasLayer(roadNamesLayerGroupRef.current)) {
         roadNamesLayerGroupRef.current.addTo(map);
       }
@@ -462,13 +464,15 @@ export default function TaxiMap({
         roadNamesLayerGroupRef.current.remove();
       }
     }
-  }, [showRoadNames, role]);
+  }, [showRoadNames, role, status]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (showBuildingPois && role !== 'passenger') {
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+    if (showBuildingPois && role !== 'passenger' && !isRideActive) {
       if (buildingPoisLayerGroupRef.current && !map.hasLayer(buildingPoisLayerGroupRef.current)) {
         buildingPoisLayerGroupRef.current.addTo(map);
       }
@@ -477,13 +481,15 @@ export default function TaxiMap({
         buildingPoisLayerGroupRef.current.remove();
       }
     }
-  }, [showBuildingPois, role]);
+  }, [showBuildingPois, role, status]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (showPublicTransit && role !== 'passenger') {
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+    if (showPublicTransit && role !== 'passenger' && !isRideActive) {
       if (publicTransitLayerGroupRef.current && !map.hasLayer(publicTransitLayerGroupRef.current)) {
         publicTransitLayerGroupRef.current.addTo(map);
       }
@@ -492,7 +498,26 @@ export default function TaxiMap({
         publicTransitLayerGroupRef.current.remove();
       }
     }
-  }, [showPublicTransit, role]);
+  }, [showPublicTransit, role, status]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
+
+    if (buildingFootprintsLayerGroupRef.current) {
+      if (!isRideActive && role !== 'passenger') {
+        if (!map.hasLayer(buildingFootprintsLayerGroupRef.current)) {
+          buildingFootprintsLayerGroupRef.current.addTo(map);
+        }
+      } else {
+        if (map.hasLayer(buildingFootprintsLayerGroupRef.current)) {
+          buildingFootprintsLayerGroupRef.current.remove();
+        }
+      }
+    }
+  }, [role, status]);
 
   // Collapsible Passenger ETA Status Card States, Refs and Handlers
   const [isEtaCardExpanded, setIsEtaCardExpanded] = useState(false);
@@ -795,13 +820,6 @@ export default function TaxiMap({
       });
       L.marker([transit.lat, transit.lng], { icon }).addTo(publicTransitLayerGroup);
     });
-
-    // Add clean zoom control at bottom-right for driver/dev
-    if (role !== 'passenger') {
-      L.control.zoom({
-        position: 'bottomright'
-      }).addTo(map);
-    }
 
     mapRef.current = map;
 
@@ -1153,7 +1171,7 @@ export default function TaxiMap({
     const map = mapRef.current;
     if (!map || !(map as any)._loaded || !map.getContainer()) return;
 
-    const isRideActive = (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && role !== 'driver';
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
     const isPassengerMode = role === 'passenger';
 
     // Clear everything if heatmap is hidden, a ride is active, or in passenger mode
@@ -1260,7 +1278,7 @@ export default function TaxiMap({
     const overlayPane = map.getPanes().overlayPane;
     if (!overlayPane) return;
 
-    const isRideActive = (status === 'driver_found' || status === 'arriving' || status === 'in_progress') && role !== 'driver';
+    const isRideActive = status === 'driver_found' || status === 'arriving' || status === 'in_progress';
     const isPassengerMode = role === 'passenger';
 
     // If heatmap is disabled, a ride is active, or in passenger mode, clear any existing D3 overlays and return
@@ -2485,157 +2503,6 @@ export default function TaxiMap({
         }}
       />
 
-      {/* Tactical Coordinate Grid Overlay (Developer/Driver mode) */}
-      {showMapGrid && role !== 'passenger' && (
-        <div 
-          className="absolute inset-0 z-[499] pointer-events-none overflow-hidden select-none"
-          id="map-coordinate-grid"
-          style={{
-            transform: isTilted === 'isometric'
-              ? 'perspective(1200px) rotateX(45deg) rotateZ(-1deg) scale(1.26) translateY(-4%)'
-              : (isTilted === true || isTilted === 'tilted')
-                ? 'perspective(1200px) rotateX(54deg) rotateZ(-2deg) scale(1.38) translateY(-6%)'
-                : 'perspective(1200px) rotateX(0deg) rotateZ(0deg) scale(1) translateY(0)',
-            transformOrigin: 'bottom center',
-            transition: 'transform 1.1s cubic-bezier(0.25, 1, 0.3, 1), opacity 1.1s cubic-bezier(0.25, 1, 0.3, 1)',
-            backgroundImage: `
-              linear-gradient(to right, rgba(255, 211, 67, 0.03) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(255, 211, 67, 0.03) 1px, transparent 1px),
-              linear-gradient(to right, rgba(255, 211, 67, 0.08) 1.5px, transparent 1.5px),
-              linear-gradient(to bottom, rgba(255, 211, 67, 0.08) 1.5px, transparent 1.5px)
-            `,
-            backgroundSize: '40px 40px, 40px 40px, 160px 160px, 160px 160px',
-            backgroundPosition: 'center center',
-          }}
-        >
-          {/* Edge Tick Coordinate Labels */}
-          <div className="absolute top-[10%] left-6 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
-            LAT: 04.0580° N
-          </div>
-          <div className="absolute top-[50%] left-6 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
-            LAT: 04.0435° N
-          </div>
-          <div className="absolute top-[90%] left-6 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
-            LAT: 04.0290° N
-          </div>
-
-          <div className="absolute bottom-6 left-[10%] text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
-            LNG: 09.6950° E
-          </div>
-          <div className="absolute bottom-6 left-[50%] -translate-x-1/2 text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
-            LNG: 09.7100° E
-          </div>
-          <div className="absolute bottom-6 right-[10%] text-[7px] font-mono text-brand-gold/45 bg-brand-midnight/40 px-1 py-0.5 rounded backdrop-blur-xs">
-            LNG: 09.7250° E
-          </div>
-
-          {/* Grid Scale Indicator Info */}
-          <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-brand-midnight/70 backdrop-blur-md px-2 py-0.5 rounded-full text-[7.5px] font-mono text-brand-gold/60 border border-brand-gold/10 font-bold uppercase tracking-wider">
-            {slangMode ? "Échelle Grille: 1 Bloc = ~500m" : "Grid Overlay: 1 Square = ~500m"}
-          </div>
-        </div>
-      )}
-
-      {/* 2D / 3D Perspective Visual Snapping Effect Overlay */}
-      <AnimatePresence>
-        {isTiltSnapping && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="absolute inset-0 pointer-events-none z-[990] flex flex-col items-center justify-center overflow-hidden"
-            id="map-viewport-snap-overlay"
-          >
-            {/* Animated Vertical Center Alignment Axis */}
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-gradient-to-b from-transparent via-brand-gold to-transparent shadow-[0_0_16px_#ffd343] animate-pulse" />
-            
-            {/* Horizontal Crosshair Reference */}
-            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[1px] bg-gradient-to-r from-transparent via-brand-gold/60 to-transparent" />
-
-            {/* Central Target Snapping Ring & Reticle */}
-            <div className="relative flex items-center justify-center">
-              <div className="absolute w-32 h-32 rounded-full border-2 border-brand-gold/50 animate-ping opacity-60" />
-              <div className="w-20 h-20 rounded-full border-2 border-brand-gold bg-brand-midnight/80 backdrop-blur-md flex items-center justify-center shadow-[0_0_30px_rgba(255,211,67,0.6)]">
-                <div className="w-3 h-3 rounded-full bg-brand-gold animate-bounce shadow-[0_0_10px_#ffd343]" />
-              </div>
-            </div>
-
-            {/* Vertical Snapping Mode Badge */}
-            <div className="mt-6 bg-brand-midnight/95 border-2 border-brand-gold/90 px-3.5 py-1.5 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.8)] shadow-brand-gold/20 flex items-center gap-2 backdrop-blur-md">
-              <span className="w-2 h-2 rounded-full bg-brand-gold animate-ping" />
-              <p className="text-[10px] font-black tracking-widest text-brand-gold uppercase font-mono">
-                {isTilted === 'isometric' 
-                  ? (slangMode ? "🎯 VUE 3D ISOMÉTRIQUE (45°) — BÂTIMENTS TRANSLUCIDES (20%)" : "🎯 45° ISOMETRIC VIEW — SEE-THROUGH FOOTPRINTS (20%)")
-                  : (isTilted === true || isTilted === 'tilted')
-                    ? (slangMode ? "🎯 VUE 3D PERSPECTIVE (54°) — BÂTIMENTS TRANSLUCIDES (20%)" : "🎯 54° PERSPECTIVE VIEW — SEE-THROUGH FOOTPRINTS (20%)")
-                    : (slangMode ? "🎯 VUE 2D PLATE CENTRÉE (0°)" : "🎯 2D FLAT VIEW CENTERED")}
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Persistent 3D & Auto-Detected Building Translucency Status Chip (Driver / Dev mode) */}
-      {role !== 'passenger' && (autoDetectedZone || isTilted === true || isTilted === 'tilted' || isTilted === 'isometric') && (
-        <motion.div
-          initial={{ opacity: 0, y: -8, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -8, scale: 0.95 }}
-          id="building-footprints-translucency-chip"
-          className="absolute top-12 left-4 z-[1010] flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-brand-midnight/95 border border-amber-400/80 shadow-xl shadow-amber-400/10 backdrop-blur-md text-amber-300 text-[9.5px] font-black tracking-wide font-mono"
-        >
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
-          <span>
-            {autoDetectedZone
-              ? (slangMode
-                  ? `⚡ AUTO-DÉTECTION : ${(autoDetectedZone.name || '').toUpperCase()} (${autoDetectedZone.city}) — BÂTIMENTS TRANSLUCIDES (20%)`
-                  : `⚡ AUTO-DETECTED HIGH-DENSITY: ${(autoDetectedZone.name || '').toUpperCase()} (${autoDetectedZone.city}) — SEE-THROUGH FOOTPRINTS (20%)`)
-              : (slangMode
-                  ? "🏢 Emprises Bâtiments Translucides (20% Opacité) — Mode 3D Actif"
-                  : "🏢 See-Through Building Footprints (20% Opacity) — 3D Tilt Active")}
-          </span>
-        </motion.div>
-      )}
-
-      {/* Map Detail Mode Adaptive Badge (Driver / Dev mode) */}
-      {role !== 'passenger' && (
-        <div 
-          id="map-detail-badge"
-          className="absolute top-4 left-4 z-[1010] flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-brand-midnight/95 backdrop-blur-md border border-brand-input/40 shadow-2xl transition-all duration-300 pointer-events-auto"
-        >
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-              mapDetailMode === 'clean' 
-                ? 'bg-emerald-400' 
-                : mapDetailMode === 'moderate' 
-                  ? 'bg-sky-400' 
-                  : 'bg-brand-gold/80'
-            }`}></span>
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${
-              mapDetailMode === 'clean' 
-                ? 'bg-emerald-500' 
-                : mapDetailMode === 'moderate' 
-                  ? 'bg-sky-500' 
-                  : 'bg-brand-gold'
-            }`}></span>
-          </span>
-          <div className="flex flex-col">
-            <span className="text-[7.5px] font-extrabold uppercase tracking-widest text-white leading-none">
-              {slangMode ? "Densité Détails" : "Label Density"}
-            </span>
-            <span className="text-[8.5px] font-bold text-brand-text-muted mt-0.5 leading-none">
-              {mapDetailMode === 'clean' 
-                ? (slangMode ? "Épuré (Zoom éloigné)" : "Minimal (High Speed)") 
-                : mapDetailMode === 'moderate'
-                  ? (slangMode ? "Modéré (Rues principales)" : "Medium (Transit)")
-                  : (slangMode ? "Complet (Arrêt/POI)" : "Full Detail (Approach)")
-              }
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Dynamic Custom Map Layer & Advanced Settings Controller (Driver / Dev mode) */}
       {role !== 'passenger' && (
         <div 
@@ -2846,48 +2713,7 @@ export default function TaxiMap({
         )}
       </button>
 
-      {/* FLOATING METALLIC GOLD ZOOM LEVEL CHIP OVERLAY IN MAP VIEWPORT (Driver/Dev mode) */}
-      {role !== 'passenger' && (
-        <motion.div
-          id="map-zoom-indicator"
-          key={`zoom-ind-${currentZoom}`}
-          initial={{ scale: 0.92, opacity: 0 }}
-          animate={{ 
-            scale: isIntegerGlow ? [1, 1.15, 1.05, 1] : 1,
-            opacity: 1,
-            boxShadow: isIntegerGlow
-              ? "0 0 25px rgba(255,211,67,0.85)"
-              : "0 6px 20px rgba(0, 0, 0, 0.45)"
-          }}
-          transition={{ duration: 0.25, ease: "easeOut" }}
-          className="absolute top-3.5 left-3.5 z-[1010] flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-200/90 bg-gradient-to-r from-amber-300 via-brand-gold to-yellow-500 text-brand-midnight shadow-[0_4px_16px_rgba(255,211,67,0.4)] select-none transition-all duration-300 backdrop-blur-md"
-          title={slangMode ? "Niveau de Zoom Leaflet Actuel" : "Current Leaflet Map Visual Zoom Scale"}
-        >
-          <div className="relative flex items-center justify-center">
-            <span className={`w-2 h-2 rounded-full ${isIntegerGlow ? 'bg-brand-midnight animate-ping' : 'bg-brand-midnight/90'}`} />
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-midnight absolute" />
-          </div>
 
-          <div className="flex items-center gap-1 font-mono">
-            <span className="text-[9px] font-black uppercase tracking-wider text-brand-midnight/80 font-sans">
-              ZOOM
-            </span>
-            <strong className="text-xs font-black tracking-tight text-brand-midnight">
-              {currentZoom.toFixed(1)}x
-            </strong>
-          </div>
-
-          {/* Momentary Integer Zoom Pulse Ring Effect */}
-          {isIntegerGlow && (
-            <motion.span
-              initial={{ scale: 0.8, opacity: 1 }}
-              animate={{ scale: 1.5, opacity: 0 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-              className="absolute inset-0 rounded-full border-2 border-brand-midnight pointer-events-none"
-            />
-          )}
-        </motion.div>
-      )}
 
       {/* HIGH-VISIBILITY FLOATING ROUTE INSTRUCTION CHIP IN MAP VIEWPORT */}
       {(status !== 'idle' || role !== 'passenger') && (() => {
@@ -3337,10 +3163,12 @@ export default function TaxiMap({
 
               {/* Coordinates display or placeholder */}
               {liveCoords ? (
-                <div className="bg-brand-input/40 border border-brand-card p-2 rounded-xl text-[10px] font-mono flex items-center justify-between text-brand-text-muted">
-                  <span>Lat: {liveCoords.lat.toFixed(6)}</span>
-                  <span>Lng: {liveCoords.lng.toFixed(6)}</span>
-                  <span className="text-emerald-400">● Live</span>
+                <div className="bg-brand-input/40 border border-brand-card p-2 rounded-xl text-[10px] flex items-center justify-between text-brand-text-muted">
+                  <span className="font-bold text-white">{slangMode ? "Signal GPS Végétal" : "GPS Signal Active"}</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Live</span>
+                  </span>
                 </div>
               ) : (
                 <div className="text-[10px] text-brand-text-muted text-center italic py-1 font-medium">
@@ -3632,133 +3460,32 @@ export default function TaxiMap({
         </div>
       )}
 
-      {/* FLOATING TACTICAL TURN-BY-TURN INSTRUCTION CARD (Only visible for Drivers) */}
+      {/* CLEAN SINGLE-LAYER TOP NAVIGATION BANNER (For Drivers) */}
       {navInstructions.length > 0 && role === 'driver' && (
         <div 
           id="floating-turn-instruction-card" 
-          className="absolute top-4 left-4 z-[1010] max-w-xs w-72 transition-all duration-300"
+          className="absolute top-4 left-4 z-[1010] max-w-sm w-72 sm:w-80 transition-all duration-300"
         >
-          {isTacticalOverlayMinimized ? (
-            /* Minimized coin button */
-            <button
-              onClick={() => setIsTacticalOverlayMinimized(false)}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 hover:border-brand-gold text-brand-gold shadow-2xl hover:bg-brand-card transition-all duration-200 cursor-pointer active:scale-95 text-xs font-bold"
-              title={slangMode ? "Déployer Guide Tactique" : "Expand Tactical Copilot"}
-            >
-              <Navigation size={14} className="text-brand-gold rotate-45 animate-pulse" />
-              <span>{slangMode ? "Prochain Virage" : "Next Turn"}</span>
-            </button>
-          ) : (
-            /* Fully Expanded Co-Pilot HUD Card */
-            <div className="bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 rounded-2xl shadow-2xl text-white p-3.5 space-y-3.5 transition-all animate-fade-in relative overflow-hidden">
-              {/* Card top banner with amber warning neon glow */}
-              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-brand-gold via-yellow-400 to-brand-gold animate-pulse" />
-              
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <span className="font-black text-brand-gold uppercase tracking-widest text-[9px] flex items-center gap-1.5 font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand-gold animate-ping" />
-                  {slangMode ? "CO-PILOTE TACTIQUE" : "TACTICAL CO-PILOT"}
-                </span>
-                <button
-                  onClick={() => setIsTacticalOverlayMinimized(true)}
-                  className="text-brand-text-muted hover:text-white transition p-0.5 rounded hover:bg-white/5 cursor-pointer"
-                  title={slangMode ? "Réduire l'overlay" : "Minimize HUD"}
-                >
-                  <ChevronDown size={14} />
-                </button>
-              </div>
-
-              {/* Main Instruction Body */}
-              <div className="flex items-start gap-3 bg-brand-input/20 p-2.5 rounded-xl border border-brand-input/30 relative">
-                {/* Visual Turn Icon */}
-                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0 shadow-inner">
-                  {getManeuverIcon(navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.modifier || navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.type)}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] uppercase font-black text-brand-gold tracking-wider leading-none">
-                    {previewStepIndex !== null ? (slangMode ? `ÉTAPE SIMULÉE ${previewStepIndex + 1}/${navInstructions.length}` : `PREVIEWING STEP ${previewStepIndex + 1}/${navInstructions.length}`) : (slangMode ? "VIRAGE IMMINENT" : "NEXT ACTION")}
-                  </p>
-                  <h4 className="text-[11.5px] font-black leading-snug mt-1 text-white">
-                    {navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.instruction}
-                  </h4>
-                  <p className="text-[10px] text-brand-text-muted font-bold flex items-center gap-1.5 mt-0.5">
-                    <span className="text-brand-gold">
-                      {formatDistance(navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.distance || 0)}
-                    </span>
-                    <span>•</span>
-                    <span>{formatDuration(navInstructions[previewStepIndex !== null ? previewStepIndex : currentStepIndex]?.duration || 0)}</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Step Navigation Slider & Control buttons */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-[8.5px] text-brand-text-muted font-bold uppercase tracking-wider font-mono">
-                  <span>{slangMode ? "Parcours Étapes" : "Route Step Navigator"}</span>
-                  <span className="text-brand-gold font-bold">
-                    {previewStepIndex !== null ? `${previewStepIndex + 1} / ${navInstructions.length}` : `${currentStepIndex + 1} / ${navInstructions.length}`}
-                  </span>
-                </div>
-
-                {/* Progress bar representing our position in the steps */}
-                <div className="h-1.5 w-full bg-brand-input/40 rounded-full overflow-hidden relative">
-                  <div 
-                    className="h-full bg-brand-gold transition-all duration-300 rounded-full shadow-[0_0_8px_rgba(255,211,67,0.6)]"
-                    style={{
-                      width: `${((previewStepIndex !== null ? previewStepIndex : currentStepIndex) + 1) / navInstructions.length * 100}%`
-                    }}
-                  />
-                </div>
-
-                {/* Left/Right controls to browse the route steps */}
-                <div className="flex items-center justify-between pt-1">
-                  <button
-                    disabled={(previewStepIndex !== null ? previewStepIndex : currentStepIndex) === 0}
-                    onClick={() => {
-                      const currentIdx = previewStepIndex !== null ? previewStepIndex : currentStepIndex;
-                      if (currentIdx > 0) {
-                        setPreviewStepIndex(currentIdx - 1);
-                      }
-                    }}
-                    className="p-1 rounded-lg border border-brand-input/50 text-brand-text-muted hover:text-white hover:border-brand-gold/60 disabled:opacity-40 disabled:pointer-events-none transition flex items-center gap-1 cursor-pointer bg-brand-midnight/45"
-                    title="Previous maneuver"
-                  >
-                    <ChevronLeft size={13} />
-                    <span className="text-[8.5px] font-bold uppercase pr-1">{slangMode ? "Préc" : "Prev"}</span>
-                  </button>
-
-                  {/* Auto-sync / Reset button to jump back to real driver live step */}
-                  {previewStepIndex !== null && previewStepIndex !== currentStepIndex && (
-                    <button
-                      onClick={() => setPreviewStepIndex(null)}
-                      className="text-[8.5px] font-black text-brand-gold hover:text-white uppercase px-2 py-0.5 rounded border border-brand-gold/20 hover:border-white transition flex items-center gap-1 cursor-pointer animate-fade-in bg-brand-gold/10"
-                      title="Sync back to live position"
-                    >
-                      <RefreshCw size={9} className="animate-spin-slow" />
-                      <span>{slangMode ? "SYNC DIRECT" : "LIVE SYNC"}</span>
-                    </button>
-                  )}
-
-                  <button
-                    disabled={(previewStepIndex !== null ? previewStepIndex : currentStepIndex) === navInstructions.length - 1}
-                    onClick={() => {
-                      const currentIdx = previewStepIndex !== null ? previewStepIndex : currentStepIndex;
-                      if (currentIdx < navInstructions.length - 1) {
-                        setPreviewStepIndex(currentIdx + 1);
-                      }
-                    }}
-                    className="p-1 rounded-lg border border-brand-input/50 text-brand-text-muted hover:text-white hover:border-brand-gold/60 disabled:opacity-40 disabled:pointer-events-none transition flex items-center gap-1 cursor-pointer bg-brand-midnight/45"
-                    title="Next maneuver"
-                  >
-                    <span className="text-[8.5px] font-bold uppercase pl-1">{slangMode ? "Suiv" : "Next"}</span>
-                    <ChevronRight size={13} />
-                  </button>
-                </div>
-              </div>
+          <div className="bg-brand-midnight/95 backdrop-blur-md border border-brand-gold/40 rounded-2xl shadow-2xl text-white p-3 flex items-center gap-3 relative overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-brand-gold via-yellow-400 to-brand-gold animate-pulse" />
+            
+            <div className="w-10 h-10 rounded-xl bg-brand-gold/20 border border-brand-gold/40 flex items-center justify-center shrink-0 text-brand-gold shadow-md">
+              {getManeuverIcon(navInstructions[currentStepIndex]?.modifier || navInstructions[currentStepIndex]?.type)}
             </div>
-          )}
+
+            <div className="flex-1 min-w-0">
+              <h4 className="text-[12px] font-black leading-snug text-white truncate">
+                {navInstructions[currentStepIndex]?.instruction || "Continue on route"}
+              </h4>
+              <p className="text-[10px] text-brand-text-muted font-bold flex items-center gap-1.5 mt-0.5">
+                <span className="text-brand-gold font-mono font-black">
+                  {formatDistance(navInstructions[currentStepIndex]?.distance || 0)}
+                </span>
+                <span>•</span>
+                <span>{formatDuration(navInstructions[currentStepIndex]?.duration || 0)}</span>
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
