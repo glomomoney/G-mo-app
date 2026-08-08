@@ -1027,7 +1027,7 @@ export default function TaxiMap({
       }
 
       if (darkLabelsLayerRef.current) {
-        darkLabelsLayerRef.current.setOpacity(showRoadNames ? opacity : 0);
+        darkLabelsLayerRef.current.setOpacity((showRoadNames && role !== 'passenger') ? opacity : 0);
       }
       setMapDetailMode(mode);
       if (onZoomChangeRef.current) {
@@ -3052,15 +3052,17 @@ export default function TaxiMap({
               <div className="flex items-center justify-between gap-1">
                 <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-brand-gold flex items-center gap-1">
                   <span className={`w-1.5 h-1.5 rounded-full ${routePolylineVerticesCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                  <span>{slangMode ? "GUIDAGE LEAFLET" : "ROUTE CUE"}</span>
+                  <span>{slangMode ? (role === 'passenger' ? "TRAJET EN COURS" : "GUIDAGE LEAFLET") : (role === 'passenger' ? "RIDE PATH" : "ROUTE CUE")}</span>
                 </span>
 
                 {/* Turn Arrow Indicator Badge & Live Polyline Counter */}
                 <div className="flex items-center gap-1 shrink-0">
                   {turnArrowBadge}
-                  <span className="text-[7.5px] sm:text-[8px] font-mono font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-1 py-0.2 rounded" id="chip-polyline-vertex-badge">
-                    {routePolylineVerticesCount > 0 ? `${routePolylineVerticesCount}p` : "Active"}
-                  </span>
+                  {role !== 'passenger' && (
+                    <span className="text-[7.5px] sm:text-[8px] font-mono font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-1 py-0.2 rounded" id="chip-polyline-vertex-badge">
+                      {routePolylineVerticesCount > 0 ? `${routePolylineVerticesCount}p` : "Active"}
+                    </span>
+                  )}
                 </div>
               </div>
 
