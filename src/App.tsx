@@ -471,6 +471,7 @@ export default function App() {
   const [etaMinutes, setEtaMinutes] = useState<number>(3);
   const [etaStatusText, setEtaStatusText] = useState<string>('');
   const [summaryMetricMode, setSummaryMetricMode] = useState<'time' | 'distance'>('time');
+  const [isProgressExpanded, setIsProgressExpanded] = useState<boolean>(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet'); // defaults to wallet as requested!
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [transactionId, setTransactionId] = useState<string | null>(null);
@@ -3645,187 +3646,229 @@ export default function App() {
                           const totalKm = getDistanceKm(pickup.lat, pickup.lng, destination ? destination.lat : pickup.lat, destination ? destination.lng : pickup.lng) || 1;
 
                           return (
-                            <div className="bg-brand-input border border-brand-card/80 p-3.5 rounded-xl space-y-3 mt-2 shadow-lg" id="passenger-trip-progress">
-                              <div className="flex flex-col gap-2">
-                                <div className="flex justify-between items-center text-[10px]">
-                                  <span className="text-brand-text-muted font-black uppercase tracking-wider flex items-center gap-1.5">
-                                    <span className="inline-block w-2 h-2 rounded-full bg-brand-gold animate-ping" />
-                                    {label}
-                                  </span>
-
-                                  {/* Value Badge that smoothly animates between Estimated Time and Estimated Distance */}
-                                  <AnimatePresence mode="wait">
-                                    {summaryMetricMode === 'time' ? (
-                                      <motion.div
-                                        key="time-value"
-                                        initial={{ opacity: 0, y: -4, scale: 0.92 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        exit={{ opacity: 0, y: 4, scale: 0.92 }}
-                                        transition={{ duration: 0.2 }}
-                                        className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/30 px-2.5 py-1 rounded-lg text-[10px] shadow-sm flex items-center gap-1.5"
-                                      >
-                                        <Clock size={12} className="text-brand-gold animate-pulse shrink-0" />
-                                        <span>
-                                          {calculatedTimeMin <= 0.5
-                                            ? (slangMode ? "< 1 min (Arrivée)" : "< 1 min (Arriving)")
-                                            : `${calculatedTimeMin} min ${slangMode ? "estimé" : "ETA"}`}
-                                        </span>
-                                        <span className="text-[9px] text-brand-text-muted font-normal border-l border-brand-gold/20 pl-1.5">
-                                          ~{formattedArrivalTime}
-                                        </span>
-                                      </motion.div>
-                                    ) : (
-                                      <motion.div
-                                        key="distance-value"
-                                        initial={{ opacity: 0, y: -4, scale: 0.92 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        exit={{ opacity: 0, y: 4, scale: 0.92 }}
-                                        transition={{ duration: 0.2 }}
-                                        className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/30 px-2.5 py-1 rounded-lg text-[10px] shadow-sm flex items-center gap-1.5"
-                                      >
-                                        <Ruler size={12} className="text-brand-gold shrink-0" />
-                                        <span>
-                                          {remainingKm.toFixed(1)} km {slangMode ? "restant" : "remaining"}
-                                        </span>
-                                        <span className="text-[9px] text-brand-text-muted font-normal border-l border-brand-gold/20 pl-1.5">
-                                          {(totalKm - remainingKm > 0 ? (totalKm - remainingKm).toFixed(1) : '0.0')}/{totalKm.toFixed(1)} km
-                                        </span>
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </div>
-
-                                {/* Visual Segmented Toggle Switch for Time vs Distance */}
-                                <div className="flex items-center justify-between bg-brand-midnight/80 p-1 rounded-lg border border-brand-card/80">
-                                  <span className="text-[9px] font-black uppercase text-brand-text-muted px-1.5 flex items-center gap-1 tracking-wider">
-                                    {slangMode ? "AFFICHAGE :" : "SUMMARY METRIC:"}
-                                  </span>
-                                  <div className="flex bg-brand-deep p-0.5 rounded-md border border-brand-input/40 relative">
+                            <div className="mt-2" id="passenger-trip-progress">
+                              {!isProgressExpanded ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsProgressExpanded(true)}
+                                  className="w-full py-2.5 px-3.5 bg-brand-input/80 hover:bg-brand-input border border-brand-card/80 hover:border-brand-gold/50 rounded-2xl flex items-center justify-between text-xs text-brand-text-muted hover:text-white transition-all cursor-pointer shadow-md group active:scale-98"
+                                  title={slangMode ? "Afficher les détails du trajet" : "Show detailed progress bar"}
+                                >
+                                  <div className="flex items-center gap-2.5 font-extrabold text-[11px] min-w-0">
+                                    <div className="w-6.5 h-6.5 rounded-xl bg-brand-gold/15 border border-brand-gold/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                      <Gauge size={13} className="text-brand-gold" />
+                                    </div>
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="text-white truncate font-bold">{label}</span>
+                                      <span className="font-mono text-brand-gold bg-brand-gold/10 border border-brand-gold/30 px-2 py-0.5 rounded-md text-[10px] font-black shrink-0">
+                                        {progress}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-brand-gold font-black bg-brand-card px-2.5 py-1 rounded-xl border border-brand-input shrink-0">
+                                    <span>{calculatedTimeMin <= 0.5 ? "< 1 min" : `${calculatedTimeMin} min`}</span>
+                                    <ChevronDown size={13} className="stroke-[2.5]" />
+                                  </div>
+                                </button>
+                              ) : (
+                                <div className="bg-brand-input border border-brand-card/80 p-3.5 rounded-2xl space-y-3 shadow-xl relative animate-in fade-in zoom-in-95 duration-200">
+                                  <div className="flex justify-between items-center pb-2 border-b border-brand-card/60">
+                                    <span className="text-brand-text-muted font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5">
+                                      <span className="inline-block w-2 h-2 rounded-full bg-brand-gold animate-ping" />
+                                      {label} ({progress}%)
+                                    </span>
                                     <button
                                       type="button"
-                                      onClick={() => setSummaryMetricMode('time')}
-                                      className={`relative px-2 py-0.5 text-[9.5px] font-extrabold rounded flex items-center gap-1 transition-all z-10 cursor-pointer ${
-                                        summaryMetricMode === 'time' ? 'text-brand-midnight font-black' : 'text-brand-text-muted hover:text-white'
-                                      }`}
+                                      onClick={() => setIsProgressExpanded(false)}
+                                      className="p-1 px-2 text-brand-text-muted hover:text-white bg-brand-card border border-brand-input rounded-xl transition cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                                      title={slangMode ? "Masquer" : "Hide"}
                                     >
-                                      {summaryMetricMode === 'time' && (
-                                        <motion.div
-                                          layoutId="activeSummaryMetricPill"
-                                          className="absolute inset-0 bg-brand-gold rounded shadow-sm -z-10"
-                                          transition={{ type: "spring", stiffness: 450, damping: 30 }}
-                                        />
-                                      )}
-                                      <Clock size={10} className={summaryMetricMode === 'time' ? 'stroke-[2.5]' : ''} />
-                                      <span>{slangMode ? "Temps Estimé" : "Est. Time"}</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => setSummaryMetricMode('distance')}
-                                      className={`relative px-2 py-0.5 text-[9.5px] font-extrabold rounded flex items-center gap-1 transition-all z-10 cursor-pointer ${
-                                        summaryMetricMode === 'distance' ? 'text-brand-midnight font-black' : 'text-brand-text-muted hover:text-white'
-                                      }`}
-                                    >
-                                      {summaryMetricMode === 'distance' && (
-                                        <motion.div
-                                          layoutId="activeSummaryMetricPill"
-                                          className="absolute inset-0 bg-brand-gold rounded shadow-sm -z-10"
-                                          transition={{ type: "spring", stiffness: 450, damping: 30 }}
-                                        />
-                                      )}
-                                      <Ruler size={10} className={summaryMetricMode === 'distance' ? 'stroke-[2.5]' : ''} />
-                                      <span>{slangMode ? "Distance Estimée" : "Est. Distance"}</span>
+                                      <span>{slangMode ? "Masquer" : "Hide"}</span>
+                                      <ChevronUp size={13} className="stroke-[2.5]" />
                                     </button>
                                   </div>
-                                </div>
-                              </div>
 
-                              {/* Progress bar track */}
-                              <div className="relative w-full h-3 bg-brand-card border border-brand-input rounded-full overflow-visible my-3">
-                                {/* Glowing ambient trail underneath */}
-                                <div className="absolute inset-0 bg-brand-gold/5 rounded-full blur-[1px]"></div>
-                                
-                                {/* Progress track background shimmer line */}
-                                <div className="absolute inset-0 opacity-20 bg-gradient-to-r from-transparent via-white to-transparent animate-[shimmer_2s_infinite]"></div>
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex justify-between items-center text-[10px]">
+                                      <span className="text-brand-text-muted font-black uppercase tracking-wider text-[9px]">
+                                        {slangMode ? "PROGRESSION DÉTAILLÉE" : "DETAILED METRIC"}
+                                      </span>
 
-                                {/* Animated active progress fill with dual-layered glowing trail effect */}
-                                <motion.div
-                                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-brand-gold/80 via-brand-gold to-yellow-400 rounded-full shadow-[0_0_12px_rgba(234,179,8,0.6)] overflow-hidden"
-                                  initial={{ width: '0%' }}
-                                  animate={{ width: `${progress}%` }}
-                                  transition={{ type: "spring", stiffness: 70, damping: 14 }}
-                                >
-                                  {/* Framer Motion sweep light particle inside the progress fill */}
-                                  {progress > 0 && (
+                                      {/* Value Badge that smoothly animates between Estimated Time and Estimated Distance */}
+                                      <AnimatePresence mode="wait">
+                                        {summaryMetricMode === 'time' ? (
+                                          <motion.div
+                                            key="time-value"
+                                            initial={{ opacity: 0, y: -4, scale: 0.92 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 4, scale: 0.92 }}
+                                            transition={{ duration: 0.2 }}
+                                            className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/30 px-2.5 py-1 rounded-lg text-[10px] shadow-sm flex items-center gap-1.5"
+                                          >
+                                            <Clock size={12} className="text-brand-gold animate-pulse shrink-0" />
+                                            <span>
+                                              {calculatedTimeMin <= 0.5
+                                                ? (slangMode ? "< 1 min (Arrivée)" : "< 1 min (Arriving)")
+                                                : `${calculatedTimeMin} min ${slangMode ? "estimé" : "ETA"}`}
+                                            </span>
+                                            <span className="text-[9px] text-brand-text-muted font-normal border-l border-brand-gold/20 pl-1.5">
+                                              ~{formattedArrivalTime}
+                                            </span>
+                                          </motion.div>
+                                        ) : (
+                                          <motion.div
+                                            key="distance-value"
+                                            initial={{ opacity: 0, y: -4, scale: 0.92 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 4, scale: 0.92 }}
+                                            transition={{ duration: 0.2 }}
+                                            className="font-mono font-black text-brand-gold bg-brand-gold/10 border border-brand-gold/30 px-2.5 py-1 rounded-lg text-[10px] shadow-sm flex items-center gap-1.5"
+                                          >
+                                            <Ruler size={12} className="text-brand-gold shrink-0" />
+                                            <span>
+                                              {remainingKm.toFixed(1)} km {slangMode ? "restant" : "remaining"}
+                                            </span>
+                                            <span className="text-[9px] text-brand-text-muted font-normal border-l border-brand-gold/20 pl-1.5">
+                                              {(totalKm - remainingKm > 0 ? (totalKm - remainingKm).toFixed(1) : '0.0')}/{totalKm.toFixed(1)} km
+                                            </span>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
+
+                                    {/* Visual Segmented Toggle Switch for Time vs Distance */}
+                                    <div className="flex items-center justify-between bg-brand-midnight/80 p-1 rounded-lg border border-brand-card/80">
+                                      <span className="text-[9px] font-black uppercase text-brand-text-muted px-1.5 flex items-center gap-1 tracking-wider">
+                                        {slangMode ? "AFFICHAGE :" : "SUMMARY METRIC:"}
+                                      </span>
+                                      <div className="flex bg-brand-deep p-0.5 rounded-md border border-brand-input/40 relative">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSummaryMetricMode('time')}
+                                          className={`relative px-2 py-0.5 text-[9.5px] font-extrabold rounded flex items-center gap-1 transition-all z-10 cursor-pointer ${
+                                            summaryMetricMode === 'time' ? 'text-brand-midnight font-black' : 'text-brand-text-muted hover:text-white'
+                                          }`}
+                                        >
+                                          {summaryMetricMode === 'time' && (
+                                            <motion.div
+                                              layoutId="activeSummaryMetricPill"
+                                              className="absolute inset-0 bg-brand-gold rounded shadow-sm -z-10"
+                                              transition={{ type: "spring", stiffness: 450, damping: 30 }}
+                                            />
+                                          )}
+                                          <Clock size={10} className={summaryMetricMode === 'time' ? 'stroke-[2.5]' : ''} />
+                                          <span>{slangMode ? "Temps Estimé" : "Est. Time"}</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => setSummaryMetricMode('distance')}
+                                          className={`relative px-2 py-0.5 text-[9.5px] font-extrabold rounded flex items-center gap-1 transition-all z-10 cursor-pointer ${
+                                            summaryMetricMode === 'distance' ? 'text-brand-midnight font-black' : 'text-brand-text-muted hover:text-white'
+                                          }`}
+                                        >
+                                          {summaryMetricMode === 'distance' && (
+                                            <motion.div
+                                              layoutId="activeSummaryMetricPill"
+                                              className="absolute inset-0 bg-brand-gold rounded shadow-sm -z-10"
+                                              transition={{ type: "spring", stiffness: 450, damping: 30 }}
+                                            />
+                                          )}
+                                          <Ruler size={10} className={summaryMetricMode === 'distance' ? 'stroke-[2.5]' : ''} />
+                                          <span>{slangMode ? "Distance Estimée" : "Est. Distance"}</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Progress bar track */}
+                                  <div className="relative w-full h-3 bg-brand-card border border-brand-input rounded-full overflow-visible my-3">
+                                    {/* Glowing ambient trail underneath */}
+                                    <div className="absolute inset-0 bg-brand-gold/5 rounded-full blur-[1px]"></div>
+                                    
+                                    {/* Progress track background shimmer line */}
+                                    <div className="absolute inset-0 opacity-20 bg-gradient-to-r from-transparent via-white to-transparent animate-[shimmer_2s_infinite]"></div>
+
+                                    {/* Animated active progress fill with dual-layered glowing trail effect */}
                                     <motion.div
-                                      className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent"
-                                      animate={{
-                                        x: ['-100%', '300%']
+                                      className="absolute top-0 left-0 h-full bg-gradient-to-r from-brand-gold/80 via-brand-gold to-yellow-400 rounded-full shadow-[0_0_12px_rgba(234,179,8,0.6)] overflow-hidden"
+                                      initial={{ width: '0%' }}
+                                      animate={{ width: `${progress}%` }}
+                                      transition={{ type: "spring", stiffness: 70, damping: 14 }}
+                                    >
+                                      {/* Framer Motion sweep light particle inside the progress fill */}
+                                      {progress > 0 && (
+                                        <motion.div
+                                          className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent"
+                                          animate={{
+                                            x: ['-100%', '300%']
+                                          }}
+                                          transition={{
+                                            repeat: Infinity,
+                                            duration: 1.8,
+                                            ease: "easeInOut"
+                                          }}
+                                        />
+                                      )}
+                                    </motion.div>
+
+                                    {/* Background glowing pulse trail radiating behind the moving taxi */}
+                                    {progress > 0 && (
+                                      <motion.div
+                                        className="absolute top-0 h-full bg-gradient-to-r from-transparent to-brand-gold/35 blur-[2px] rounded-full"
+                                        initial={{ width: '0%' }}
+                                        animate={{ width: `${progress}%` }}
+                                        transition={{ type: "spring", stiffness: 70, damping: 14 }}
+                                      />
+                                    )}
+
+                                    {/* Moving taxi icon riding the bar with a pulsing trailing beacon */}
+                                    <motion.div
+                                      className="absolute -top-1.5 -ml-3 w-6 h-6 bg-brand-gold text-brand-midnight border-2 border-brand-midnight rounded-full flex items-center justify-center shadow-lg cursor-pointer z-10"
+                                      animate={{ 
+                                        left: `${progress}%`,
+                                        scale: [1, 1.08, 1]
                                       }}
-                                      transition={{
-                                        repeat: Infinity,
-                                        duration: 1.8,
-                                        ease: "easeInOut"
+                                      transition={{ 
+                                        left: { type: "spring", stiffness: 70, damping: 14 },
+                                        scale: { repeat: Infinity, duration: 2, ease: "easeInOut" }
                                       }}
-                                    />
-                                  )}
-                                </motion.div>
+                                      title={slangMode ? "Position du djo" : "Driver Position"}
+                                    >
+                                      {/* Pulsing glow aura following the taxi */}
+                                      <motion.div
+                                        className="absolute -inset-1.5 bg-brand-gold/35 rounded-full -z-10 blur-[3px]"
+                                        animate={{
+                                          scale: [1, 1.4, 1],
+                                          opacity: [0.6, 0.1, 0.6]
+                                        }}
+                                        transition={{
+                                          repeat: Infinity,
+                                          duration: 1.5,
+                                          ease: "easeOut"
+                                        }}
+                                      />
+                                      {/* Small compact taxi svg icon */}
+                                      <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                        <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-4h14v4zM7.5 14c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm9 0c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/>
+                                      </svg>
+                                    </motion.div>
+                                  </div>
 
-                                {/* Background glowing pulse trail radiating behind the moving taxi */}
-                                {progress > 0 && (
-                                  <motion.div
-                                    className="absolute top-0 h-full bg-gradient-to-r from-transparent to-brand-gold/35 blur-[2px] rounded-full"
-                                    initial={{ width: '0%' }}
-                                    animate={{ width: `${progress}%` }}
-                                    transition={{ type: "spring", stiffness: 70, damping: 14 }}
-                                  />
-                                )}
-
-                                {/* Moving taxi icon riding the bar with a pulsing trailing beacon */}
-                                <motion.div
-                                  className="absolute -top-1.5 -ml-3 w-6 h-6 bg-brand-gold text-brand-midnight border-2 border-brand-midnight rounded-full flex items-center justify-center shadow-lg cursor-pointer z-10"
-                                  animate={{ 
-                                    left: `${progress}%`,
-                                    scale: [1, 1.08, 1]
-                                  }}
-                                  transition={{ 
-                                    left: { type: "spring", stiffness: 70, damping: 14 },
-                                    scale: { repeat: Infinity, duration: 2, ease: "easeInOut" }
-                                  }}
-                                  title={slangMode ? "Position du djo" : "Driver Position"}
-                                >
-                                  {/* Pulsing glow aura following the taxi */}
-                                  <motion.div
-                                    className="absolute -inset-1.5 bg-brand-gold/35 rounded-full -z-10 blur-[3px]"
-                                    animate={{
-                                      scale: [1, 1.4, 1],
-                                      opacity: [0.6, 0.1, 0.6]
-                                    }}
-                                    transition={{
-                                      repeat: Infinity,
-                                      duration: 1.5,
-                                      ease: "easeOut"
-                                    }}
-                                  />
-                                  {/* Small compact taxi svg icon */}
-                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                                    <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-4h14v4zM7.5 14c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm9 0c-.83 0-1.5.67-1.5 1s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/>
-                                  </svg>
-                                </motion.div>
-                              </div>
-
-                              {/* Progress Track labels */}
-                              <div className="flex justify-between text-[9px] text-brand-text-muted font-bold font-mono gap-4">
-                                <span className="truncate max-w-[130px] hover:text-white transition-colors" title={fromName}>
-                                  📍 {fromName}
-                                </span>
-                                <span className="font-extrabold text-brand-gold bg-brand-midnight/60 px-1.5 py-0.5 rounded border border-brand-input/30 shadow-inner shrink-0">
-                                  {progress}%
-                                </span>
-                                <span className="truncate max-w-[130px] text-right hover:text-white transition-colors" title={toName}>
-                                  🏁 {toName}
-                                </span>
-                              </div>
+                                  {/* Progress Track labels */}
+                                  <div className="flex justify-between text-[9px] text-brand-text-muted font-bold font-mono gap-4">
+                                    <span className="truncate max-w-[130px] hover:text-white transition-colors" title={fromName}>
+                                      📍 {fromName}
+                                    </span>
+                                    <span className="font-extrabold text-brand-gold bg-brand-midnight/60 px-1.5 py-0.5 rounded border border-brand-input/30 shadow-inner shrink-0">
+                                      {progress}%
+                                    </span>
+                                    <span className="truncate max-w-[130px] text-right hover:text-white transition-colors" title={toName}>
+                                      🏁 {toName}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
