@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Driver KYC documents (national ID, license, insurance, grey card).
+    // Only the driver themself can upload into their own folder; the
+    // resulting getDownloadURL() links (stored on the user's Firestore doc)
+    // already carry their own access token, so no special read rule is
+    // needed for the admin console to view them.
+    match /driver_kyc/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

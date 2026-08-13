@@ -51,7 +51,8 @@ import {
   MessageSquare,
   Download,
   CheckCircle2,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 import WandaLogo from './WandaLogo';
 import { PaymentMethod, AppNotification, NotificationScheduleConfig } from '../types';
@@ -67,6 +68,7 @@ import {
 
 interface AdminDashboardProps {
   onClose: () => void;
+  onLogout?: () => void;
   driversList: any[];
   onApproveDriver: (id: string, customMessage?: string) => void;
   onRejectDriver: (id: string, reason?: string) => void;
@@ -93,6 +95,7 @@ interface AdminDashboardProps {
 
 export default function AdminDashboard({
   onClose,
+  onLogout,
   driversList,
   onApproveDriver,
   onRejectDriver,
@@ -598,6 +601,16 @@ export default function AdminDashboard({
           >
             ← Quitter Console
           </button>
+
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5"
+              id="admin-logout-btn"
+            >
+              <LogOut size={13} /> Déconnexion
+            </button>
+          )}
         </div>
       </header>
 

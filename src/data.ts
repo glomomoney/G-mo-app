@@ -1,4 +1,4 @@
-import { Location, RideClass, Driver, HistoryItem } from './types';
+import { Location, RideClass } from './types';
 
 export const LAGOS_LOCATIONS: Location[] = [
   { name: 'Douala Grand Mall, Aéroport', lat: 4.0152, lng: 9.7360 },
@@ -76,97 +76,6 @@ export const RIDE_CLASSES: RideClass[] = [
     baseFare: 3000,
     perKm: 400,
     eta: 6
-  }
-];
-
-export const MOCK_DRIVERS: Driver[] = [
-  {
-    id: 'driver_1',
-    name: 'Jean-Pierre Kamga',
-    phone: '+237 677 12 34 56',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-    rating: 4.9,
-    vehicleType: 'comfort',
-    vehicleModel: 'Toyota RAV4 (Black)',
-    vehiclePlate: 'LT - 284 - AA',
-    lat: 4.0435,
-    lng: 9.6895,
-    status: 'idle'
-  },
-  {
-    id: 'driver_2',
-    name: 'Dieudonné Tagne',
-    phone: '+237 699 34 56 78',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-    rating: 4.7,
-    vehicleType: 'ecoride',
-    vehicleModel: 'Hyundai Elantra (Silver)',
-    vehiclePlate: 'LT - 491 - BB',
-    lat: 4.0620,
-    lng: 9.7090,
-    status: 'idle'
-  },
-  {
-    id: 'driver_3',
-    name: 'Alhadji Ousmanou',
-    phone: '+237 655 87 65 43',
-    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150',
-    rating: 4.8,
-    vehicleType: 'keke',
-    vehicleModel: 'Toyota Corolla Yellow (Taxi)',
-    vehiclePlate: 'LT - 381 - YY',
-    lat: 4.0415,
-    lng: 9.7420,
-    status: 'idle'
-  },
-  {
-    id: 'driver_4',
-    name: 'Fabrice Eto\'o',
-    phone: '+237 681 43 21 09',
-    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
-    rating: 4.6,
-    vehicleType: 'okada',
-    vehicleModel: 'Nanfang Moto (Red)',
-    vehiclePlate: 'LT - 129 - XX',
-    lat: 4.0825,
-    lng: 9.7405,
-    status: 'idle'
-  }
-];
-
-export const INITIAL_HISTORY: HistoryItem[] = [
-  {
-    id: 'hist_1',
-    date: '2026-07-10 14:32',
-    pickupName: 'Douala Grand Mall, Aéroport',
-    destName: 'Akwa Palace Hotel, Boulevard de la Liberté',
-    fare: 2500,
-    paymentMethod: 'momo_mtn',
-    status: 'completed',
-    vehicleClass: 'EcoRide',
-    driverName: 'Dieudonné Tagne'
-  },
-  {
-    id: 'hist_2',
-    date: '2026-07-08 09:15',
-    pickupName: 'Bonanjo Administrative District',
-    destName: 'Japoma Omnisports Stadium',
-    fare: 5800,
-    paymentMethod: 'orange_money',
-    status: 'completed',
-    vehicleClass: 'VIP Ride (SUV)',
-    driverName: 'Jean-Pierre Kamga'
-  },
-  {
-    id: 'hist_3',
-    date: '2026-07-05 18:40',
-    pickupName: 'Deido Roundabout (Rond-point Deido)',
-    destName: 'Bonamoussadi Market (Marché)',
-    fare: 800,
-    paymentMethod: 'cash',
-    status: 'completed',
-    vehicleClass: 'Moto-Taxi (Okada)',
-    driverName: 'Fabrice Eto\'o'
   }
 ];
 

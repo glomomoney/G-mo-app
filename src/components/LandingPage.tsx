@@ -1,18 +1,30 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Shield, Sparkles, Smartphone, ArrowRight, UserCheck, ShieldCheck, Heart, MapPin, Compass, Globe } from 'lucide-react';
+import { Shield, Sparkles, Smartphone, ArrowRight, UserCheck, ShieldCheck, Heart, MapPin, Compass, Globe, Upload, FileCheck2 } from 'lucide-react';
 import WandaLogo from './WandaLogo';
 
+// Matches the doc keys AdminDashboard's KYC viewer already expects
+// (getDriverKYCDocuments) — uploading here is what replaces its Unsplash
+// placeholder fallback with the driver's real documents.
+const KYC_DOC_FIELDS: { key: string; label: string; labelEn: string }[] = [
+  { key: 'nationalIdFront', label: "CNI - Recto", labelEn: 'National ID - Front' },
+  { key: 'nationalIdBack', label: "CNI - Verso", labelEn: 'National ID - Back' },
+  { key: 'driverLicense', label: 'Permis de Conduire', labelEn: "Driver's License" },
+  { key: 'vehicleInsurance', label: "Assurance Véhicule", labelEn: 'Vehicle Insurance' },
+  { key: 'vehicleGreyCard', label: 'Carte Grise', labelEn: 'Vehicle Registration' }
+];
+
 interface LandingPageProps {
-  onSignupComplete: (userData: { 
-    name: string; 
-    phone: string; 
-    role: 'passenger' | 'driver'; 
+  onSignupComplete: (userData: {
+    name: string;
+    phone: string;
+    role: 'passenger' | 'driver';
     slangMode: boolean;
     vehicleType?: string;
     vehicleModel?: string;
     vehicleColor?: string;
     vehiclePlate?: string;
+    kycFiles?: Record<string, File>;
   }) => void;
   currentLanguage?: 'en' | 'fr';
   onLanguageChange?: (lang: 'en' | 'fr') => void;
@@ -33,7 +45,20 @@ export default function LandingPage({
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
+  const [kycFiles, setKycFiles] = useState<Record<string, File>>({});
   const [error, setError] = useState('');
+
+  const handleKycFileChange = (key: string, file: File | null) => {
+    setKycFiles(prev => {
+      const next = { ...prev };
+      if (file) {
+        next[key] = file;
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,7 +101,8 @@ export default function LandingPage({
         vehicleType,
         vehicleModel: vehicleModel.trim(),
         vehicleColor: vehicleColor.trim(),
-        vehiclePlate: vehiclePlate.trim().toUpperCase()
+        vehiclePlate: vehiclePlate.trim().toUpperCase(),
+        ...(Object.keys(kycFiles).length > 0 ? { kycFiles } : {})
       } : {})
     });
   };
@@ -362,6 +388,47 @@ export default function LandingPage({
                     className="w-full bg-brand-input border border-brand-input rounded-2xl py-3 px-4 text-white text-sm font-semibold placeholder-brand-text-muted/50 focus:outline-none focus:border-brand-gold focus:bg-brand-input focus:ring-1 focus:ring-brand-gold transition uppercase"
                     required
                   />
+                </div>
+
+                {/* KYC document uploads (optional — reviewed by admin before approval) */}
+                <div className="space-y-1.5 pt-2 border-t border-brand-input/40">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-brand-text-muted block">
+                    {slangMode ? "DOCUMENTS KYC (facultatif à l'inscription)" : "KYC DOCUMENTS (optional at signup)"}
+                  </label>
+                  <p className="text-[10px] text-brand-text-muted font-medium leading-normal">
+                    {slangMode
+                      ? "Ton compte reste en attente jusqu'à validation par un administrateur."
+                      : "Your account stays pending until an administrator reviews it."}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {KYC_DOC_FIELDS.map(({ key, label, labelEn }) => {
+                      const file = kycFiles[key];
+                      return (
+                        <label
+                          key={key}
+                          htmlFor={`signup-kyc-${key}`}
+                          className="flex items-center justify-between gap-2 bg-brand-input border border-brand-input hover:border-brand-gold/60 rounded-xl py-2.5 px-3.5 text-xs font-semibold cursor-pointer transition"
+                        >
+                          <span className="flex items-center gap-2 text-brand-text-muted">
+                            {file ? <FileCheck2 size={14} className="text-emerald-400 shrink-0" /> : <Upload size={14} className="text-brand-gold shrink-0" />}
+                            <span className={file ? 'text-emerald-400' : ''}>
+                              {slangMode ? label : labelEn}
+                            </span>
+                          </span>
+                          <span className="text-[10px] text-brand-text-muted truncate max-w-[120px]">
+                            {file ? file.name : (slangMode ? 'Choisir un fichier' : 'Choose file')}
+                          </span>
+                          <input
+                            id={`signup-kyc-${key}`}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleKycFileChange(key, e.target.files?.[0] || null)}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </motion.div>
             )}
