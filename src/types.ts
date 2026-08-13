@@ -116,3 +116,42 @@ export interface NotificationScheduleConfig {
   }[];
 }
 
+export interface UserProfile {
+  name: string;
+  phone: string;
+  role: 'passenger' | 'driver';
+  slangMode: boolean;
+}
+
+export interface DriverRideRequest {
+  id: string;
+  passengerName: string;
+  pickupName: string;
+  destName: string;
+  pickupLat: number;
+  pickupLng: number;
+  destLat: number;
+  destLng: number;
+  fare: number;
+  payment: PaymentMethod;
+}
+
+export interface SystemSettings {
+  commissionRate: number;
+  surgeMultiplier: number;
+  minimumWithdrawal: number;
+  topupPromoActive: boolean;
+  topupPromoRate: number;
+  classRates: Record<string, { baseFare: number; perKm: number }>;
+}
+
+export interface RecentBooking {
+  id: string;
+  zoneName: string;
+  rideClass: string;
+  timeAgo: string;
+  status: 'completed' | 'active' | 'cancelled';
+  fare: number;
+  city: 'Yaoundé' | 'Douala';
+}
+

@@ -27,10 +27,8 @@ import {
   ArrowRight,
   ShieldCheck,
   AlertTriangle,
-  Bell,
   Sliders,
   Flame,
-  LogOut,
   SlidersHorizontal,
   PhoneCall,
   Phone,
@@ -45,7 +43,6 @@ import {
   FileText,
   Gift,
   Sparkles,
-  Globe,
   ChevronDown,
   ChevronUp,
   ArrowUpDown,
@@ -81,6 +78,9 @@ import { callRingtonePlayer } from './utils/callAudio';
 import WandaLogo from './components/WandaLogo';
 import { LiveCountdownTimer } from './components/LiveCountdownTimer';
 import { ParticleExplosion } from './components/ParticleExplosion';
+import ShareRideTracker from './components/ShareRideTracker';
+import AppHeader from './components/AppHeader';
+import ReceiptModal from './components/ReceiptModal';
 import { getSmartProposals } from './utils/autocomplete';
 import { 
   syncWalletToOfflineCache, 
@@ -2586,147 +2586,16 @@ export default function App() {
   // Render independent view-only shared live tracking map
   if (shareRideData) {
     return (
-      <div className="flex flex-col md:flex-row h-screen bg-brand-midnight text-white select-none overflow-hidden font-sans" id="shared-ride-tracker">
-        {/* Left pane: Ride details / status */}
-        <div className="w-full md:w-[380px] bg-brand-deep border-b md:border-b-0 md:border-r border-brand-card/80 flex flex-col justify-between shrink-0 h-2/5 md:h-full z-20 shadow-2xl overflow-y-auto">
-          {/* Header */}
-          <div className="p-4 bg-brand-midnight/40 border-b border-brand-card/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <WandaLogo className="w-8 h-8 drop-shadow-[0_0_8px_rgba(226,193,141,0.25)] animate-pulse" />
-              <div>
-                <h1 className="text-xs font-black text-brand-gold uppercase tracking-widest">
-                  Wanda Share Track
-                </h1>
-                <p className="text-[9px] text-brand-text-muted font-bold italic">Suivi de trajet en direct 📡</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-              <span className="text-[9px] bg-brand-gold/10 text-brand-gold border border-brand-gold/20 px-2 py-0.5 rounded-full font-black uppercase">
-                {slangMode ? "EN DIRECT" : "LIVE"}
-              </span>
-            </div>
-          </div>
-
-          {/* Active tracking info */}
-          <div className="p-4 space-y-4 flex-1">
-            {/* Status notification */}
-            <div className="bg-brand-card/30 border border-brand-card rounded-2xl p-3.5 space-y-1 shadow-inner">
-              <span className="text-[8px] uppercase font-black text-brand-gold bg-brand-gold/15 px-2 py-0.5 rounded-md inline-block animate-pulse">
-                {liveStatus === 'driver_found' ? (slangMode ? "CHAUFFEUR EN ROUTE" : "DRIVER ASSIGNED") :
-                 liveStatus === 'arriving' ? (slangMode ? "CHAUFFEUR ARRIVE" : "DRIVER ARRIVING") :
-                 liveStatus === 'in_progress' ? (slangMode ? "TRAJET EN COURS" : "RIDE IN PROGRESS") :
-                 (slangMode ? "ARRIVÉ À DESTINATION" : "ARRIVED")}
-              </span>
-              <h3 className="text-xs font-black text-white">
-                {liveStatus === 'driver_found' && (slangMode ? "Le chauffeur s'approche du point d'embarquement" : "Driver is heading to the pickup point")}
-                {liveStatus === 'arriving' && (slangMode ? "Le chauffeur est arrivé à l'embarquement" : "Driver has arrived at the pickup location")}
-                {liveStatus === 'in_progress' && (slangMode ? "En route vers la destination finale" : "En route to the final destination")}
-                {liveStatus === 'completed' && (slangMode ? "Le voyage s'est terminé avec succès" : "The journey has successfully concluded")}
-              </h3>
-              <p className="text-[10px] text-brand-text-muted font-semibold">
-                {slangMode 
-                  ? "Partagé en toute sécurité par votre proche." 
-                  : "Shared securely by your friend/family member."}
-              </p>
-            </div>
-
-            {/* Rider & Driver Cards */}
-            <div className="space-y-2.5">
-              <div className="bg-brand-card/20 border border-brand-card/40 rounded-xl p-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-brand-card border border-brand-input flex items-center justify-center text-sm font-bold text-brand-gold">
-                    👤
-                  </div>
-                  <div>
-                    <span className="text-[8px] text-brand-text-muted block font-bold uppercase">{slangMode ? "Passager" : "Passenger"}</span>
-                    <h4 className="text-xs font-black text-white">{shareRideData.passengerName}</h4>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-brand-card/20 border border-brand-card/40 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-brand-gold/10 border border-brand-gold/30 flex items-center justify-center text-sm font-bold text-brand-gold">
-                      🚗
-                    </div>
-                    <div>
-                      <span className="text-[8px] text-brand-text-muted block font-bold uppercase">{slangMode ? "Chauffeur" : "Driver"}</span>
-                      <h4 className="text-xs font-black text-white">{shareRideData.driverName}</h4>
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-brand-gold font-bold bg-brand-midnight px-2 py-0.5 rounded border border-brand-card">
-                    ★ 4.9
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-brand-input/30 text-[10px] font-semibold text-brand-text-muted">
-                  <div>
-                    <span className="text-[8px] block uppercase text-brand-text-muted/70">{slangMode ? "Véhicule" : "Vehicle"}</span>
-                    <span className="text-white font-extrabold">{shareRideData.vehicleModel}</span>
-                  </div>
-                  <div>
-                    <span className="text-[8px] block uppercase text-brand-text-muted/70">{slangMode ? "Immatriculation" : "Plate No"}</span>
-                    <span className="text-brand-gold font-extrabold font-mono bg-brand-midnight px-1.5 py-0.5 rounded border border-brand-card inline-block">{shareRideData.vehiclePlate}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Trip Itinerary details */}
-            <div className="bg-brand-card/20 border border-brand-card/40 rounded-xl p-3.5 space-y-2.5 text-[11px] font-semibold">
-              <div className="flex items-start gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 mt-1 animate-pulse"></span>
-                <div className="min-w-0 flex-1">
-                  <span className="text-[8px] text-brand-text-muted block uppercase font-black">{slangMode ? "Départ (A)" : "Pickup (A)"}</span>
-                  <p className="font-extrabold text-white truncate">{shareRideData.pickupName}</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="w-2 h-2 rounded-full bg-brand-gold shrink-0 mt-1"></span>
-                <div className="min-w-0 flex-1">
-                  <span className="text-[8px] text-brand-text-muted block uppercase font-black">{slangMode ? "Arrivée (B)" : "Destination (B)"}</span>
-                  <p className="font-extrabold text-white truncate">{shareRideData.destName}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer Call To Action */}
-          <div className="p-4 bg-brand-midnight/60 border-t border-brand-card/80 space-y-2">
-            <p className="text-[10px] text-brand-text-muted font-bold text-center">
-              {slangMode ? "Besoin de voyager en sécurité au Cameroun ?" : "Want safe, reliable rides in Cameroon?"}
-            </p>
-            <button
-              onClick={() => {
-                // Clear query params to return to main application
-                window.location.href = window.location.origin;
-              }}
-              className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black text-xs py-2.5 rounded-xl shadow-lg shadow-brand-gold/10 hover:shadow-brand-gold/20 active:scale-95 transition cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              🚀 {slangMode ? "Commander mon trajet sur Wanda" : "Book Your Own Wanda Ride"}
-            </button>
-          </div>
-        </div>
-
-        {/* Right pane: Leaflet map view */}
-        <div className="flex-1 h-3/5 md:h-full relative z-10">
-          <TaxiMap
-            pickup={{ name: shareRideData.pickupName, lat: shareRideData.pickupLat, lng: shareRideData.pickupLng }}
-            destination={{ name: shareRideData.destName, lat: shareRideData.destLat, lng: shareRideData.destLng }}
-            driverLocation={liveDriverLoc}
-            status={liveStatus}
-            driverType={shareRideData.vehicleType}
-            role="passenger"
-            slangMode={slangMode}
-            isTilted={isMapTilted}
-            isZoomLocked={isZoomLocked}
-            showMapGrid={showMapGrid}
-            recentBookings={recentBookings}
-          />
-        </div>
-      </div>
+      <ShareRideTracker
+        shareRideData={shareRideData}
+        slangMode={slangMode}
+        liveStatus={liveStatus}
+        liveDriverLoc={liveDriverLoc}
+        isMapTilted={isMapTilted}
+        isZoomLocked={isZoomLocked}
+        showMapGrid={showMapGrid}
+        recentBookings={recentBookings}
+      />
     );
   }
 
@@ -2744,152 +2613,20 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-brand-midnight text-white select-none overflow-hidden" id="app-root-container">
       
-      {/* Global Offline Service Worker Mode Banner */}
-      {!isOnline && (
-        <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 text-brand-midnight py-1.5 px-3 font-extrabold text-[10px] sm:text-[11px] flex items-center justify-between shadow-lg z-[2000] border-b border-amber-300/40 animate-fade-in shrink-0">
-          <div className="flex items-center gap-2">
-            <WifiOff size={14} className="shrink-0 animate-pulse text-brand-midnight" />
-            <span>
-              {slangMode
-                ? "⚡ Mode Hors Ligne Actif (Service Worker) — Historique & Solde Wallet entièrement disponibles hors connexion."
-                : "⚡ Offline Mode Active (Service Worker) — Past ride history & Wallet balances served from offline cache."}
-            </span>
-          </div>
-          <span className="bg-brand-midnight text-amber-300 text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 border border-amber-400/30">
-            SW CACHE
-          </span>
-        </div>
-      )}
-
-      {/* Header bar */}
-      <header className="bg-brand-deep border-b border-brand-card/80 px-3 sm:px-4 py-2 sm:py-2.5 shrink-0 z-50 flex items-center justify-between shadow-md">
-        
-        {/* Brand identity & Location Pill */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5">
-          <WandaLogo className="w-7 h-7 sm:w-8 sm:h-8 drop-shadow-[0_0_8px_rgba(226,193,141,0.25)]" />
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <h1 className="text-xs sm:text-sm font-black tracking-widest text-brand-gold font-sans">
-              WANDA
-            </h1>
-            {currentCity && (
-              <button
-                onClick={() => setSearchModalType('pickup')}
-                className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/30 text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shadow-inner cursor-pointer transition-colors"
-                title="Changer de ville / position"
-              >
-                📍 {currentCity}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Global Toolbar Header Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          
-          {/* Small non-interactive Mode Indicator */}
-          <span className="bg-brand-card/60 border border-brand-input px-2 py-0.5 rounded-full text-[9px] font-bold text-brand-gold flex items-center gap-1">
-            {role === 'passenger' ? (language === 'fr' ? '👤 Passager' : '👤 Passenger') : (language === 'fr' ? '🚖 Chauffeur' : '🚖 Driver')}
-          </span>
-
-          {/* Notification Bell Button */}
-          <button
-            onClick={() => setIsNotificationDrawerOpen(true)}
-            className="relative p-1.5 text-brand-gold hover:text-white bg-brand-card/60 hover:bg-brand-card border border-brand-input rounded-xl transition cursor-pointer shrink-0"
-            title={language === 'fr' ? "Notifications" : "Notifications"}
-            id="notification-bell-btn"
-          >
-            <Bell size={13} />
-            {appNotifications.some(n => !n.read) && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-brand-gold rounded-full animate-ping" />
-            )}
-            {appNotifications.some(n => !n.read) && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-brand-gold rounded-full" />
-            )}
-          </button>
-
-          {/* Language Toggle Group */}
-          <div className="relative shrink-0" id="language-switcher-header">
-            <button
-              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-              className="flex items-center gap-1 px-2 py-1 bg-brand-card/60 hover:bg-brand-card border border-brand-input rounded-xl text-[10px] font-black cursor-pointer transition shadow-sm text-brand-gold hover:text-white select-none"
-              id="language-dropdown-trigger"
-              title={language === 'fr' ? "Changer de langue" : "Change language"}
-            >
-              <Globe size={11} className="text-brand-gold shrink-0" />
-              <span>{language === 'fr' ? "🇫🇷" : "🇬🇧"}</span>
-              <ChevronDown size={9} className={`text-brand-text-muted transition-transform duration-200 ${langDropdownOpen ? 'rotate-180 text-brand-gold' : ''}`} />
-            </button>
-
-            <AnimatePresence>
-              {langDropdownOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40 cursor-default" 
-                    onClick={() => setLangDropdownOpen(false)}
-                  />
-                  
-                  <motion.div 
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="absolute right-0 mt-1.5 w-36 bg-brand-deep border border-brand-input rounded-xl shadow-xl py-1 z-50 overflow-hidden font-sans text-[10px]"
-                    id="language-dropdown-menu"
-                  >
-                    <button
-                      onClick={() => {
-                        changeLanguage('en');
-                        setLangDropdownOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
-                        language === 'en' 
-                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold' 
-                          : 'text-brand-text-muted hover:text-white'
-                      }`}
-                      id="lang-opt-en"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <span>🇬🇧</span>
-                        <span>English</span>
-                      </span>
-                      {language === 'en' && <Check size={12} className="text-brand-gold shrink-0" />}
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        changeLanguage('fr');
-                        setLangDropdownOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 text-left transition-all duration-150 cursor-pointer hover:bg-brand-card ${
-                        language === 'fr' 
-                          ? 'bg-brand-gold/15 text-brand-gold font-extrabold' 
-                          : 'text-brand-text-muted hover:text-white'
-                      }`}
-                      id="lang-opt-fr"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <span>🇫🇷</span>
-                        <span>Français</span>
-                      </span>
-                      {language === 'fr' && <Check size={12} className="text-brand-gold shrink-0" />}
-                    </button>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* User Signout */}
-          <button
-            onClick={handleLogout}
-            title="Log Out Profile"
-            className="p-1.5 text-brand-text-muted hover:text-rose-400 bg-brand-card/30 border border-brand-input rounded-xl hover:bg-brand-input transition cursor-pointer shrink-0"
-          >
-            <LogOut size={12} />
-          </button>
-        </div>
-
-      </header>
+      <AppHeader
+        isOnline={isOnline}
+        slangMode={slangMode}
+        currentCity={currentCity}
+        role={role}
+        language={language}
+        appNotifications={appNotifications}
+        langDropdownOpen={langDropdownOpen}
+        setSearchModalType={setSearchModalType}
+        setIsNotificationDrawerOpen={setIsNotificationDrawerOpen}
+        setLangDropdownOpen={setLangDropdownOpen}
+        changeLanguage={changeLanguage}
+        handleLogout={handleLogout}
+      />
 
       {/* Main split viewport layout */}
       <div 
@@ -5104,222 +4841,31 @@ export default function App() {
       {/* ========================================================================= */}
       {/* COMPLETED RIDE RECEIPT & RATING MODAL (Passenger Side Only) */}
       {/* ========================================================================= */}
-      <AnimatePresence>
-        {showReceipt && role === 'passenger' && pickup && destination && activeDriver && (
-          <div className="fixed inset-0 bg-brand-midnight/80 backdrop-blur-md z-[2000] flex items-center justify-center p-4" id="receipt-modal">
-            <ParticleExplosion particleCount={75} />
-            <motion.div
-              initial={{ scale: 0.65, opacity: 0, y: 50, rotateX: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0, rotateX: 0 }}
-              exit={{ scale: 0.8, opacity: 0, y: 30 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-              className="bg-brand-deep border border-brand-gold/30 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl text-white font-sans relative z-[2001]"
-            >
-              <div className="p-5 text-center border-b border-brand-input/40 bg-gradient-to-b from-brand-gold/15 via-emerald-500/10 to-transparent space-y-2 relative overflow-hidden">
-                <div className="relative mx-auto w-14 h-14 flex items-center justify-center">
-                  <motion.div
-                    animate={{ scale: [1, 1.45, 1], opacity: [0.6, 0.2, 0.6] }}
-                    transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-                    className="absolute inset-0 rounded-full bg-brand-gold/30 blur-md"
-                  />
-                  <motion.div
-                    initial={{ scale: 0, rotate: -180 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{ type: 'spring', stiffness: 350, damping: 18, delay: 0.15 }}
-                    className="w-12 h-12 bg-gradient-to-tr from-brand-gold via-amber-400 to-yellow-300 text-brand-midnight rounded-full flex items-center justify-center shadow-xl shadow-brand-gold/40 relative z-10"
-                  >
-                    <Check size={26} className="stroke-[3.5] text-brand-midnight" />
-                  </motion.div>
-                </div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.25, duration: 0.35 }}
-                >
-                  <div className="inline-flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full mb-1 tracking-wider shadow-sm">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    <span>{slangMode ? "🎉 Trajet Réussi & Terminé !" : "🎉 Trip Completed Successfully!"}</span>
-                  </div>
-                  <h3 className="text-base font-black tracking-wide text-white">{slangMode ? "Reçu Officiel Wanda" : "Official Wanda Receipt"}</h3>
-                  <p className="text-[10px] text-brand-gold font-mono font-bold uppercase tracking-wider">
-                    {transactionId}
-                  </p>
-                </motion.div>
-              </div>
-
-              {/* Receipt Body */}
-              <div className="p-5 space-y-4">
-                <div className="space-y-2 border-b border-brand-input pb-3.5 text-xs font-semibold">
-                  <div className="flex justify-between">
-                    <span className="text-brand-text-muted">Ramassage (A) :</span>
-                    <strong className="text-white text-right max-w-[170px] truncate">{pickup.name}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-brand-text-muted">Dépôt (B) :</span>
-                    <strong className="text-white text-right max-w-[170px] truncate">{destination.name}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-brand-text-muted">Distance :</span>
-                    <strong className="text-white">{rideDistance} KM</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-brand-text-muted">Tarif de base :</span>
-                    <strong className="text-white">{activeFareToCharge.toLocaleString('fr-FR')} FCFA</strong>
-                  </div>
-                  {currentRideWaitingTime > 0 && (
-                    <div className="flex justify-between text-brand-gold bg-brand-gold/5 p-1 rounded border border-brand-gold/15">
-                      <span>{slangMode ? "Frais d'attente :" : "Waiting Fee :"} ({Math.floor(currentRideWaitingTime / 60)}m {currentRideWaitingTime % 60}s)</span>
-                      <strong>+{currentRideWaitingFare.toLocaleString('fr-FR')} FCFA</strong>
-                    </div>
-                  )}
-                  {ridePointsRedeemed > 0 && (
-                    <div className="flex justify-between text-indigo-400 bg-indigo-500/5 p-1 rounded border border-indigo-500/15">
-                      <span>{slangMode ? "Réduction Wanda Points :" : "Wanda Points Discount :"} ({ridePointsRedeemed} pts)</span>
-                      <strong>-{(ridePointsRedeemed * 100).toLocaleString('fr-FR')} FCFA</strong>
-                    </div>
-                  )}
-                  {paymentMethod === 'wallet' && tipAmount > 0 && (
-                    <div className="flex justify-between text-emerald-400 bg-emerald-500/5 p-1 rounded border border-emerald-500/15">
-                      <span>{slangMode ? "Pourboire (Chauffeur) :" : "Driver Tip :"}</span>
-                      <strong>+{tipAmount.toLocaleString('fr-FR')} FCFA</strong>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-brand-text-muted">Payement :</span>
-                    {getPaymentBadge(paymentMethod)}
-                  </div>
-                  
-                  {/* Highlighted Wanda Points Earned Banner */}
-                  {(() => {
-                    const pointsEarned = paymentMethod === 'wallet' ? 1 : 0;
-                    return pointsEarned > 0 ? (
-                      <div className="mt-1.5 flex justify-between items-center text-[10.5px] text-indigo-300 bg-indigo-500/10 px-2.5 py-1.5 rounded-xl border border-indigo-500/20 font-bold">
-                        <span>⭐ {slangMode ? "Points Wanda gagnés (Payement Wallet) :" : "Wanda Points Earned (Wallet Pay) :"}</span>
-                        <span>+1 pt (≈ 100 FCFA)</span>
-                      </div>
-                    ) : (
-                      <div className="mt-1.5 flex justify-between items-center text-[10.5px] text-brand-text-muted bg-brand-input/20 px-2.5 py-1.5 rounded-xl border border-brand-input/30 font-medium">
-                        <span>⭐ {slangMode ? "Points Wanda (Payement Cash) :" : "Wanda Points (Cash Pay) :"}</span>
-                        <span>0 pt ({slangMode ? "Payez par Wallet pour gagner +1 pt" : "Wallet Payment Required"})</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Tipping Selector Section - Wallet Only */}
-                {paymentMethod === 'wallet' && (
-                  <div className="bg-brand-input/40 border border-brand-card/85 p-3 rounded-2xl space-y-2.5 text-center">
-                    <p className="text-[10px] font-extrabold text-brand-text-muted uppercase tracking-wider flex items-center justify-center gap-1.5">
-                      <span>💸</span> {slangMode ? "Laisser un pourboire au djo" : "Add a Tip for Driver"}
-                    </p>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[0, 500, 1000, 2000].map((amt) => {
-                        const isSelected = tipAmount === amt;
-                        return (
-                          <button
-                            key={amt}
-                            onClick={() => setTipAmount(amt)}
-                            type="button"
-                            className={`py-2 px-1 rounded-xl text-[10px] font-extrabold tracking-tight transition duration-200 cursor-pointer flex flex-col items-center justify-center border ${
-                              isSelected
-                                ? 'bg-brand-gold text-brand-midnight border-brand-gold shadow-md'
-                                : 'bg-brand-card/50 text-brand-text-muted border-brand-input hover:text-white hover:border-brand-text-muted/45'
-                            }`}
-                          >
-                            <span>{amt === 0 ? (slangMode ? "Aucun" : "No Tip") : `+${amt}`}</span>
-                            {amt > 0 && <span className="text-[8px] opacity-80">FCFA</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {tipAmount > 0 && (
-                      <p className="text-[9px] text-emerald-400 font-semibold leading-tight">
-                        {slangMode 
-                          ? `Le djo recevra 100% de tes ${tipAmount.toLocaleString('fr-FR')} FCFA de bonus.`
-                          : `Driver receives 100% of your ${tipAmount.toLocaleString('fr-FR')} FCFA bonus.`}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex justify-between items-center text-sm font-bold border-b border-brand-input pb-3.5">
-                  <span className="text-brand-text-muted">{language === 'fr' ? "Montant Total :" : "Total Amount :"}</span>
-                  <span className="text-base font-black text-brand-gold">{(Math.max(0, activeFareToCharge - (ridePointsRedeemed * 100)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0)).toLocaleString('fr-FR')} FCFA</span>
-                </div>
-
-                {/* Rating component */}
-                <div className="text-center space-y-2.5">
-                  <p className="text-[10px] font-black text-brand-text-muted uppercase tracking-wider">
-                    {language === 'fr' ? "Note ton Chauffeur" : "Rate your Driver"}
-                  </p>
-                  
-                  <div className="flex justify-center gap-1.5">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        onClick={() => setUserRating(star)}
-                        className="text-xl cursor-pointer hover:scale-110 transition focus:outline-none"
-                      >
-                        <Star
-                          size={20}
-                          className={star <= userRating ? 'fill-brand-gold text-brand-gold' : 'text-brand-input'}
-                        />
-                      </button>
-                    ))}
-                  </div>
-
-                  <input
-                    type="text"
-                    value={userPraise}
-                    onChange={(e) => setUserPraise(e.target.value)}
-                    placeholder={slangMode ? "Ex: Chauffeur poli, rapide, clim nickel..." : "Feedback..."}
-                    className="w-full bg-brand-input border border-brand-card rounded-xl px-3 py-2 text-[11px] text-white text-center focus:outline-none"
-                    id="rating-comment-input"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (pickup && destination && activeDriver) {
-                        const finalFareToCharge = Math.max(0, activeFareToCharge - (ridePointsRedeemed * 100)) + currentRideWaitingFare + (paymentMethod === 'wallet' ? tipAmount : 0);
-                        const currentHist: HistoryItem = {
-                          id: transactionId || `hist_${Date.now()}`,
-                          date: new Date().toLocaleString(),
-                          pickupName: pickup.name,
-                          destName: destination.name,
-                          fare: finalFareToCharge,
-                          driverName: activeDriver.name,
-                          vehicleClass: activeDriver.vehicleType ? activeDriver.vehicleType.toUpperCase() : 'COMFORT VIP',
-                          paymentMethod: paymentMethod,
-                          tipAmount: tipAmount,
-                          status: 'completed'
-                        };
-                        downloadPDFReceipt(currentHist);
-                      }
-                    }}
-                    className="w-full bg-slate-900/90 hover:bg-slate-800 text-brand-gold font-extrabold py-2.5 rounded-2xl text-xs border border-brand-gold/30 flex items-center justify-center gap-2 transition cursor-pointer active:scale-95 shadow-md"
-                    id="download-receipt-modal-btn"
-                  >
-                    <Download size={14} className="text-brand-gold" />
-                    <span>{slangMode ? "Télécharger Reçu PDF Officiel" : "Download Official PDF Invoice"}</span>
-                  </button>
-
-                  <button
-                    onClick={handleSubmitRating}
-                    className="w-full bg-brand-gold hover:bg-brand-gold/90 text-brand-midnight font-black py-3 rounded-2xl text-xs transition cursor-pointer shadow-lg shadow-brand-gold/25"
-                    id="submit-rating-btn"
-                  >
-                    Confirm & Close Receipt
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <ReceiptModal
+        showReceipt={showReceipt}
+        role={role}
+        pickup={pickup}
+        destination={destination}
+        activeDriver={activeDriver}
+        slangMode={slangMode}
+        transactionId={transactionId}
+        currentRideWaitingTime={currentRideWaitingTime}
+        currentRideWaitingFare={currentRideWaitingFare}
+        ridePointsRedeemed={ridePointsRedeemed}
+        paymentMethod={paymentMethod}
+        tipAmount={tipAmount}
+        userRating={userRating}
+        userPraise={userPraise}
+        language={language}
+        rideDistance={rideDistance}
+        activeFareToCharge={activeFareToCharge}
+        setTipAmount={setTipAmount}
+        setUserRating={setUserRating}
+        setUserPraise={setUserPraise}
+        getPaymentBadge={getPaymentBadge}
+        downloadPDFReceipt={downloadPDFReceipt}
+        handleSubmitRating={handleSubmitRating}
+      />
 
       {/* ========================================================================= */}
       {/* DRIVER END-OF-TRIP EARNINGS SUMMARY MODAL */}
