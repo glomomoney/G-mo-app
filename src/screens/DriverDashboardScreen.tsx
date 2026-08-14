@@ -36,7 +36,6 @@ interface DriverMainDashboardProps {
   startInAppCall: (sender: 'passenger' | 'driver') => void;
   receiveInAppCall: (sender: 'passenger' | 'driver') => void;
   currentCity: string;
-  triggerIncomingSimulatedRequest: () => void;
   driverLoc: { lat: number; lng: number } | null;
   setCenterCoords: (coords: { lat: number; lng: number } | null) => void;
   recentBookings: RecentBooking[];
@@ -55,7 +54,7 @@ export function DriverMainDashboard(props: DriverMainDashboardProps) {
     role, slangMode, rideStatus, driverActiveTab, setDriverActiveTab, driverOnline, setDriverOnline,
     driverStats, getPaymentBadge, paymentMethod, pickup, destination, activeFareToCharge, waitingTime,
     currentRideWaitingFare, setRideStatus, setShowChat, messages, handleCancelBooking, showCallDropdown,
-    setShowCallDropdown, startInAppCall, receiveInAppCall, currentCity, triggerIncomingSimulatedRequest,
+    setShowCallDropdown, startInAppCall, receiveInAppCall, currentCity,
     driverLoc, setCenterCoords, recentBookings, driverWallet, handleDriverWithdraw, transactions,
     systemSettings, user, history, isOnline, waitingLogs,
   } = props;
@@ -349,15 +348,8 @@ export function DriverMainDashboard(props: DriverMainDashboardProps) {
                           </p>
                         </div>
                         
-                        {/* Instant Simulation button */}
+                        {/* Driver position */}
                         <div className="pt-3 border-t border-brand-input/30 mt-3 flex items-center justify-between gap-2">
-                          <button
-                            onClick={triggerIncomingSimulatedRequest}
-                            className="bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/30 px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wide cursor-pointer transition flex items-center gap-1.5"
-                          >
-                            ⚡ {slangMode ? "Simuler un Appel" : "Simulate Ride"}
-                          </button>
-                          
                           {driverLoc && (
                             <button
                               onClick={() => setCenterCoords({ lat: driverLoc.lat, lng: driverLoc.lng })}

@@ -32,36 +32,6 @@ export default function DriverWallet({
   const [successMsg, setSuccessMsg] = useState('');
   const [tipSort, setTipSort] = useState<'date' | 'amount'>('date');
 
-  const DEFAULT_TIPS = [
-    {
-      id: 'mock-tip-1',
-      date: new Date(Date.now() - 3600000).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), // 1 hour ago
-      pickupName: 'Aéroport International de Douala',
-      destName: 'Hôtel Sawa, Bonanjo',
-      passengerName: 'Mélanie Atangana',
-      tipAmount: 2500,
-      feedback: slangMode ? 'Chauffeur super poli, m\'a aidé avec mes valises ! 🌟' : 'Super polite driver, helped with my heavy bags! 🌟'
-    },
-    {
-      id: 'mock-tip-2',
-      date: new Date(Date.now() - 24 * 3600000).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), // 1 day ago
-      pickupName: 'Carrefour Bastos',
-      destName: 'Marché de Mokolo, Yaoundé',
-      passengerName: 'Christian Tchakounté',
-      tipAmount: 1500,
-      feedback: slangMode ? 'Conduite très prudente malgré les gros embouteillages.' : 'Very safe driving despite heavy bastos gridlocks.'
-    },
-    {
-      id: 'mock-tip-3',
-      date: new Date(Date.now() - 3 * 24 * 3600000).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), // 3 days ago
-      pickupName: 'Université de Yaoundé I',
-      destName: 'Carrefour Jouvence',
-      passengerName: 'Grace Brown',
-      tipAmount: 1000,
-      feedback: slangMode ? 'Le djo est trop fort ! Clim impeccable et bonne musique.' : 'Best driver ever! Ice cold AC and fantastic music.'
-    }
-  ];
-
   // Extract completed rides with tips from actual rideHistory
   const actualTips = rideHistory
     .filter(item => item.status === 'completed' && item.tipAmount && item.tipAmount > 0)
@@ -77,8 +47,8 @@ export default function DriverWallet({
         : (slangMode ? 'Super cool, merci beaucoup pour le geste !' : 'Very friendly passenger, highly appreciated!')
     }));
 
-  // Combine actual tips with mock tips to ensure the dashboard is always lively and testable
-  const allTips = [...actualTips, ...DEFAULT_TIPS];
+  // Vrais pourboires uniquement (issus de l'historique backend).
+  const allTips = actualTips;
 
   // Calculate tip statistics
   const totalTipsAmount = allTips.reduce((sum, item) => sum + item.tipAmount, 0);
@@ -88,8 +58,6 @@ export default function DriverWallet({
     if (tipSort === 'amount') {
       return b.tipAmount - a.tipAmount;
     }
-    // Date sorting: since mock dates are also ISO string-like, or using id prefix/natural list ordering.
-    // Let's sort actual first, then mock. Our default array order has actual first.
     return 0; // maintain default (newest first)
   });
 

@@ -111,7 +111,7 @@ export default function PaymentGateway({
           </div>
           <div>
             <h3 className="text-lg font-black text-white">Secure Payment Gateway</h3>
-            <p className="text-xs text-brand-text-muted font-medium">Powered by Fapshi</p>
+            <p className="text-xs text-brand-text-muted font-medium">Paiement sécurisé Wanda</p>
           </div>
         </div>
 

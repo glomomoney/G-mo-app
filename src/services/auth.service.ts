@@ -1,47 +1,113 @@
 import {
-  signInWithEmailAndPassword,
-  signInWithPhoneNumber,
-  RecaptchaVerifier,
-  ConfirmationResult,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-  User,
-  Unsubscribe
-} from 'firebase/auth';
-import { auth, adminAuth } from '../lib/firebase';
+  apiRequest,
+  authEvents,
+  clearAdminSession,
+  clearSession,
+  getRefreshToken,
+  setAdminSession,
+  setSession,
+} from '../lib/api';
+import type { UserProfile } from '../types';
+
+// ── Types backend (UserRead / TokenResponse) ─────────────────────────────────
+
+export interface BackendUser {
+  id: string;
+  phone: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  role: string;
+  city: string | null;
+  slang_mode: boolean;
+  is_phone_verified: boolean;
+  is_active: boolean;
+  is_admin: boolean;
+  admin_role: string | null;
+  created_at: string;
+}
+
+export interface TokenResult {
+  access_token: string;
+  refresh_token: string;
+  is_new_user: boolean;
+  user: BackendUser;
+}
+
+export function toUserProfile(u: BackendUser): UserProfile {
+  return {
+    id: u.id,
+    name: u.name || '',
+    email: u.email || undefined,
+    phone: u.phone,
+    role: u.role === 'driver' ? 'driver' : 'passenger',
+    avatar: u.avatar_url || undefined,
+    slangMode: u.slang_mode,
+    createdAt: u.created_at,
+  };
+}
+
+// ── OTP (passager / chauffeur) ────────────────────────────────────────────────
+
+export const sendOtp = (phone: string): Promise<unknown> =>
+  apiRequest('/auth/send-otp', { method: 'POST', body: { phone } });
+
+export const verifyOtp = async (phone: string, code: string): Promise<TokenResult> => {
+  const data = await apiRequest<TokenResult>('/auth/verify-otp', {
+    method: 'POST',
+    body: { phone, code },
+  });
+  setSession(data.access_token, data.refresh_token);
+  authEvents.emitUser();
+  return data;
+};
+
+// ── Admin login ───────────────────────────────────────────────────────────────
+
+export const adminLogin = async (email: string, password: string): Promise<TokenResult> => {
+  const data = await apiRequest<TokenResult>('/auth/admin/login', {
+    method: 'POST',
+    admin: true,
+    body: { email, password },
+  });
+  setAdminSession(data.access_token, data.refresh_token, data.user);
+  authEvents.emitAdmin();
+  return data;
+};
+
+// ── Profil courant ────────────────────────────────────────────────────────────
+
+export const fetchCurrentUser = (): Promise<BackendUser> => apiRequest('/auth/me');
+
+export const updateCurrentUser = (patch: Record<string, unknown>): Promise<BackendUser> =>
+  apiRequest('/auth/me', { method: 'PATCH', body: patch });
+
+// ── Session ───────────────────────────────────────────────────────────────────
 
 export const signOut = async (): Promise<void> => {
-  await firebaseSignOut(auth);
-};
-
-let recaptchaVerifier: RecaptchaVerifier | null = null;
-
-// Lazily creates (and caches) the invisible reCAPTCHA verifier required by
-// Firebase Phone Auth. `containerId` must be a DOM node already mounted
-// (e.g. a hidden <div id="recaptcha-container" />) when this first runs.
-export const getRecaptchaVerifier = (containerId: string): RecaptchaVerifier => {
-  if (!recaptchaVerifier) {
-    recaptchaVerifier = new RecaptchaVerifier(auth, containerId, { size: 'invisible' });
+  const refresh = getRefreshToken();
+  if (refresh) {
+    await apiRequest('/auth/logout', {
+      method: 'POST',
+      body: { refresh_token: refresh },
+      skipAuth: true,
+    }).catch(() => {});
   }
-  return recaptchaVerifier;
+  clearSession();
+  authEvents.emitUser();
 };
 
-// Sends a real SMS OTP to `e164Phone` (e.g. "+237670000000") via Firebase
-// Phone Auth. Resolve the returned ConfirmationResult's `.confirm(code)` to
-// complete sign-in with a real, stable `auth.uid` tied to that phone number.
-export const sendPhoneOtp = (e164Phone: string, containerId: string): Promise<ConfirmationResult> =>
-  signInWithPhoneNumber(auth, e164Phone, getRecaptchaVerifier(containerId));
+export const signInAdmin = async (email: string, password: string): Promise<BackendUser> => {
+  const data = await adminLogin(email, password);
+  return data.user;
+};
 
-export const onAuthStateChange = (onChange: (user: User | null) => void): Unsubscribe =>
-  onAuthStateChanged(auth, onChange);
+export const signOutAdmin = async (): Promise<void> => {
+  clearAdminSession();
+  authEvents.emitAdmin();
+};
 
-// Admin console sign-in — deliberately on the *secondary* `adminAuth`
-// instance (see src/lib/firebase.ts) so it never touches the passenger/
-// driver anonymous session.
-export const signInAdmin = (email: string, password: string): Promise<User> =>
-  signInWithEmailAndPassword(adminAuth, email, password).then(cred => cred.user);
+export const onAuthStateChange = (cb: () => void): (() => void) => authEvents.onChangeUser(cb);
 
-export const signOutAdmin = (): Promise<void> => firebaseSignOut(adminAuth);
-
-export const onAdminAuthStateChange = (onChange: (user: User | null) => void): Unsubscribe =>
-  onAuthStateChanged(adminAuth, onChange);
+export const onAdminAuthStateChange = (cb: () => void): (() => void) =>
+  authEvents.onChangeAdmin(cb);

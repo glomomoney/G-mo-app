@@ -1,15 +1,20 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { adminDb } from '../lib/firebase';
+import { getAdminAccessToken } from '../lib/api';
 import { AdminAccount } from '../types';
 
-// Reads via `adminDb` (bound to the secondary admin Firebase App) so the
-// request is authenticated as the signed-in admin — required by
-// firestore.rules' `admins/{adminId}` self-read-only rule.
-export const fetchAdminAccount = async (uid: string): Promise<AdminAccount | null> => {
+// Lit le compte admin de la session backend (persisté dans localStorage par
+// adminLogin — équivalent du doc Firestore `admins/{uid}`).
+export const fetchAdminAccount = async (_uid?: string): Promise<AdminAccount | null> => {
   try {
-    const snap = await getDoc(doc(adminDb, 'admins', uid));
-    if (!snap.exists()) return null;
-    return { uid, ...snap.data() } as AdminAccount;
+    if (!getAdminAccessToken()) return null;
+    const raw = localStorage.getItem('wanda_admin_user');
+    if (!raw) return null;
+    const user = JSON.parse(raw);
+    return {
+      uid: user.id || user.email || '',
+      email: user.email || '',
+      name: user.name || undefined,
+      role: (user.admin_role as AdminAccount['role']) || 'accounting',
+    } as AdminAccount;
   } catch (err) {
     console.warn('Error fetching admin account:', err);
     return null;

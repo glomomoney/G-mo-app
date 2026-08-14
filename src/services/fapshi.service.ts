@@ -1,58 +1,48 @@
-// Direct-from-frontend Fapshi integration (Cameroonian payment aggregator
-// sitting in front of MTN MoMo / Orange Money). Request/response shapes are
-// ported 1:1 from the working reference implementation in the sibling repo
-// cloudbaby-backend (app/services/payment/fapshi.py) — accepted tradeoff for
-// this demo/prototype phase: the API key ships in client JS.
-const BASE_URL = (import.meta as any).env?.VITE_FAPSHI_BASE_URL || 'https://sandbox.fapshi.com';
-const HEADERS = {
-  apiuser: (import.meta as any).env?.VITE_FAPSHI_API_USER || '',
-  apikey: (import.meta as any).env?.VITE_FAPSHI_API_KEY || '',
-  'Content-Type': 'application/json',
-};
+// Intégration paiement mobile money via le BACKEND Wanda (plus d'appel Fapshi
+// direct depuis le navigateur). La clé Fapshi reste côté serveur.
+//
+// Flow : fapshiDirectPay -> POST /payments/topup (initie + crédite en dev mock)
+//        pollFapshiPayment  -> GET /payments/poll/{trans_id} toutes les 3s
+
+import { apiRequest } from '../lib/api';
 
 export type FapshiMedium = 'mobile money' | 'orange money';
 export type FapshiStatus = 'INITIATED' | 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'EXPIRED';
 
 interface FapshiDirectPayParams {
   amount: number;
-  phone: string;          // local digits only, no country code (e.g. "670000000")
+  phone: string;
   medium: FapshiMedium;
   externalId: string;
   userId?: string;
 }
 
-// Fapshi wants a bare local 9-digit number, no +237/237 prefix.
-function toLocalDigits(phone: string): string {
-  const digits = phone.replace(/[^0-9]/g, '');
-  return digits.startsWith('237') ? digits.slice(3) : digits;
+interface TopupResponse {
+  payment_id: string;
+  status: string;
+  payment_url: string | null;
+  ussd_code: string | null;
+  transaction_id: string | null;
+  amount: number;
+  bonus_rate: number;
+  expected_bonus: number;
 }
 
-async function parseFapshiResponse(res: Response): Promise<any> {
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(body.message || body.error || `Fapshi request failed (${res.status})`);
-  }
-  // Fapshi sometimes wraps the payload in {message, data}, sometimes returns it flat.
-  return body.data ?? body;
-}
-
-// Pushes a real USSD mobile-money charge prompt to the payer's phone.
-export async function fapshiDirectPay(params: FapshiDirectPayParams): Promise<{ transId: string }> {
-  const res = await fetch(`${BASE_URL}/direct-pay`, {
+// Initie le rechargement wallet via le backend et renvoie le transId provider
+// (utilisé ensuite par le polling de confirmation).
+export async function fapshiDirectPay(
+  params: FapshiDirectPayParams
+): Promise<{ transId: string }> {
+  const data = await apiRequest<TopupResponse>('/payments/topup', {
     method: 'POST',
-    headers: HEADERS,
-    body: JSON.stringify({
+    body: {
       amount: params.amount,
-      phone: toLocalDigits(params.phone),
-      medium: params.medium,
-      name: 'wanda',
-      email: 'contact@wanda.app',
-      externalId: params.externalId,
-      ...(params.userId ? { userId: params.userId } : {}),
-    }),
+      phone: params.phone,
+      // provider non transmis : le backend utilise son fournisseur configuré
+      // (mock en dev). Aucun appel direct à Fapshi depuis le navigateur.
+    },
   });
-  const data = await parseFapshiResponse(res);
-  return { transId: data.transId };
+  return { transId: data.transaction_id || data.payment_id };
 }
 
 export async function fapshiPaymentStatus(transId: string): Promise<{
@@ -60,20 +50,30 @@ export async function fapshiPaymentStatus(transId: string): Promise<{
   amount: number;
   paidAt?: string;
 }> {
-  const res = await fetch(`${BASE_URL}/payment-status/${transId}`, { headers: HEADERS });
-  return parseFapshiResponse(res);
+  const data = await apiRequest<{ status: string; paid: boolean }>(
+    `/payments/poll/${encodeURIComponent(transId)}`
+  );
+  const status: FapshiStatus =
+    data.status === 'paid' || data.paid ? 'SUCCESSFUL'
+    : data.status === 'failed' ? 'FAILED'
+    : 'PENDING';
+  return { status, amount: 0 };
 }
 
-// Polls fapshiPaymentStatus every `intervalMs` until a terminal status is
-// reached or `maxAttempts` is exceeded (defaults: 3s x 20 = ~60s timeout).
+// Poll fapshiPaymentStatus toutes les `intervalMs` jusqu'à un statut terminal
+// (SUCCESSFUL/FAILED/EXPIRED) ou `maxAttempts` atteint (3s x 20 = ~60s).
 export async function pollFapshiPayment(
   transId: string,
   { intervalMs = 3000, maxAttempts = 20 }: { intervalMs?: number; maxAttempts?: number } = {}
 ): Promise<FapshiStatus> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const { status } = await fapshiPaymentStatus(transId);
-    if (status === 'SUCCESSFUL' || status === 'FAILED' || status === 'EXPIRED') {
-      return status;
+    try {
+      const { status } = await fapshiPaymentStatus(transId);
+      if (status === 'SUCCESSFUL' || status === 'FAILED' || status === 'EXPIRED') {
+        return status;
+      }
+    } catch (err) {
+      console.warn('Payment status poll error:', err?.message || err);
     }
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }

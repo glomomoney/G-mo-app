@@ -70,20 +70,6 @@ export interface MapDriver {
   vehiclePlate: string;
 }
 
-const AVAILABLE_DRIVERS_DATA: MapDriver[] = [
-  { id: 'av_d1', name: 'Jean-Pierre Kamga', vehicleType: 'comfort', rating: 4.9, lat: 3.8910, lng: 11.5130, city: 'Yaoundé', vehicleModel: 'Toyota RAV4 (Black)', vehiclePlate: 'LT-284-AA' },
-  { id: 'av_d2', name: 'Dieudonné Tagne', vehicleType: 'ecoride', rating: 4.7, lat: 3.8655, lng: 11.5190, city: 'Yaoundé', vehicleModel: 'Hyundai Elantra (Silver)', vehiclePlate: 'LT-491-BB' },
-  { id: 'av_d3', name: 'Alhadji Ousmanou', vehicleType: 'keke', rating: 4.8, lat: 3.8640, lng: 11.5205, city: 'Yaoundé', vehicleModel: 'Toyota Corolla Yellow', vehiclePlate: 'LT-381-YY' },
-  { id: 'av_d4', name: 'Fabrice Eto\'o', vehicleType: 'okada', rating: 4.6, lat: 3.8290, lng: 11.5180, city: 'Yaoundé', vehicleModel: 'Nanfang Moto (Red)', vehiclePlate: 'LT-129-XX' },
-  { id: 'av_d5', name: 'Arthur Mbarga', vehicleType: 'keke', rating: 4.7, lat: 3.8710, lng: 11.4980, city: 'Yaoundé', vehicleModel: 'Toyota Yaris Yellow', vehiclePlate: 'LT-702-AA' },
-  
-  { id: 'av_d6', name: 'Jean-Pierre Kamga', vehicleType: 'comfort', rating: 4.9, lat: 4.0435, lng: 9.6895, city: 'Douala', vehicleModel: 'Toyota RAV4 (Black)', vehiclePlate: 'LT-284-AA' },
-  { id: 'av_d7', name: 'Dieudonné Tagne', vehicleType: 'ecoride', rating: 4.7, lat: 4.0620, lng: 9.7090, city: 'Douala', vehicleModel: 'Hyundai Elantra (Silver)', vehiclePlate: 'LT-491-BB' },
-  { id: 'av_d8', name: 'Alhadji Ousmanou', vehicleType: 'keke', rating: 4.8, lat: 4.0415, lng: 9.7420, city: 'Douala', vehicleModel: 'Toyota Corolla Yellow', vehiclePlate: 'LT-381-YY' },
-  { id: 'av_d9', name: 'Fabrice Eto\'o', vehicleType: 'okada', rating: 4.6, lat: 4.0825, lng: 9.7405, city: 'Douala', vehicleModel: 'Nanfang Moto (Red)', vehiclePlate: 'LT-129-XX' },
-  { id: 'av_d10', name: 'Arthur Mbarga', vehicleType: 'keke', rating: 4.7, lat: 4.0780, lng: 9.7710, city: 'Douala', vehicleModel: 'Toyota Yaris Yellow', vehiclePlate: 'LT-702-AA' }
-];
-
 const isValidCoords = (lat: any, lng: any): boolean => {
   return typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng);
 };
@@ -226,6 +212,7 @@ interface TaxiMapProps {
   onSelectZoneTarget?: (zone: DemandZone) => void;
   summaryMetricMode?: 'time' | 'distance';
   onToggleSummaryMetricMode?: (mode: 'time' | 'distance') => void;
+  onlineDrivers?: MapDriver[];
 }
 
 // High-density urban bounding boxes for auto-triggering building footprint transparency
@@ -257,7 +244,8 @@ export default function TaxiMap({
   recentBookings = [],
   onSelectZoneTarget,
   summaryMetricMode,
-  onToggleSummaryMetricMode
+  onToggleSummaryMetricMode,
+  onlineDrivers = []
 }: TaxiMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -1491,7 +1479,7 @@ export default function TaxiMap({
       const isYaounde = pickup ? (Math.abs(pickup.lat - 3.86) < Math.abs(pickup.lat - 4.04)) : true;
       const currentCityName = isYaounde ? 'Yaoundé' : 'Douala';
 
-      const activeDrivers = AVAILABLE_DRIVERS_DATA.filter(d => d.city === currentCityName);
+      const activeDrivers = onlineDrivers.filter(d => d.city === currentCityName);
 
       activeDrivers.forEach(driver => {
         let vehicleSvg = '🚗';
@@ -1539,7 +1527,7 @@ export default function TaxiMap({
       }
       nearbyDriverMarkersRef.current = [];
     };
-  }, [pickup, status]);
+  }, [pickup, status, onlineDrivers]);
 
   // Update Pickup Marker
   useEffect(() => {
@@ -1556,7 +1544,7 @@ export default function TaxiMap({
         driverProximityMins = Math.max(1, Math.round(dist / 350));
       } else {
         let minDist = Infinity;
-        AVAILABLE_DRIVERS_DATA.forEach(d => {
+        onlineDrivers.forEach(d => {
           if (isValidCoords(d.lat, d.lng)) {
             const dist = getHaversineDistanceInMeters(pickup, d);
             if (dist < minDist) minDist = dist;
@@ -1609,7 +1597,7 @@ export default function TaxiMap({
         pickupMarkerRef.current = null;
       }
     }
-  }, [pickup, destination, driverLocation, status, slangMode]);
+  }, [pickup, destination, driverLocation, status, slangMode, onlineDrivers]);
 
   // Update Destination Marker
   useEffect(() => {
@@ -1629,7 +1617,7 @@ export default function TaxiMap({
           driverProximityMins = Math.max(1, Math.round(dist / 350));
         } else {
           let minDist = Infinity;
-          AVAILABLE_DRIVERS_DATA.forEach(d => {
+          onlineDrivers.forEach(d => {
             if (isValidCoords(d.lat, d.lng)) {
               const dist = getHaversineDistanceInMeters(pickup, d);
               if (dist < minDist) minDist = dist;

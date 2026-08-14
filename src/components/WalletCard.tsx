@@ -284,7 +284,7 @@ export default function WalletCard({
           >
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
             <span className="text-[10px] font-black uppercase tracking-wide">MTN MoMo</span>
-            <span className="text-[8px] bg-amber-500/20 text-amber-300 font-bold px-1 rounded border border-amber-500/30 ml-auto">Bientôt</span>
+            <span className="text-[8px] bg-amber-500/20 text-amber-300 font-bold px-1 rounded border border-amber-500/30 ml-auto">OK</span>
           </button>
           <button
             type="button"
@@ -293,25 +293,25 @@ export default function WalletCard({
           >
             <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
             <span className="text-[10px] font-black uppercase tracking-wide">Orange Money</span>
-            <span className="text-[8px] bg-orange-500/20 text-orange-300 font-bold px-1 rounded border border-orange-500/30 ml-auto">Bientôt</span>
+            <span className="text-[8px] bg-orange-500/20 text-orange-300 font-bold px-1 rounded border border-orange-500/30 ml-auto">OK</span>
           </button>
         </div>
 
-        {/* Coming Soon API Notice */}
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 text-[10.5px] text-amber-200/90 font-medium space-y-1">
+        {/* Top-up notice */}
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-2.5 text-[10.5px] text-emerald-200/90 font-medium space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-amber-400 font-extrabold text-[10px] uppercase tracking-wider flex items-center gap-1">
+            <span className="text-emerald-400 font-extrabold text-[10px] uppercase tracking-wider flex items-center gap-1">
               <Clock size={12} />
-              {slangMode ? "API MOMO & ORANGE MONEY : BIENTÔT DISPONIBLE" : "MOMO & ORANGE API : COMING SOON"}
+              {slangMode ? "RECHARGE CONFIRMÉE PAR WANDA" : "WANDA-CONFIRMED TOP-UP"}
             </span>
-            <span className="bg-amber-400/20 text-amber-300 text-[8px] font-black px-1.5 py-0.5 rounded border border-amber-400/30 uppercase">
-              SOON
+            <span className="bg-emerald-400/20 text-emerald-300 text-[8px] font-black px-1.5 py-0.5 rounded border border-emerald-400/30 uppercase">
+              OK
             </span>
           </div>
           <p className="text-[10px] leading-relaxed">
             {slangMode
-              ? "L'intégration directe des API MTN MoMo et Orange Money est en cours. Rechargez par simulation d'agent/admin pour débloquer votre solde et votre bonus de +20% !"
-              : "Direct MTN MoMo and Orange Money API handshake is coming soon. Use the instant Agent/Admin top-up to credit your wallet and claim your +20% bonus!"}
+              ? "La recharge passe par le serveur Wanda : le solde est crédité instantanément (+20% de bonus pendant la promo). L'opérateur (MTN MoMo / Orange Money) sera confirmé côté serveur."
+              : "Top-ups go through the Wanda backend: your balance is credited instantly (+20% bonus while the promo runs). The carrier (MTN MoMo / Orange Money) is confirmed server-side."}
           </p>
         </div>
 

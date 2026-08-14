@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import WandaLogo from './WandaLogo';
 import { PaymentMethod, AppNotification, NotificationScheduleConfig } from '../types';
+import { apiRequest } from '../lib/api';
 import { 
   saveSettingsToFirestore, 
   subscribeToSettings, 
@@ -110,6 +111,40 @@ export default function AdminDashboard({
   const [tab, setTab] = useState<'kpi' | 'drivers' | 'transactions' | 'settings' | 'notifications' | 'roles'>('kpi');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeWeatherAlert, setActiveWeatherAlert] = useState<string>('Normal Skies');
+
+  // Real operational KPIs (GET /admin/kpi), polled.
+  const [kpi, setKpi] = useState<{
+    total_users: number;
+    total_drivers: number;
+    total_rides: number;
+    completed_rides: number;
+    cancelled_rides: number;
+    total_revenue_fcfa: number;
+    total_commission_fcfa: number;
+    pending_withdrawals: number;
+    pending_driver_approvals: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const data = await apiRequest('/admin/kpi', { admin: true });
+        if (!cancelled) setKpi(data || null);
+      } catch (err) {
+        console.warn('KPI fetch failed:', (err as any)?.message || err);
+      }
+    };
+
+    load();
+    const timer = setInterval(load, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   // Staff Users & Department Rules Directory
   const [staffUsers, setStaffUsers] = useState<any[]>([
@@ -391,11 +426,11 @@ export default function AdminDashboard({
   // Compute stats
   const totalRevenue = transactions
     .filter(t => t.status === 'success' && t.type === 'topup')
-    .reduce((acc, curr) => acc + curr.amount, 142000);
+    .reduce((acc, curr) => acc + curr.amount, 0);
 
   const totalWithdrawals = transactions
     .filter(t => t.status === 'success' && t.type === 'withdrawal')
-    .reduce((acc, curr) => acc + curr.amount, 35000);
+    .reduce((acc, curr) => acc + curr.amount, 0);
 
   const pendingWithdrawalsCount = transactions.filter(t => t.status === 'pending' && t.type === 'withdrawal').length;
 
@@ -827,80 +862,45 @@ export default function AdminDashboard({
                   </div>
                 </div>
 
-                {/* SVG Visualizations of Revenue Channels */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  {/* Carrier share chart card */}
-                  <div className="bg-brand-card border border-brand-input rounded-2xl p-5 shadow-md lg:col-span-5 space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-brand-text-muted">Deposit API Share by Carrier</h4>
-                    
-                    <div className="flex justify-center py-4">
-                      {/* Interactive vector pie/donut visual representation */}
-                      <svg viewBox="0 0 200 200" className="w-40 h-40">
-                        {/* Orange segment (55%) */}
-                        <circle cx="100" cy="100" r="70" fill="transparent" stroke="#f97316" strokeWidth="25" strokeDasharray="242 440" strokeDashoffset="0" />
-                        {/* MTN Gold segment (45%) */}
-                        <circle cx="100" cy="100" r="70" fill="transparent" stroke="#facc15" strokeWidth="25" strokeDasharray="198 440" strokeDashoffset="-242" />
-                        {/* Center text overlay */}
-                        <circle cx="100" cy="100" r="45" fill="#0a081d" />
-                        <text x="100" y="95" textAnchor="middle" fill="#beb7e8" fontSize="10" fontWeight="bold">TOTAL API</text>
-                        <text x="100" y="115" textAnchor="middle" fill="#ffd385" fontSize="13" fontWeight="900">MOMO</text>
-                      </svg>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs font-semibold pt-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 bg-amber-400 rounded"></span>
-                        <span>MTN MoMo (45%)</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 bg-orange-500 rounded"></span>
-                        <span>Orange Money (55%)</span>
-                      </div>
-                    </div>
+                {/* Real operational KPIs (GET /admin/kpi) */}
+                <div className="bg-brand-card border border-brand-input rounded-2xl p-5 shadow-md space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-brand-text-muted">KPI Opérationnels (Temps Réel)</h4>
+                    <span className="text-[9px] bg-emerald-500/15 text-emerald-400 font-black px-2 py-0.5 rounded-full border border-emerald-500/30 uppercase">Live</span>
                   </div>
 
-                  {/* Booking timeline graph */}
-                  <div className="bg-brand-card border border-brand-input rounded-2xl p-5 shadow-md lg:col-span-7 space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-brand-text-muted">Simulated Daily Bookings (Last 7 Days)</h4>
-                    
-                    <div className="relative pt-6">
-                      {/* SVG line chart */}
-                      <svg viewBox="0 0 500 150" className="w-full h-36">
-                        {/* Grid lines */}
-                        <line x1="0" y1="20" x2="500" y2="20" stroke="#19143d" strokeWidth="0.5" strokeDasharray="5,5" />
-                        <line x1="0" y1="60" x2="500" y2="60" stroke="#19143d" strokeWidth="0.5" strokeDasharray="5,5" />
-                        <line x1="0" y1="100" x2="500" y2="100" stroke="#19143d" strokeWidth="0.5" strokeDasharray="5,5" />
-                        <line x1="0" y1="130" x2="500" y2="130" stroke="#19143d" strokeWidth="1" />
-                        
-                        {/* Line path representing traffic graph */}
-                        <path
-                          d="M 20 120 L 95 105 L 170 85 L 245 110 L 320 60 L 395 35 L 470 50"
-                          fill="none"
-                          stroke="#ffd385"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                        />
-
-                        {/* Node points */}
-                        <circle cx="20" cy="120" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
-                        <circle cx="95" cy="105" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
-                        <circle cx="170" cy="85" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
-                        <circle cx="245" cy="110" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
-                        <circle cx="320" cy="60" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
-                        <circle cx="395" cy="35" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
-                        <circle cx="470" cy="50" r="4.5" fill="#ffd385" stroke="#0a081d" strokeWidth="2" />
-                      </svg>
-                      
-                      {/* Timeline labels */}
-                      <div className="flex justify-between text-[10px] text-brand-text-muted px-2 font-mono mt-1 font-bold">
-                        <span>Mon</span>
-                        <span>Tue</span>
-                        <span>Wed</span>
-                        <span>Thu</span>
-                        <span>Fri</span>
-                        <span>Sat</span>
-                        <span>Sun (Today)</span>
-                      </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Courses totales</span>
+                      <h5 className="text-xl font-black text-white">{kpi ? kpi.total_rides : '—'}</h5>
+                    </div>
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Terminées</span>
+                      <h5 className="text-xl font-black text-emerald-400">{kpi ? kpi.completed_rides : '—'}</h5>
+                    </div>
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Annulées</span>
+                      <h5 className="text-xl font-black text-rose-400">{kpi ? kpi.cancelled_rides : '—'}</h5>
+                    </div>
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Utilisateurs</span>
+                      <h5 className="text-xl font-black text-white">{kpi ? kpi.total_users : '—'}</h5>
+                    </div>
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Fleet approuvée</span>
+                      <h5 className="text-xl font-black text-white">{kpi ? kpi.total_drivers : '—'}</h5>
+                    </div>
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Commissions admin</span>
+                      <h5 className="text-xl font-black text-brand-gold">{kpi ? `${kpi.total_commission_fcfa.toLocaleString('fr-FR')} FCFA` : '—'}</h5>
+                    </div>
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Chauffeurs à approuver</span>
+                      <h5 className="text-xl font-black text-amber-400">{kpi ? kpi.pending_driver_approvals : '—'}</h5>
+                    </div>
+                    <div className="bg-brand-midnight/60 border border-brand-input rounded-xl p-3 space-y-0.5">
+                      <span className="text-[9px] uppercase font-black tracking-wider text-brand-text-muted">Retraits en attente</span>
+                      <h5 className="text-xl font-black text-amber-400">{kpi ? kpi.pending_withdrawals : '—'}</h5>
                     </div>
                   </div>
                 </div>

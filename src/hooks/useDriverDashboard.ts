@@ -1,5 +1,5 @@
-import { useState, useEffect, Dispatch, SetStateAction } from 'react';
-import { RIDE_CLASSES, getDistanceKm } from '../data';
+import { useState, useEffect, useRef, Dispatch, SetStateAction } from 'react';
+import { subscribeToActiveRides, acceptRide, cancelRide } from '../services/rides.service';
 import {
   UserRole,
   UserProfile,
@@ -8,21 +8,15 @@ import {
   Driver,
   PaymentMethod,
   Message,
-  DriverRideRequest,
-  SystemSettings
+  DriverRideRequest
 } from '../types';
 
 export interface UseDriverDashboardParams {
   role: UserRole;
   user: UserProfile | null;
   slangMode: boolean;
-  systemSettings: SystemSettings;
-  currentCity: string;
-  /** From useRideBooking — city-scoped preset pickup/destination points used to fabricate a request. */
-  activeCityLocations: Location[];
-  /** From useRideBooking — the driver's own current position; also written here on first dispatch. */
+  /** From useRideBooking — the driver's own current position. */
   driverLoc: { lat: number; lng: number } | null;
-  setDriverLoc: Dispatch<SetStateAction<{ lat: number; lng: number } | null>>;
   /** From useRideBooking — accepting a request switches the driver into the same "active ride" state slots the passenger side uses. */
   rideStatus: RideStatus;
   setRideStatus: Dispatch<SetStateAction<RideStatus>>;
@@ -36,21 +30,17 @@ export interface UseDriverDashboardParams {
 
 /**
  * Driver-mode dashboard: online/offline status, headline stats, and the
- * incoming-ride-request simulator (auto-dispatch, countdown, accept/decline).
- * Accepting a request populates the same ride-in-progress state that the
- * passenger side owns (useRideBooking) — those setters are accepted as
- * parameters rather than duplicated here.
+ * incoming-ride-request feed. Les demandes réelles sont celles assignées à ce
+ * chauffeur par le dispatch backend (POST /rides → statut 'driver_found'),
+ * pollées via GET /rides. Accepter une demande switch le chauffeur dans le
+ * même état "course en cours" que côté passager (useRideBooking).
  */
 export function useDriverDashboard(params: UseDriverDashboardParams) {
   const {
     role,
     user,
     slangMode,
-    systemSettings,
-    currentCity,
-    activeCityLocations,
     driverLoc,
-    setDriverLoc,
     rideStatus,
     setRideStatus,
     setPickup,
@@ -70,96 +60,102 @@ export function useDriverDashboard(params: UseDriverDashboardParams) {
   const [driverRideRequest, setDriverRideRequest] = useState<DriverRideRequest | null>(null);
   const [requestCountdown, setRequestCountdown] = useState(15);
 
-  // Driver Incoming Request Handlers & Dispatch Simulators
-  const triggerIncomingSimulatedRequest = () => {
-    if (rideStatus !== 'idle' || driverRideRequest) return;
+  // Id de la dernière demande affichée — évite de re-surfacer une demande déjà
+  // refusée ou en cours tant qu'elle reste assignée au chauffeur.
+  const lastRequestIdRef = useRef<string | null>(null);
 
-    const passNames = slangMode ? [
-      "Arnaud Ndoumbe", "Marie Ngo Nseck", "Ephraim Kamga",
-      "Willy Sango", "Ateba Onana", "Simeon Tchakounte"
-    ] : [
-      "Marc Ndoumbe", "Marie-Therese Ngo Nseck", "Ephraim Kamga",
-      "Chantal Biya", "Willy Sango", "Ateba Onana", "Simeon Tchakounte"
-    ];
-    const passengerName = passNames[Math.floor(Math.random() * passNames.length)];
+  // ---- Real incoming requests (dispatched rides) ----
+  useEffect(() => {
+    if (role !== 'driver' || !user?.id) return;
+    let cancelled = false;
 
-    let currentDriverLat = driverLoc?.lat;
-    let currentDriverLng = driverLoc?.lng;
-    if (!currentDriverLat || !currentDriverLng) {
-      const defaultLoc = activeCityLocations[0];
-      currentDriverLat = defaultLoc.lat;
-      currentDriverLng = defaultLoc.lng;
-      setDriverLoc({ lat: currentDriverLat, lng: currentDriverLng });
-    }
+    const unsub = subscribeToActiveRides((rides) => {
+      if (cancelled) return;
 
-    const availableLocs = activeCityLocations;
-    let pickupLoc = availableLocs[Math.floor(Math.random() * availableLocs.length)];
-    let destLoc = availableLocs[Math.floor(Math.random() * availableLocs.length)];
-    while (destLoc.name === pickupLoc.name) {
-      destLoc = availableLocs[Math.floor(Math.random() * availableLocs.length)];
-    }
+      if (rideStatus !== 'idle') {
+        setDriverRideRequest(null);
+        return;
+      }
 
-    const distanceVal = getDistanceKm(pickupLoc.lat, pickupLoc.lng, destLoc.lat, destLoc.lng);
+      const myRequest = rides.find(
+        (r) => r.status === 'driver_found' && r.driverId === user.id
+      );
+      if (!myRequest) {
+        lastRequestIdRef.current = null;
+        setDriverRideRequest(null);
+        return;
+      }
+      if (lastRequestIdRef.current === myRequest.id) return;
 
-    const driverVehicleType = (user as any)?.vehicleType || 'ecoride';
-    const activeClass = RIDE_CLASSES.find(c => c.id === driverVehicleType) || RIDE_CLASSES[2];
-    const clsBase = systemSettings.classRates?.[activeClass.id]?.baseFare ?? activeClass.baseFare;
-    const clsPerKm = systemSettings.classRates?.[activeClass.id]?.perKm ?? activeClass.perKm;
-    const calculatedFare = Math.round((clsBase + (distanceVal * clsPerKm)) * systemSettings.surgeMultiplier);
+      lastRequestIdRef.current = myRequest.id;
+      const rawPayment = myRequest.paymentMethod;
+      setDriverRideRequest({
+        id: myRequest.id,
+        passengerName: myRequest.passengerName || 'Passager',
+        pickupName: myRequest.pickup.name || 'Point de départ',
+        destName: myRequest.destination.name || 'Destination',
+        pickupLat: myRequest.pickup.lat,
+        pickupLng: myRequest.pickup.lng,
+        destLat: myRequest.destination.lat,
+        destLng: myRequest.destination.lng,
+        fare: myRequest.fare,
+        payment: rawPayment === 'wallet' || rawPayment === 'cash' ? rawPayment : 'wallet'
+      });
+      setRequestCountdown(15);
+    });
 
-    const newRequest: DriverRideRequest = {
-      id: `req_${Date.now()}`,
-      passengerName,
-      pickupName: pickupLoc.name,
-      destName: destLoc.name,
-      pickupLat: pickupLoc.lat,
-      pickupLng: pickupLoc.lng,
-      destLat: destLoc.lat,
-      destLng: destLoc.lng,
-      fare: calculatedFare,
-      payment: (Math.random() > 0.4 ? 'wallet' : 'cash_on_delivery') as PaymentMethod
+    return () => {
+      cancelled = true;
+      unsub();
     };
-
-    setDriverRideRequest(newRequest);
-    setRequestCountdown(15);
-  };
+  }, [role, user?.id, rideStatus]);
 
   const handleDeclineRequest = () => {
+    const req = driverRideRequest;
     setDriverRideRequest(null);
+    if (req) {
+      cancelRide(req.id).catch((err) =>
+        console.warn('Decline cancel failed:', err?.message || err)
+      );
+    }
   };
 
   const handleAcceptRequest = () => {
     if (!driverRideRequest) return;
+    const req = driverRideRequest;
+
+    acceptRide(req.id).catch((err) =>
+      console.warn('Accept failed:', err?.message || err)
+    );
 
     setRideStatus('driver_found');
 
     setPickup({
-      name: driverRideRequest.pickupName,
-      lat: driverRideRequest.pickupLat,
-      lng: driverRideRequest.pickupLng
+      name: req.pickupName,
+      lat: req.pickupLat,
+      lng: req.pickupLng
     });
     setDestination({
-      name: driverRideRequest.destName,
-      lat: driverRideRequest.destLat,
-      lng: driverRideRequest.destLng
+      name: req.destName,
+      lat: req.destLat,
+      lng: req.destLng
     });
 
-    setPaymentMethod(driverRideRequest.payment);
+    setPaymentMethod(req.payment);
 
     const driverVehicleType = (user as any)?.vehicleType || 'ecoride';
 
     setActiveDriver({
-      id: 'driver_user',
+      id: user?.id || 'driver_user',
       name: user?.name || 'Moi-même Chauffeur',
       phone: user?.phone || '+237 600 00 00 00',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
       vehicleModel: (user as any)?.vehicleModel || (driverVehicleType === 'okada' ? 'Nanfang Moto (Red)' : 'Toyota Yaris Yellow'),
       vehiclePlate: (user as any)?.vehiclePlate || 'LT - 999 - CH',
       vehicleType: driverVehicleType,
-      approvalStatus: 'approved',
       rating: 5.0,
-      lat: driverLoc?.lat || 3.8640,
-      lng: driverLoc?.lng || 11.5205,
+      lat: driverLoc?.lat || req.pickupLat,
+      lng: driverLoc?.lng || req.pickupLng,
       status: 'heading_to_pickup'
     } as Driver);
 
@@ -172,26 +168,15 @@ export function useDriverDashboard(params: UseDriverDashboardParams) {
         {
           sender: 'passenger',
           text: slangMode
-            ? `Bonjour chauffeur, je t'attends à ${driverRideRequest.pickupName}. S'il te plaît dépêche-toi, le soleil tape fort !`
-            : `Hello driver, I am waiting for you at ${driverRideRequest.pickupName}. Please hurry up, it is very hot today!`,
+            ? `Bonjour chauffeur, je t'attends à ${req.pickupName}. S'il te plaît dépêche-toi, le soleil tape fort !`
+            : `Hello driver, I am waiting for you at ${req.pickupName}. Please hurry up, it is very hot today!`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
     }, 2000);
   };
 
-  // 1. Automatic simulated request dispatch for drivers
-  useEffect(() => {
-    if (role !== 'driver' || !driverOnline || rideStatus !== 'idle' || driverRideRequest) return;
-
-    const timeoutId = setTimeout(() => {
-      triggerIncomingSimulatedRequest();
-    }, 8000);
-
-    return () => clearTimeout(timeoutId);
-  }, [role, driverOnline, rideStatus, driverRideRequest, currentCity]);
-
-  // 2. Countdown timer for incoming request (auto-declines at zero)
+  // Countdown timer for incoming request (auto-declines at zero)
   useEffect(() => {
     if (!driverRideRequest) return;
 
@@ -199,7 +184,7 @@ export function useDriverDashboard(params: UseDriverDashboardParams) {
       setRequestCountdown(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          setDriverRideRequest(null);
+          handleDeclineRequest();
           return 0;
         }
         return prev - 1;
@@ -214,7 +199,6 @@ export function useDriverDashboard(params: UseDriverDashboardParams) {
     driverStats, setDriverStats,
     driverRideRequest, setDriverRideRequest,
     requestCountdown, setRequestCountdown,
-    triggerIncomingSimulatedRequest,
     handleDeclineRequest,
     handleAcceptRequest
   };

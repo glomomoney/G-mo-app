@@ -1,29 +1,85 @@
-import { collection, addDoc, onSnapshot, query, orderBy, limit, Unsubscribe } from 'firebase/firestore';
-import { db, adminDb } from '../lib/firebase';
+import { apiRequest } from '../lib/api';
 import { Transaction } from '../types';
 
-export const saveTransactionToFirestore = async (transaction: Transaction): Promise<void> => {
+type Unsubscribe = () => void;
+
+interface WalletTxBackend {
+  id: string;
+  type: string;
+  amount: number;
+  bonus_amount: number;
+  tip_amount: number;
+  phone: string | null;
+  carrier: string;
+  status: string;
+  ride_id: string | null;
+  created_at: string;
+}
+
+function formatTxDate(iso: string): string {
   try {
-    const txCol = collection(db, 'transactions');
-    await addDoc(txCol, {
-      ...transaction,
-      createdAt: new Date().toISOString()
+    return new Date(iso).toLocaleString([], {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
-  } catch (err) {
-    console.error('Error saving transaction to Firestore:', err);
+  } catch {
+    return iso;
   }
+}
+
+export function mapWalletTransaction(t: WalletTxBackend): Transaction {
+  return {
+    id: t.id,
+    type: (t.type as Transaction['type']) || 'topup',
+    amount: Math.abs(t.amount),
+    bonusAmount: t.bonus_amount || 0,
+    tipAmount: t.tip_amount || 0,
+    phone: t.phone || '',
+    carrier: t.carrier || 'wallet',
+    status: (t.status as Transaction['status']) || 'success',
+    date: formatTxDate(t.created_at),
+    userId: (t as any).user_id,
+  };
+}
+
+// Le grand livre est écrit côté backend (topup, course, retrait).
+export const saveTransactionToFirestore = async (): Promise<void> => {
+  // no-op : le backend est la source de vérité pour les transactions.
 };
 
-// Admin-only: the full cross-user transaction ledger (needed for the
-// pending-withdrawals queue), authenticated via the secondary adminDb so
-// firestore.rules' isAdmin() check resolves against the admin's own uid.
+// Feed admin (file de retraits en attente) + ledger du user connecté.
+// L'API admin n'expose que les retraits en attente ; le ledger complet du
+// compte admin est fusionné en complément.
 export const subscribeToAllTransactions = (
   onUpdate: (items: Transaction[]) => void
 ): Unsubscribe => {
-  const q = query(collection(adminDb, 'transactions'), orderBy('createdAt', 'desc'), limit(200));
-  return onSnapshot(q, (snapshot) => {
-    onUpdate(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
-  }, (err) => {
-    console.warn('Firestore subscribeToAllTransactions offline or connection notice:', err?.message || err);
-  });
+  let cancelled = false;
+  let timer: ReturnType<typeof setInterval>;
+
+  const poll = async () => {
+    try {
+      const [withdrawals, own] = await Promise.all([
+        apiRequest<WalletTxBackend[]>('/admin/withdrawals', { admin: true }).catch(() => []),
+        apiRequest<WalletTxBackend[]>('/wallet/transactions').catch(() => []),
+      ]);
+      if (cancelled) return;
+      const items: Transaction[] = [
+        ...withdrawals.map(mapWalletTransaction),
+        ...own.map(mapWalletTransaction),
+      ];
+      onUpdate(items);
+    } catch (err) {
+      console.warn('subscribeToAllTransactions poll error:', err?.message || err);
+    }
+  };
+
+  poll();
+  timer = setInterval(poll, 8000);
+  return () => {
+    cancelled = true;
+    clearInterval(timer);
+  };
 };

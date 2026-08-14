@@ -1,64 +1,80 @@
 import { useState, useEffect } from 'react';
-import { signInAdmin, signOutAdmin, onAdminAuthStateChange } from '../services/auth.service';
+import { adminLogin, signOutAdmin, onAdminAuthStateChange } from '../services/auth.service';
 import { fetchAdminAccount } from '../services/admin.service';
 import { AdminAccount } from '../types';
 
+function loadStoredAdmin(): AdminAccount | null {
+  try {
+    if (!localStorage.getItem('wanda_admin_access_token')) return null;
+    const raw = localStorage.getItem('wanda_admin_user');
+    if (!raw) return null;
+    const u = JSON.parse(raw);
+    return {
+      uid: u.id || u.email || '',
+      email: u.email || '',
+      name: u.name || undefined,
+      role: (u.admin_role as AdminAccount['role']) || 'accounting',
+    } as AdminAccount;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Real Firebase Auth email/password session for the admin console, on the
- * secondary `adminAuth` instance (isolated from the passenger/driver
- * anonymous session — see src/lib/firebase.ts). Being able to sign in isn't
- * enough to be an admin: the uid must also have a doc in the `admins`
- * Firestore collection (provisioned manually via the Firebase console —
- * there is no self-signup path), which is where the admin's role comes
- * from. A Firebase Auth account without a matching `admins` doc is
- * immediately signed back out.
+ * Session admin via le backend Wanda (POST /auth/admin/login). Le compte
+ * admin doit être provisionné dans la table backend (super_admin/admin_role) —
+ * pas de self-signup. La session est persistée en localStorage.
  */
 export function useAdminAuth() {
-  const [adminUser, setAdminUser] = useState<AdminAccount | null>(null);
-  const [isCheckingAdminSession, setIsCheckingAdminSession] = useState(true);
+  const [adminUser, setAdminUser] = useState<AdminAccount | null>(loadStoredAdmin);
+  const [isCheckingAdminSession, setIsCheckingAdminSession] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onAdminAuthStateChange(async (user) => {
-      if (!user) {
-        setAdminUser(null);
-        setIsCheckingAdminSession(false);
-        return;
-      }
-
-      const account = await fetchAdminAccount(user.uid);
+    const unsubscribe = onAdminAuthStateChange(async () => {
+      const account = await fetchAdminAccount();
       if (!account) {
-        console.warn('Signed-in Firebase account has no matching admins/ doc — denying admin access.');
-        await signOutAdmin();
         setAdminUser(null);
       } else {
         setAdminUser(account);
       }
       setIsCheckingAdminSession(false);
     });
-
     return unsubscribe;
   }, []);
 
   const loginAdmin = async (email: string, password: string): Promise<boolean> => {
     setAdminLoginError('');
     try {
-      await signInAdmin(email, password);
+      const data = await adminLogin(email, password);
+      const account: AdminAccount = {
+        uid: data.user.id,
+        email: data.user.email || email,
+        name: data.user.name || undefined,
+        role: (data.user.admin_role as AdminAccount['role']) || 'accounting',
+      };
+      setAdminUser(account);
+      setIsCheckingAdminSession(false);
       return true;
     } catch (err: any) {
-      const code = err?.code || '';
+      const message = err?.message || '';
       setAdminLoginError(
-        code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')
+        message.toLowerCase().includes('identifiants') ||
+        message.toLowerCase().includes('invalid') ||
+        message.toLowerCase().includes('incorrect')
           ? 'Identifiants incorrects.'
-          : code.includes('too-many-requests')
+          : message.toLowerCase().includes('trop de tentatives')
           ? 'Trop de tentatives. Réessayez plus tard.'
-          : 'Erreur de connexion. Réessayez.'
+          : message || 'Erreur de connexion. Réessayez.'
       );
       return false;
     }
   };
 
-  const logoutAdmin = () => signOutAdmin();
+  const logoutAdmin = () => {
+    signOutAdmin();
+    setAdminUser(null);
+  };
 
   return {
     adminUser,
@@ -66,6 +82,6 @@ export function useAdminAuth() {
     isCheckingAdminSession,
     adminLoginError,
     loginAdmin,
-    logoutAdmin
+    logoutAdmin,
   };
 }

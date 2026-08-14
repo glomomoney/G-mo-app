@@ -73,6 +73,7 @@ import { useCompass } from './hooks/useCompass';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useRideBooking } from './hooks/useRideBooking';
 import { useDriverDashboard } from './hooks/useDriverDashboard';
+import { useOnlineDrivers } from './hooks/useOnlineDrivers';
 import { useAdminAuth } from './hooks/useAdminAuth';
 
 // Data and helpers
@@ -119,8 +120,7 @@ export default function App() {
   } = auth;
 
   const {
-    passengerWallet, driverWallet, passengerPoints, transactions, isOnline,
-    adjustPassengerWallet, adjustDriverWallet, adjustPassengerPoints
+    passengerWallet, driverWallet, passengerPoints, transactions, isOnline
   } = wallet;
 
   const {
@@ -164,11 +164,7 @@ export default function App() {
     role,
     user,
     slangMode,
-    systemSettings,
-    currentCity: rideBooking.currentCity,
-    activeCityLocations: rideBooking.activeCityLocations,
     driverLoc: rideBooking.driverLoc,
-    setDriverLoc: rideBooking.setDriverLoc,
     rideStatus: rideBooking.rideStatus,
     setRideStatus: rideBooking.setRideStatus,
     setPickup: rideBooking.setPickup,
@@ -177,6 +173,8 @@ export default function App() {
     setPaymentMethod: rideBooking.setPaymentMethod,
     setMessages
   });
+
+  const onlineDrivers = useOnlineDrivers();
 
   const compass = useCompass(
     (rideBooking.rideStatus === 'in_progress' && rideBooking.driverLoc && rideBooking.destination)
@@ -219,7 +217,7 @@ export default function App() {
     shareRideData, setShareRideData, copied, setCopied, shareUrl,
     liveDriverLoc, setLiveDriverLoc, liveStatus, setLiveStatus,
     usePoints, setUsePoints, ridePointsRedeemed, setRidePointsRedeemed,
-    history, setHistory, historySortOrder, setHistorySortOrder, addHistoryItem,
+    history, setHistory, historySortOrder, setHistorySortOrder,
     rideDistance, activeRideClass, activeBaseFare, activePerKm, baseSurgeFare,
     walletPrice, cashPrice, activeFareToCharge, maxPointsRedeemable, pointsDiscount,
     finalFareToPay, activeDiscountAmount, getTrafficDetails,
@@ -229,7 +227,7 @@ export default function App() {
   const {
     driverOnline, setDriverOnline, driverStats, setDriverStats,
     driverRideRequest, setDriverRideRequest, requestCountdown, setRequestCountdown,
-    triggerIncomingSimulatedRequest, handleDeclineRequest, handleAcceptRequest
+    handleDeclineRequest, handleAcceptRequest
   } = driverDashboard;
 
   // 9. Modals triggers
@@ -464,78 +462,13 @@ export default function App() {
     setPendingTopUpAmount(0);
   };
 
-  // Complete ride and calculate payouts/commissions (cross-domain: wallet + points + history)
+  // Complete ride: the backend a déjà finalisé la course (facturation wallet,
+  // historique + commissions) quand le statut est passé à 'completed'. Ici on
+  // rafraîchit simplement le solde et on réinitialise l'UI locale.
   const handleSubmitRating = () => {
     if (!pickup || !destination || !activeDriver) return;
 
-    const tipToPay = paymentMethod === 'wallet' ? tipAmount : 0;
-
-    // Calculate final discounted fare of this ride
-    const pointsDiscountAmount = ridePointsRedeemed * 100;
-    const finalFareToCharge = Math.max(0, activeFareToCharge - pointsDiscountAmount);
-
-    // Standard payout math including waiting time extra fare adjustments (commission not applied to tip)
-    const totalRideFare = finalFareToCharge + currentRideWaitingFare;
-    const platformCommission = Math.round(totalRideFare * systemSettings.commissionRate / 100);
-    const driverNetEarnings = (totalRideFare - platformCommission) + tipToPay;
-
-    // Staging updates depending on cash vs wallet payment
-    if (paymentMethod === 'wallet') {
-      // Wallet Pay: deduct total (including waiting fee and tip) from passenger, credit driver's balance
-      adjustPassengerWallet(-(finalFareToCharge + currentRideWaitingFare + tipToPay));
-      adjustDriverWallet(driverNetEarnings);
-
-      // Log wallet payout transactions
-      wallet.addTransaction({
-        id: `RIDE-${Date.now()}`,
-        type: 'ride_payout',
-        amount: finalFareToCharge + currentRideWaitingFare + tipToPay,
-        tipAmount: tipToPay,
-        phone: user?.phone || '677123456',
-        carrier: 'wallet_debit',
-        status: 'success',
-        date: new Date().toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-      });
-    } else {
-      // Cash Pay: passenger paid driver cash on hand. We deduct the commission from driver wallet!
-      adjustDriverWallet(-platformCommission);
-
-      wallet.addTransaction({
-        id: `COMM-${Date.now()}`,
-        type: 'commission_debit',
-        amount: platformCommission,
-        phone: activeDriver.phone,
-        carrier: 'cash_commission',
-        status: 'success',
-        date: new Date().toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-      });
-    }
-
-    // Deduct redeemed points and award 1 point (= 100 FCFA value) per trip ONLY if paid with Wallet
-    const pointsEarned = paymentMethod === 'wallet' ? 1 : 0;
-    adjustPassengerPoints(pointsEarned - ridePointsRedeemed);
-
-    // Save history item
-    const newHistoryItem: HistoryItem = {
-      id: 'hist_' + Date.now(),
-      date: new Date().toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
-      pickupName: pickup.name,
-      destName: destination.name,
-      fare: totalRideFare + tipToPay,
-      tipAmount: tipToPay,
-      paymentMethod,
-      status: 'completed',
-      vehicleClass: activeRideClass.name,
-      driverName: activeDriver.name,
-      pickupLat: pickup.lat,
-      pickupLng: pickup.lng,
-      destLat: destination.lat,
-      destLng: destination.lng,
-      pointsEarned,
-      pointsRedeemed: ridePointsRedeemed
-    };
-
-    addHistoryItem(newHistoryItem);
+    wallet.refreshWallet();
 
     // Reset ride state
     setRideStatus('idle');
@@ -869,7 +802,6 @@ export default function App() {
             startInAppCall={startInAppCall}
             receiveInAppCall={receiveInAppCall}
             currentCity={currentCity}
-            triggerIncomingSimulatedRequest={triggerIncomingSimulatedRequest}
             driverLoc={driverLoc}
             setCenterCoords={setCenterCoords}
             recentBookings={recentBookings}
@@ -1073,6 +1005,7 @@ export default function App() {
                 setPickup({ name: zone.name, lat: zone.center[0], lng: zone.center[1] });
               }
             }}
+            onlineDrivers={onlineDrivers}
           />
 
           {/* FLOATING DRIVER ACTIVE NAVIGATION CONTROL BAR */}
