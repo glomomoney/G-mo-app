@@ -21,6 +21,7 @@ import { AdminDriverEntry } from './useDriversList';
 import { createRideInFirestore, updateRideStatusInFirestore, subscribeToActiveRides } from '../services/rides.service';
 import { saveHistoryToFirestore, subscribeToHistory } from '../services/history.service';
 import { syncHistoryToOfflineCache, getCachedRideHistory } from '../utils/offlineCache';
+import { reverseGeocode } from '../services/geocoding.service';
 
 // Friendly local alias to represent Cameroonian locations cleanly
 const DOUALA_LOCATIONS = LAGOS_LOCATIONS;
@@ -555,24 +556,27 @@ export function useRideBooking(params: UseRideBookingParams) {
     };
   };
 
-  // Handle Map Tap Directly
+  // Handle Map Tap Directly. Drops the pin immediately with a placeholder
+  // label (instant feedback), then swaps in the real reverse-geocoded
+  // address once it resolves — only if that exact point wasn't superseded
+  // by a newer tap/selection in the meantime.
   const handleMapTap = (lat: number, lng: number) => {
-    const defaultName = `Custom Map Point (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    const defaultName = `Point personnalisé (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
     const newLoc: Location = { name: defaultName, lat, lng };
 
-    if (isSettingLocationType === 'pickup') {
-      setPickup(newLoc);
-      setIsSettingLocationType(null);
-    } else if (isSettingLocationType === 'destination') {
-      setDestination(newLoc);
-      setIsSettingLocationType(null);
-    } else {
-      if (!pickup) {
-        setPickup(newLoc);
-      } else {
-        setDestination(newLoc);
-      }
-    }
+    const target: 'pickup' | 'destination' =
+      isSettingLocationType === 'pickup' ? 'pickup'
+      : isSettingLocationType === 'destination' ? 'destination'
+      : !pickup ? 'pickup'
+      : 'destination';
+
+    const setTarget = target === 'pickup' ? setPickup : setDestination;
+    setTarget(newLoc);
+    if (isSettingLocationType) setIsSettingLocationType(null);
+
+    reverseGeocode(lat, lng).then(address => {
+      setTarget(prev => (prev && prev.lat === lat && prev.lng === lng ? { ...prev, name: address } : prev));
+    }).catch(() => {});
   };
 
   // Driver simulation triggers

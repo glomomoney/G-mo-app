@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
+import { ConfirmationResult } from 'firebase/auth';
 import { KycDocumentEntry, UserProfile, UserRole } from '../types';
-import { ensureAnonymousSession, signOut as authSignOut } from '../services/auth.service';
-import { saveUserToFirestore } from '../services/users.service';
+import { sendPhoneOtp, signOut as authSignOut } from '../services/auth.service';
+import { getUserFromFirestore, saveUserToFirestore } from '../services/users.service';
 import { uploadDriverDocument } from '../services/storage.service';
 
 function loadInitialUser(): UserProfile | null {
@@ -18,6 +19,14 @@ const KYC_DOC_TITLES: Record<string, string> = {
   vehicleGreyCard: 'Carte Grise / Certificat d\'Immatriculation'
 };
 
+// Normalizes a Cameroon local number ("6XX XXX XXX") or an already-prefixed
+// one into E.164 ("+2376XXXXXXXX") for Firebase Phone Auth.
+function toE164Cameroon(phone: string): string {
+  const digits = phone.replace(/[^0-9]/g, '');
+  const local = digits.startsWith('237') ? digits.slice(3) : digits;
+  return `+237${local}`;
+}
+
 export interface SignupInput {
   name: string;
   phone: string;
@@ -30,18 +39,18 @@ export interface SignupInput {
   kycFiles?: Record<string, File>;
 }
 
-interface WalletSnapshot {
-  passengerWallet: number;
-  driverWallet: number;
-  passengerPoints: number;
-}
+export type AuthStep = 'phone' | 'otp' | 'profile';
 
 /**
- * Session/profile state (local, phone+name based signup — no password) plus
- * a Firebase anonymous auth session, kept only so `auth.uid` is available for
- * firestore.rules ownership checks (users/{uid}, rides.passengerId, etc.).
+ * Real phone-number sign-in: Firebase Phone Auth sends and verifies the SMS
+ * OTP itself (see services/auth.service.ts's sendPhoneOtp/RecaptchaVerifier).
+ * Once a code is confirmed, `auth.uid` is a real, stable identity tied to
+ * that phone number (unlike the old anonymous-session placeholder) — a
+ * returning phone number resumes its existing Firestore profile, a new one
+ * proceeds to the profile-completion step. Wallet balance/points are NOT
+ * mirrored here — `useWallet(authUid)` owns that under `wallets/{uid}`.
  */
-export function useAuth(wallet: WalletSnapshot) {
+export function useAuth() {
   const [user, setUser] = useState<UserProfile | null>(loadInitialUser);
   const [role, setRole] = useState<UserRole>(user?.role || 'passenger');
   const [slangMode, setSlangMode] = useState<boolean>(user?.slangMode ?? true);
@@ -53,11 +62,11 @@ export function useAuth(wallet: WalletSnapshot) {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const [authUid, setAuthUid] = useState<string | null>(null);
 
-  useEffect(() => {
-    ensureAnonymousSession()
-      .then(u => setAuthUid(u.uid))
-      .catch(err => console.warn('Anonymous Firebase auth failed:', err));
-  }, []);
+  const [authStep, setAuthStep] = useState<AuthStep>('phone');
+  const [pendingPhone, setPendingPhone] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
 
   const changeLanguage = (lang: 'en' | 'fr') => {
     setLanguage(lang);
@@ -71,37 +80,99 @@ export function useAuth(wallet: WalletSnapshot) {
     }
   };
 
+  // Step 1: send a real SMS OTP to `phone` via Firebase Phone Auth.
+  const startPhoneVerification = async (phone: string, recaptchaContainerId: string) => {
+    setOtpError(null);
+    setOtpSending(true);
+    try {
+      const e164 = toE164Cameroon(phone);
+      confirmationResultRef.current = await sendPhoneOtp(e164, recaptchaContainerId);
+      setPendingPhone(phone);
+      setAuthStep('otp');
+    } catch (err: any) {
+      console.warn('Error sending phone OTP:', err);
+      setOtpError(
+        err?.code === 'auth/invalid-phone-number'
+          ? "Numéro de téléphone invalide."
+          : "Impossible d'envoyer le code. Réessayez."
+      );
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  // Step 2: confirm the 6-digit code. Resolves to a real, stable auth.uid.
+  // Returning phone number -> hydrate `user` from Firestore and finish.
+  // New phone number -> advance to the profile-completion step.
+  const confirmOtp = async (code: string) => {
+    if (!confirmationResultRef.current) return;
+    setOtpError(null);
+    try {
+      const credential = await confirmationResultRef.current.confirm(code);
+      const uid = credential.user.uid;
+      setAuthUid(uid);
+
+      const existing = await getUserFromFirestore(uid);
+      if (existing) {
+        const resumedUser: UserProfile = {
+          id: existing.id,
+          name: existing.name,
+          email: existing.email,
+          phone: existing.phone,
+          role: existing.role,
+          slangMode,
+          createdAt: existing.createdAt
+        };
+        setUser(resumedUser);
+        setRole(existing.role);
+        localStorage.setItem('wanda_user', JSON.stringify(resumedUser));
+      } else {
+        setAuthStep('profile');
+      }
+    } catch (err: any) {
+      console.warn('Error confirming phone OTP:', err);
+      setOtpError(
+        err?.code === 'auth/invalid-verification-code'
+          ? "Code incorrect. Réessayez."
+          : err?.code === 'auth/code-expired'
+          ? "Le code a expiré, demandez-en un nouveau."
+          : "Vérification échouée. Réessayez."
+      );
+    }
+  };
+
+  // Step 3 (new phone numbers only): complete the profile now that the
+  // phone number itself is already verified and `authUid` is a real uid.
   const handleSignupComplete = (userData: SignupInput) => {
     setUser(userData);
     setRole(userData.role);
     setSlangMode(userData.slangMode);
     localStorage.setItem('wanda_user', JSON.stringify(userData));
 
-    // Ensure the anonymous session is ready (covers the case where signup
-    // happens before the background sign-in on mount has resolved yet).
-    ensureAnonymousSession()
-      .then(async ({ uid }) => {
-        setAuthUid(uid);
-        await saveUserToFirestore({
-          id: uid,
-          name: userData.name,
-          email: `${userData.phone.replace(/[^0-9]/g, '') || 'user'}@wanda.cm`,
-          phone: userData.phone,
-          role: userData.role,
-          walletBalance: userData.role === 'driver' ? wallet.driverWallet : wallet.passengerWallet,
-          points: wallet.passengerPoints,
-          // Driver-only fields. Real KYC documents (if provided) gate a real
-          // admin review — the account starts 'pending', not auto-approved.
-          ...(userData.role === 'driver' ? {
-            vehicleType: userData.vehicleType || 'ecoride',
-            vehicleModel: userData.vehicleColor ? `${userData.vehicleModel} (${userData.vehicleColor})` : userData.vehicleModel,
-            vehiclePlate: userData.vehiclePlate,
-            vehicleColor: userData.vehicleColor,
-            approvalStatus: 'pending' as const,
-            rating: 5.0
-          } : {})
-        });
+    if (!authUid) {
+      console.warn('handleSignupComplete called without a verified auth.uid');
+      return;
+    }
+    const uid = authUid;
 
+    saveUserToFirestore({
+      id: uid,
+      name: userData.name,
+      email: `${userData.phone.replace(/[^0-9]/g, '') || 'user'}@wanda.cm`,
+      phone: userData.phone,
+      role: userData.role,
+      // Driver-only fields. Real KYC documents (if provided) gate a real
+      // admin review — the account starts 'pending', not auto-approved.
+      ...(userData.role === 'driver' ? {
+        vehicleType: userData.vehicleType || 'ecoride',
+        vehicleModel: userData.vehicleColor ? `${userData.vehicleModel} (${userData.vehicleColor})` : userData.vehicleModel,
+        vehiclePlate: userData.vehiclePlate,
+        vehicleColor: userData.vehicleColor,
+        approvalStatus: 'pending' as const,
+        rating: 5.0
+      } : {})
+    })
+      .then(async () => {
         // Upload any KYC documents in the background (best-effort — a slow
         // or failed upload shouldn't block the signup itself) and merge the
         // resulting URLs onto the same user doc once they're all done.
@@ -135,16 +206,18 @@ export function useAuth(wallet: WalletSnapshot) {
       .catch(err => console.warn('Error syncing signup to Firestore:', err));
   };
 
-  // Log out / switch profile: clears local session and starts a fresh
-  // anonymous identity so the next sign-up doesn't overwrite this profile's
-  // Firestore document.
+  // Log out: clears local session. The next login re-verifies the phone
+  // number via OTP — no anonymous-session rotation needed anymore, since
+  // `auth.uid` is now a real, stable identity tied to the phone number.
   const handleLogout = () => {
     setUser(null);
+    setAuthUid(null);
+    setAuthStep('phone');
+    setPendingPhone('');
+    setOtpError(null);
+    confirmationResultRef.current = null;
     localStorage.removeItem('wanda_user');
-    authSignOut()
-      .then(() => ensureAnonymousSession())
-      .then(u => setAuthUid(u.uid))
-      .catch(err => console.warn('Error rotating anonymous session on logout:', err));
+    authSignOut().catch(err => console.warn('Error signing out:', err));
   };
 
   return {
@@ -160,6 +233,12 @@ export function useAuth(wallet: WalletSnapshot) {
     langDropdownOpen,
     setLangDropdownOpen,
     authUid,
+    authStep,
+    pendingPhone,
+    otpSending,
+    otpError,
+    startPhoneVerification,
+    confirmOtp,
     handleSignupComplete,
     handleLogout
   };

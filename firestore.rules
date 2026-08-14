@@ -55,13 +55,32 @@ service cloud.firestore {
     }
 
     // Wallet transactions: append-only ledger, readable/writable only by the
-    // owning user.
+    // owning user. An admin may also create an entry on a driver's behalf
+    // (e.g. the "-CLEARED" entry written when a withdrawal is approved).
     match /transactions/{txId} {
       allow read: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+        && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid;
+        && (request.resource.data.userId == request.auth.uid || isAdmin());
       allow update, delete: if false;
+    }
+
+    // Wallet balances: one doc per user, readable/writable only by the
+    // owner. Writes are restricted to just the balance/points/timestamp
+    // fields so a compromised client can't smuggle other data in here. A
+    // real admin may additionally debit just `driverBalance` — needed to
+    // clear an approved driver withdrawal (see useWallet.ts's
+    // approveWithdrawal, which writes via the secondary adminDb/adminAuth).
+    match /wallets/{userId} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && (
+        (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['passengerBalance', 'driverBalance', 'points', 'updatedAt'])) ||
+        (isAdmin() && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['driverBalance', 'updatedAt']))
+      );
+      allow delete: if false;
     }
 
     // System settings (pricing, notification schedule): readable by any

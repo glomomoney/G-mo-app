@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Location } from '../types';
-import { getDistanceKm } from '../data';
+import { reverseGeocodeCity } from '../services/geocoding.service';
 
 type City = 'Yaoundé' | 'Douala';
 
@@ -50,61 +50,7 @@ export function useGeolocation(
       setIsGeolocating(false);
       console.log("Standing position successfully geolocated to:", latitude, longitude);
 
-      // Resolve city name
-      let detectedCity = '';
-      const apiKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY || '';
-      if (apiKey) {
-        try {
-          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`);
-          const data = await res.json();
-          if (data.status === 'OK' && data.results && data.results.length > 0) {
-            for (const result of data.results) {
-              const locality = result.address_components?.find((comp: any) =>
-                comp.types?.includes('locality')
-              );
-              if (locality) {
-                detectedCity = locality.long_name;
-                break;
-              }
-              const adminArea1 = result.address_components?.find((comp: any) =>
-                comp.types?.includes('administrative_area_level_1')
-              );
-              if (adminArea1) {
-                detectedCity = adminArea1.long_name;
-                break;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn("Google Maps Geocoding failed:", err);
-        }
-      }
-
-      if (!detectedCity) {
-        try {
-          const fallbackRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`, {
-            headers: {
-              'Accept': 'application/json',
-              'User-Agent': 'WandaTaxiApplet/1.0'
-            }
-          });
-          const fallbackData = await fallbackRes.json();
-          detectedCity = fallbackData.address?.city || fallbackData.address?.town || fallbackData.address?.village || fallbackData.address?.county || '';
-        } catch (err) {
-          console.warn("OSM Nominatim reverse geocode failed:", err);
-        }
-      }
-
-      if (!detectedCity) {
-        const distToDouala = getDistanceKm(latitude, longitude, 4.05, 9.7);
-        const distToYaounde = getDistanceKm(latitude, longitude, 3.86, 11.52);
-        detectedCity = distToYaounde < distToDouala ? 'Yaoundé' : 'Douala';
-      }
-
-      let cleanCity: City | null = null;
-      if (detectedCity) {
-        cleanCity = detectedCity.toLowerCase().includes('douala') ? 'Douala' : 'Yaoundé';
-      }
+      const cleanCity = await reverseGeocodeCity(latitude, longitude);
 
       onLocated(newLoc, cleanCity);
       if (onDone) onDone(newLoc);

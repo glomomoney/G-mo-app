@@ -90,7 +90,7 @@ interface AdminDashboardProps {
     classRates?: Record<string, { baseFare: number; perKm: number }>;
   }) => void;
   transactions: any[];
-  onApproveWithdrawal: (id: string) => void;
+  onApproveWithdrawal: (tx: any) => void;
 }
 
 export default function AdminDashboard({
@@ -1274,7 +1274,7 @@ export default function AdminDashboard({
                               {isPending ? (
                                 <div className="flex items-center justify-center gap-1.5">
                                   <button
-                                    onClick={() => onApproveWithdrawal(tx.id)}
+                                    onClick={() => onApproveWithdrawal(tx)}
                                     className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[9px] px-2 py-1 rounded cursor-pointer transition"
                                   >
                                     Clear Payout

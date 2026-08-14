@@ -1,6 +1,13 @@
-import { collection, doc, setDoc, updateDoc, onSnapshot, query, where, Unsubscribe } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, updateDoc, onSnapshot, query, where, Unsubscribe } from 'firebase/firestore';
 import { db, adminDb } from '../lib/firebase';
 import { UserProfileData } from '../types';
+
+// One-shot lookup used right after phone-OTP verification to tell a
+// returning user (doc already exists) from a brand-new one (doc missing).
+export const getUserFromFirestore = async (userId: string): Promise<UserProfileData | null> => {
+  const docSnap = await getDoc(doc(db, 'users', userId));
+  return docSnap.exists() ? (docSnap.data() as UserProfileData) : null;
+};
 
 export const saveUserToFirestore = async (user: Partial<UserProfileData> & { id: string }): Promise<void> => {
   try {

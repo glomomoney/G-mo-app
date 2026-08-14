@@ -59,6 +59,7 @@ import {
   sendNotificationToFirestore
 } from './lib/firebaseService';
 import { generateAndDownloadRideReceipt } from './utils/pdfReceipt';
+import { subscribeToAllTransactions } from './services/transactions.service';
 
 // Hooks (extracted state/effects/handlers, composed together below)
 import { useAuth } from './hooks/useAuth';
@@ -97,7 +98,8 @@ const DOUALA_LOCATIONS = LAGOS_LOCATIONS;
 
 export default function App() {
   // ==================== Hook composition (wiring step) ====================
-  const wallet = useWallet();
+  const auth = useAuth();
+  const wallet = useWallet(auth.authUid);
   const [systemSettings, setSystemSettings] = useSystemSettings();
   const driversListHook = useDriversList();
   const {
@@ -105,11 +107,6 @@ export default function App() {
     approveDriver: handleApproveDriver,
     rejectDriver: handleRejectDriver
   } = driversListHook;
-  const auth = useAuth({
-    passengerWallet: wallet.passengerWallet,
-    driverWallet: wallet.driverWallet,
-    passengerPoints: wallet.passengerPoints
-  });
   const chat = useChat(auth.role);
   const notifications = useNotifications(auth.role);
   const callHook = useCallState();
@@ -117,13 +114,13 @@ export default function App() {
 
   const {
     user, setUser, role, setRole, slangMode, setSlangMode, language, setLanguage,
-    changeLanguage, langDropdownOpen, setLangDropdownOpen, authUid, handleLogout
+    changeLanguage, langDropdownOpen, setLangDropdownOpen, authUid, handleLogout,
+    authStep, pendingPhone, otpSending, otpError, startPhoneVerification, confirmOtp
   } = auth;
 
   const {
-    passengerWallet, setPassengerWallet, driverWallet, setDriverWallet,
-    passengerPoints, setPassengerPoints, transactions, setTransactions,
-    isOnline
+    passengerWallet, driverWallet, passengerPoints, transactions, isOnline,
+    adjustPassengerWallet, adjustDriverWallet, adjustPassengerPoints
   } = wallet;
 
   const {
@@ -238,6 +235,19 @@ export default function App() {
   // 9. Modals triggers
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+
+  // Admin-only, cross-user transaction feed (pending withdrawals queue etc.)
+  // — separate from `wallet.transactions`, which is scoped to whichever
+  // uid is currently signed in via the passenger/driver session.
+  const [adminTransactions, setAdminTransactions] = useState<any[]>([]);
+  useEffect(() => {
+    if (!adminAuth.isAdminAuthenticated) {
+      setAdminTransactions([]);
+      return;
+    }
+    const unsub = subscribeToAllTransactions(setAdminTransactions);
+    return () => unsub();
+  }, [adminAuth.isAdminAuthenticated]);
   const [isAdminPage, setIsAdminPage] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -472,8 +482,8 @@ export default function App() {
     // Staging updates depending on cash vs wallet payment
     if (paymentMethod === 'wallet') {
       // Wallet Pay: deduct total (including waiting fee and tip) from passenger, credit driver's balance
-      setPassengerWallet(prev => Math.max(0, prev - (finalFareToCharge + currentRideWaitingFare + tipToPay)));
-      setDriverWallet(prev => prev + driverNetEarnings);
+      adjustPassengerWallet(-(finalFareToCharge + currentRideWaitingFare + tipToPay));
+      adjustDriverWallet(driverNetEarnings);
 
       // Log wallet payout transactions
       wallet.addTransaction({
@@ -488,7 +498,7 @@ export default function App() {
       });
     } else {
       // Cash Pay: passenger paid driver cash on hand. We deduct the commission from driver wallet!
-      setDriverWallet(prev => Math.max(0, prev - platformCommission));
+      adjustDriverWallet(-platformCommission);
 
       wallet.addTransaction({
         id: `COMM-${Date.now()}`,
@@ -503,7 +513,7 @@ export default function App() {
 
     // Deduct redeemed points and award 1 point (= 100 FCFA value) per trip ONLY if paid with Wallet
     const pointsEarned = paymentMethod === 'wallet' ? 1 : 0;
-    setPassengerPoints(prev => Math.max(0, prev - ridePointsRedeemed + pointsEarned));
+    adjustPassengerPoints(pointsEarned - ridePointsRedeemed);
 
     // Save history item
     const newHistoryItem: HistoryItem = {
@@ -679,7 +689,7 @@ export default function App() {
         onUpdateDriversList={(updatedList) => setDriversList(updatedList)}
         systemSettings={systemSettings}
         onUpdateSettings={setSystemSettings}
-        transactions={transactions}
+        transactions={adminTransactions}
         onApproveWithdrawal={handleApproveWithdrawal}
       />
     );
@@ -704,10 +714,16 @@ export default function App() {
   // Render signup page if user has not onboarding
   if (!user) {
     return (
-      <LandingPage 
+      <LandingPage
         onSignupComplete={auth.handleSignupComplete}
         currentLanguage={language}
         onLanguageChange={changeLanguage}
+        authStep={authStep}
+        pendingPhone={pendingPhone}
+        otpSending={otpSending}
+        otpError={otpError}
+        onStartPhoneVerification={startPhoneVerification}
+        onConfirmOtp={confirmOtp}
       />
     );
   }
@@ -722,6 +738,7 @@ export default function App() {
         role={role}
         language={language}
         appNotifications={appNotifications}
+        currentUserId={authUid || ''}
         langDropdownOpen={langDropdownOpen}
         setSearchModalType={setSearchModalType}
         setIsNotificationDrawerOpen={setIsNotificationDrawerOpen}
@@ -1254,6 +1271,8 @@ export default function App() {
         amount={pendingTopUpAmount}
         paymentMethod={pendingTopUpMethod}
         onPaymentSuccess={handleTopUpSuccess}
+        userPhone={user?.phone}
+        userId={authUid || undefined}
       />
 
       {/* ========================================================================= */}

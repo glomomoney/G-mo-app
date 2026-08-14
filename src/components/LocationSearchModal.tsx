@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Navigation } from 'lucide-react';
+import { MapPin, Navigation, Loader2 } from 'lucide-react';
 import { getSmartProposals } from '../utils/autocomplete';
+import { searchPlaces } from '../services/geocoding.service';
 import { Location } from '../types';
 
 interface LocationSearchModalProps {
@@ -30,6 +32,32 @@ export default function LocationSearchModal({
   setPickup,
   setDestination,
 }: LocationSearchModalProps) {
+  const [liveResults, setLiveResults] = useState<Location[]>([]);
+  const [isSearchingLive, setIsSearchingLive] = useState(false);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setLiveResults([]);
+      return;
+    }
+    const query = searchQuery;
+    setIsSearchingLive(true);
+    const timer = setTimeout(() => {
+      searchPlaces(query, currentCity.toLowerCase().includes('douala') ? 'Douala' : 'Yaoundé')
+        .then(results => {
+          // Guard against a slower, stale request resolving after a newer one.
+          if (query === searchQuery) {
+            setLiveResults(results);
+          }
+        })
+        .finally(() => {
+          if (query === searchQuery) setIsSearchingLive(false);
+        });
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, currentCity]);
+
   return (
       <AnimatePresence>
         {searchModalType && (
@@ -100,15 +128,29 @@ export default function LocationSearchModal({
               {/* Proposals list */}
               <div className="flex-1 overflow-y-auto p-2 space-y-1 max-h-[45vh] md:max-h-[35vh]">
                 {(() => {
-                  const proposals = searchQuery 
-                    ? getSmartProposals(searchQuery, currentCity) 
-                    : activeCityLocations;
+                  let proposals: Location[];
+                  if (searchQuery) {
+                    const instant = getSmartProposals(searchQuery, currentCity);
+                    const seen = new Set(instant.map(loc => loc.name));
+                    const live = liveResults.filter(loc => !seen.has(loc.name));
+                    proposals = [...instant, ...live];
+                  } else {
+                    proposals = activeCityLocations;
+                  }
 
                   if (proposals.length === 0) {
                     return (
                       <div className="p-6 text-center space-y-2">
-                        <p className="text-xs text-brand-text-muted font-bold">Aucune proposition trouvée</p>
-                        <p className="text-[10px] text-brand-text-muted/70">Continuez à saisir pour créer une station personnalisée</p>
+                        {isSearchingLive ? (
+                          <p className="text-xs text-brand-text-muted font-bold flex items-center justify-center gap-1.5">
+                            <Loader2 size={12} className="animate-spin" /> Recherche en cours...
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-xs text-brand-text-muted font-bold">Aucune proposition trouvée</p>
+                            <p className="text-[10px] text-brand-text-muted/70">Essayez un autre nom de lieu ou de quartier</p>
+                          </>
+                        )}
                       </div>
                     );
                   }
@@ -151,7 +193,10 @@ export default function LocationSearchModal({
                       </button>
 
                       <div className="px-2.5 py-1 text-[9px] font-extrabold uppercase text-brand-gold/70 tracking-widest flex items-center justify-between">
-                        <span>{searchQuery ? "Propositions Intelligentes" : "Stations Populaires"}</span>
+                        <span className="flex items-center gap-1.5">
+                          {searchQuery ? "Propositions Intelligentes" : "Stations Populaires"}
+                          {isSearchingLive && <Loader2 size={10} className="animate-spin" />}
+                        </span>
                         <span className="text-[8px] px-1 bg-brand-gold/10 text-brand-gold rounded border border-brand-gold/10 font-black">
                           {currentCity.toUpperCase()}
                         </span>

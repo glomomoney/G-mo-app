@@ -239,37 +239,5 @@ export function getSmartProposals(query: string, city: string): Location[] {
     });
   }
 
-  // 4. Dynamic generator: If there are still no suggestions, generate 5 highly custom, realistic points centered around their query
-  if (results.length === 0) {
-    const capitalize = (str: string) => str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const typedLabel = capitalize(query.trim());
-
-    const genericSyllables = isYaounde ? [
-      { suffix: 'Carrefour', latOff: 0.003, lngOff: -0.004 },
-      { suffix: 'Total Station', latOff: -0.002, lngOff: 0.002 },
-      { suffix: 'Tradex Station', latOff: 0.005, lngOff: 0.006 },
-      { suffix: 'Gendarmerie Entrance', latOff: -0.004, lngOff: -0.003 },
-      { suffix: 'Rond-point', latOff: 0.001, lngOff: -0.001 }
-    ] : [
-      { suffix: 'Carrefour', latOff: 0.004, lngOff: -0.003 },
-      { suffix: 'Total Station', latOff: -0.003, lngOff: 0.003 },
-      { suffix: 'Rond-point', latOff: 0.002, lngOff: 0.005 },
-      { suffix: 'Marché', latOff: -0.005, lngOff: -0.002 },
-      { suffix: 'Blvd de la Liberté Link', latOff: 0.001, lngOff: -0.001 }
-    ];
-
-    genericSyllables.forEach((s, idx) => {
-      const generatedName = `${typedLabel} ${s.suffix}`;
-      if (!addedNames.has(generatedName)) {
-        results.push({
-          name: generatedName,
-          lat: baseLat + s.latOff + (idx * 0.0015),
-          lng: baseLng + s.lngOff - (idx * 0.0010)
-        });
-        addedNames.add(generatedName);
-      }
-    });
-  }
-
   return results.slice(0, 8);
 }

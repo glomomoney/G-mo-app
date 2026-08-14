@@ -10,6 +10,7 @@ interface AppHeaderProps {
   role: UserRole;
   language: 'en' | 'fr';
   appNotifications: AppNotification[];
+  currentUserId: string;
   langDropdownOpen: boolean;
   setSearchModalType: (type: 'pickup' | 'destination' | null) => void;
   setIsNotificationDrawerOpen: (open: boolean) => void;
@@ -25,6 +26,7 @@ export default function AppHeader({
   role,
   language,
   appNotifications,
+  currentUserId,
   langDropdownOpen,
   setSearchModalType,
   setIsNotificationDrawerOpen,
@@ -89,10 +91,10 @@ export default function AppHeader({
             id="notification-bell-btn"
           >
             <Bell size={13} />
-            {appNotifications.some(n => !n.read) && (
+            {appNotifications.some(n => !(n.readBy || []).includes(currentUserId)) && (
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-brand-gold rounded-full animate-ping" />
             )}
-            {appNotifications.some(n => !n.read) && (
+            {appNotifications.some(n => !(n.readBy || []).includes(currentUserId)) && (
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-brand-gold rounded-full" />
             )}
           </button>

@@ -1,6 +1,8 @@
 import {
-  signInAnonymously,
   signInWithEmailAndPassword,
+  signInWithPhoneNumber,
+  RecaptchaVerifier,
+  ConfirmationResult,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User,
@@ -8,23 +10,27 @@ import {
 } from 'firebase/auth';
 import { auth, adminAuth } from '../lib/firebase';
 
-/**
- * The app's sign-up flow is phone+name only (no password) — Firebase Auth is
- * used anonymously purely to give each session a stable, real `auth.uid` that
- * firestore.rules can key ownership checks off (users/{uid}, rides.passengerId,
- * history.userId, transactions.userId).
- */
-export const ensureAnonymousSession = async (): Promise<User> => {
-  if (auth.currentUser) return auth.currentUser;
-  const credential = await signInAnonymously(auth);
-  return credential.user;
-};
-
-// Ends the current anonymous session so the next sign-up starts a fresh
-// identity, instead of overwriting the previous person's Firestore profile.
 export const signOut = async (): Promise<void> => {
   await firebaseSignOut(auth);
 };
+
+let recaptchaVerifier: RecaptchaVerifier | null = null;
+
+// Lazily creates (and caches) the invisible reCAPTCHA verifier required by
+// Firebase Phone Auth. `containerId` must be a DOM node already mounted
+// (e.g. a hidden <div id="recaptcha-container" />) when this first runs.
+export const getRecaptchaVerifier = (containerId: string): RecaptchaVerifier => {
+  if (!recaptchaVerifier) {
+    recaptchaVerifier = new RecaptchaVerifier(auth, containerId, { size: 'invisible' });
+  }
+  return recaptchaVerifier;
+};
+
+// Sends a real SMS OTP to `e164Phone` (e.g. "+237670000000") via Firebase
+// Phone Auth. Resolve the returned ConfirmationResult's `.confirm(code)` to
+// complete sign-in with a real, stable `auth.uid` tied to that phone number.
+export const sendPhoneOtp = (e164Phone: string, containerId: string): Promise<ConfirmationResult> =>
+  signInWithPhoneNumber(auth, e164Phone, getRecaptchaVerifier(containerId));
 
 export const onAuthStateChange = (onChange: (user: User | null) => void): Unsubscribe =>
   onAuthStateChanged(auth, onChange);
