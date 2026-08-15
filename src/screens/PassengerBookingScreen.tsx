@@ -20,6 +20,7 @@ interface PassengerBookingScreenProps {
   showTabBalance: boolean;
   setShowTabBalance: React.Dispatch<React.SetStateAction<boolean>>;
   passengerWallet: number;
+  walletLoaded: boolean;
   pickup: Location | null;
   destination: Location | null;
   setDestination: (loc: Location | null) => void;
@@ -76,7 +77,7 @@ interface PassengerBookingScreenProps {
 
 export default function PassengerBookingScreen(props: PassengerBookingScreenProps) {
   const {
-    slangMode, activeTab, setActiveTab, showTabBalance, setShowTabBalance, passengerWallet,
+    slangMode, activeTab, setActiveTab, showTabBalance, setShowTabBalance, passengerWallet, walletLoaded,
     pickup, destination, setDestination, setSearchModalType, setSearchQuery, geolocateCurrentPosition,
     activeCityLocations, currentCity, showPromoBanner, setShowPromoBanner, systemSettings,
     selectedClassId, setSelectedClassId, paymentMethod, setPaymentMethod, rideDistance, finalFareToPay,
@@ -1150,6 +1151,7 @@ export default function PassengerBookingScreen(props: PassengerBookingScreenProp
                   slangMode={slangMode}
                   passengerPoints={passengerPoints}
                   isOffline={!isOnline}
+                  showLowBalanceWarning={walletLoaded}
                 />
               )}
 

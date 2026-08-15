@@ -14,6 +14,9 @@ export function useWallet(uid: string | null) {
   const [driverWallet, setDriverWalletState] = useState<number>(0);
   const [passengerPoints, setPassengerPointsState] = useState<number>(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Évite le flash "Solde Faible" au lancement : 0 est la valeur par défaut
+  // avant que le premier fetch réseau ne résolve le vrai solde.
+  const [walletLoaded, setWalletLoaded] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
 
   useEffect(() => {
@@ -33,6 +36,7 @@ export function useWallet(uid: string | null) {
       setPassengerWalletState(0);
       setDriverWalletState(0);
       setPassengerPointsState(0);
+      setWalletLoaded(false);
       return;
     }
     let cancelled = false;
@@ -44,6 +48,7 @@ export function useWallet(uid: string | null) {
         setPassengerWalletState(wallet.balance);
         setDriverWalletState(wallet.balance);
         setPassengerPointsState(wallet.points);
+        setWalletLoaded(true);
       } catch (err) {
         console.warn('Wallet poll error:', err?.message || err);
       }
@@ -176,5 +181,6 @@ export function useWallet(uid: string | null) {
     approveWithdrawal,
     refreshWallet,
     isOnline,
+    walletLoaded,
   };
 }

@@ -20,13 +20,15 @@ export function useGeolocation(
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [geolocationError, setGeolocationError] = useState<string | null>(null);
 
-  const locate = (onDone?: (location: Location) => void) => {
+  const locate = (onDone?: (location: Location) => void, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+
     if (typeof window === 'undefined' || !navigator.geolocation) {
       const errMsg = slangMode
         ? "Désolé, ton appareil ne supporte pas la géolocalisation GPS."
         : "Sorry, your device does not support GPS geolocation.";
       setGeolocationError(errMsg);
-      alert(errMsg);
+      if (!silent) alert(errMsg);
       return;
     }
 
@@ -68,7 +70,7 @@ export function useGeolocation(
             ? "Massa! Impossible d'obtenir ton GPS. S'il te plaît, autorise l'accès à la localisation dans ton navigateur."
             : "Massa! Could not retrieve your current standing position. Please allow location access in your browser settings.";
           setGeolocationError(errMsg);
-          alert(errMsg);
+          if (!silent) alert(errMsg);
         },
         { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
       );

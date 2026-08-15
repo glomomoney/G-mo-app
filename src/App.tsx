@@ -120,7 +120,7 @@ export default function App() {
   } = auth;
 
   const {
-    passengerWallet, driverWallet, passengerPoints, transactions, isOnline
+    passengerWallet, driverWallet, passengerPoints, transactions, isOnline, walletLoaded
   } = wallet;
 
   const {
@@ -318,9 +318,11 @@ export default function App() {
 
   // Auto-geolocate on mount to align with the user's physical live location (e.g., Yaounde/Douala)
   useEffect(() => {
-    // Attempt automatic background geolocation of current standing position
+    // Attempt automatic background geolocation of current standing position.
+    // Silent: a failure here (denied/unavailable GPS) must not interrupt the
+    // user with a blocking alert() before they've even logged in.
     if (typeof window !== 'undefined' && navigator.geolocation) {
-      geolocateCurrentPosition();
+      geolocateCurrentPosition(undefined, { silent: true });
     }
   }, []);
 
@@ -647,17 +649,20 @@ export default function App() {
   // Render signup page if user has not onboarding
   if (!user) {
     return (
-      <LandingPage
-        onSignupComplete={auth.handleSignupComplete}
-        currentLanguage={language}
-        onLanguageChange={changeLanguage}
-        authStep={authStep}
-        pendingPhone={pendingPhone}
-        otpSending={otpSending}
-        otpError={otpError}
-        onStartPhoneVerification={startPhoneVerification}
-        onConfirmOtp={confirmOtp}
-      />
+      <>
+        <LandingPage
+          onSignupComplete={auth.handleSignupComplete}
+          currentLanguage={language}
+          onLanguageChange={changeLanguage}
+          authStep={authStep}
+          pendingPhone={pendingPhone}
+          otpSending={otpSending}
+          otpError={otpError}
+          onStartPhoneVerification={startPhoneVerification}
+          onConfirmOtp={confirmOtp}
+        />
+        <InstallPrompt language={language} />
+      </>
     );
   }
 
@@ -719,6 +724,7 @@ export default function App() {
               showTabBalance={showTabBalance}
               setShowTabBalance={setShowTabBalance}
               passengerWallet={passengerWallet}
+              walletLoaded={walletLoaded}
               pickup={pickup}
               destination={destination}
               setDestination={setDestination}

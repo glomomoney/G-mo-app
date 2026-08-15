@@ -53,13 +53,14 @@ function mapToAdminDriverEntry(driver: UserProfileData): AdminDriverEntry {
 }
 
 /**
- * Admin driver roster, backed by real Firestore `users` docs (role ===
- * 'driver'). New drivers appear automatically as they sign up (useAuth
- * writes their doc); approve/reject persist the KYC/approval fields back
- * to Firestore. Display fields the (out-of-scope) AdminDashboard edits
- * locally (city, cnicNumber, kycDocuments, ...) are intentionally left
- * alone by the Firestore merge below so those edits aren't clobbered on
- * the next snapshot. localStorage is a best-effort offline cache only.
+ * Admin driver roster, backed by the real backend (GET /admin/drivers).
+ * New drivers appear automatically as they sign up; approve/reject persist
+ * the KYC/approval fields back to the backend. The backend response is the
+ * source of truth for *which* drivers exist — a driver removed/absent from
+ * it is dropped locally too, so stale cached entries never linger. Local-only
+ * fields the (out-of-scope) AdminDashboard editor adds (city, cnicNumber,
+ * kycDocuments overrides, ...) are preserved on drivers that still match.
+ * localStorage is a best-effort offline cache only.
  */
 export function useDriversList() {
   const [driversList, setDriversList] = useState<AdminDriverEntry[]>(loadCachedDrivers);
@@ -69,29 +70,14 @@ export function useDriversList() {
   }, [driversList]);
 
   useEffect(() => {
-    const unsubscribe = subscribeToDrivers((firestoreDrivers) => {
+    const unsubscribe = subscribeToDrivers((backendDrivers) => {
       setDriversList(prev => {
-        const prevIds = new Set(prev.map(d => d.id));
-
-        // Existing local entries: only sync the approval/KYC fields Firestore
-        // owns, so out-of-scope local-only edits (AdminDashboard's account
-        // detail editor) aren't stomped on the next snapshot.
-        const synced = prev.map(d => {
-          const fd = firestoreDrivers.find(x => x.id === d.id);
-          if (!fd) return d;
-          return {
-            ...d,
-            approvalStatus: fd.approvalStatus || d.approvalStatus,
-            kycStatus: fd.kycStatus,
-            rejectionReason: fd.rejectionReason
-          };
+        const prevById = new Map(prev.map(d => [d.id, d]));
+        return backendDrivers.map(bd => {
+          const mapped = mapToAdminDriverEntry(bd);
+          const local = prevById.get(mapped.id);
+          return local ? { ...local, ...mapped } : mapped;
         });
-
-        const newEntries = firestoreDrivers
-          .filter(fd => !prevIds.has(fd.id))
-          .map(mapToAdminDriverEntry);
-
-        return [...newEntries, ...synced];
       });
     });
 

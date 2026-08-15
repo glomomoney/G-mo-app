@@ -76,8 +76,11 @@ export default function LandingPage({
 
   const handleSubmitPhone = (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedPhone = phoneInput.replace(/\s+/g, '');
-    const phoneRegex = /^(?:\+?237|6)[256789]\d{7}$/;
+    // Le préfixe +237 est déjà affiché en dur dans le champ ; si l'utilisateur
+    // le retape quand même par habitude, on l'enlève pour ne garder que le
+    // numéro local (évite le "+237" en double à l'étape OTP).
+    const normalizedPhone = phoneInput.replace(/\s+/g, '').replace(/^\+?237/, '');
+    const phoneRegex = /^6[256789]\d{7}$/;
     if (!phoneRegex.test(normalizedPhone)) {
       setError('Please enter a valid Cameroon phone number (e.g., 677 12 34 56).');
       return;

@@ -113,18 +113,18 @@ export default function InstallPrompt({ language: propLanguage }: InstallPromptP
         console.log(`PWA install prompt choice: ${outcome}`);
         if (outcome === 'accepted') {
           markAsInstalled();
-        } else {
-          // Fallback install trigger
-          markAsInstalled();
         }
-        setDeferredPrompt(null);
       } catch (err) {
         console.error('PWA install error:', err);
-        markAsInstalled();
+      } finally {
+        setDeferredPrompt(null);
       }
     } else {
-      // Immediate installation on device
-      markAsInstalled();
+      // Pas de prompt natif disponible (Safari iOS, ou navigateur qui n'a pas
+      // encore émis beforeinstallprompt) — on affiche le guide manuel au lieu
+      // de prétendre que l'installation a réussi. La détection du mode
+      // standalone au prochain lancement confirmera la vraie installation.
+      setShowInstructions(true);
     }
   };
 

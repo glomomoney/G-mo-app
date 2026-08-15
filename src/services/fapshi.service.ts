@@ -38,6 +38,7 @@ export async function fapshiDirectPay(
     body: {
       amount: params.amount,
       phone: params.phone,
+      medium: params.medium,
       // provider non transmis : le backend utilise son fournisseur configuré
       // (mock en dev). Aucun appel direct à Fapshi depuis le navigateur.
     },

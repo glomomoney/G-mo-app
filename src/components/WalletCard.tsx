@@ -12,17 +12,19 @@ interface WalletCardProps {
   slangMode?: boolean;
   passengerPoints?: number;
   isOffline?: boolean;
+  showLowBalanceWarning?: boolean;
 }
 
-export default function WalletCard({ 
-  balance, 
-  onTopUpRequested, 
+export default function WalletCard({
+  balance,
+  onTopUpRequested,
   transactions,
   topupPromoActive = false,
   topupPromoRate = 0,
   slangMode = false,
   passengerPoints = 0,
-  isOffline = false
+  isOffline = false,
+  showLowBalanceWarning = true
 }: WalletCardProps) {
   const [showBalance, setShowBalance] = useState<boolean>(false);
   const [amount, setAmount] = useState<string>('5000');
@@ -122,7 +124,7 @@ export default function WalletCard({
       </div>
 
       {/* Persistent but Dismissible Low Balance Warning Banner (< 2,000 XAF) */}
-      {balance < 2000 && !isWarningDismissed && (
+      {showLowBalanceWarning && balance < 2000 && !isWarningDismissed && (
         <div 
           className="bg-amber-950/80 border-2 border-amber-500/50 rounded-2xl p-3.5 space-y-2.5 text-amber-100 shadow-xl relative overflow-hidden animate-fade-in"
           id="wallet-low-balance-warning-banner"
