@@ -109,7 +109,7 @@ export default function App() {
     rejectDriver: handleRejectDriver
   } = driversListHook;
   const chat = useChat(auth.role);
-  const notifications = useNotifications(auth.role);
+  const notifications = useNotifications(auth.role, !!auth.authUid);
   const callHook = useCallState();
   const adminAuth = useAdminAuth();
 
