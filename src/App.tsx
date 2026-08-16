@@ -611,6 +611,7 @@ export default function App() {
     return (
       <AdminDashboard
         onLogout={adminAuth.logoutAdmin}
+        adminRole={adminAuth.adminUser?.role || 'accounting'}
         onClose={() => {
           setIsAdminPage(false);
           const url = new URL(window.location.href);
@@ -1309,6 +1310,7 @@ export default function App() {
               adminAuth.logoutAdmin();
               setIsAdminOpen(false);
             }}
+            adminRole={adminAuth.adminUser?.role || 'accounting'}
             driversList={driversList}
             onApproveDriver={handleApproveDriver}
             onRejectDriver={handleRejectDriver}

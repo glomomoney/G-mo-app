@@ -118,6 +118,9 @@ export const subscribeToDrivers = (onUpdate: (drivers: UserProfileData[]) => voi
         rating: d.rating,
         status: d.status,
         kycDocuments: d.kyc_documents as Record<string, KycDocumentEntry> | undefined,
+        cnicNumber: d.cnic_number,
+        licenseNumber: d.license_number,
+        forensicNotes: d.forensic_notes,
       }));
       onUpdate(drivers);
     } catch (err) {
@@ -131,6 +134,39 @@ export const subscribeToDrivers = (onUpdate: (drivers: UserProfileData[]) => voi
     cancelled = true;
     clearInterval(timer);
   };
+};
+
+// Correction directe du compte par un admin — PATCH /admin/drivers/{id}
+// (identité, véhicule, documents KYC, notes d'audit forensic).
+export const updateDriverAccountAsAdmin = async (
+  driverId: string,
+  updates: Record<string, unknown>
+): Promise<UserProfileData> => {
+  const data = await apiRequest<any>(`/admin/drivers/${driverId}`, {
+    method: 'PATCH',
+    admin: true,
+    body: updates,
+  });
+  return {
+    id: data.user_id,
+    name: data.user_name || '',
+    phone: data.user_phone || '',
+    role: 'driver',
+    email: '',
+    vehicleType: data.vehicle_type,
+    vehicleModel: data.vehicle_model,
+    vehiclePlate: data.vehicle_plate,
+    vehicleColor: data.vehicle_color,
+    approvalStatus: data.approval_status,
+    kycStatus: data.kyc_status,
+    rejectionReason: data.rejection_reason,
+    rating: data.rating,
+    status: data.status,
+    kycDocuments: data.kyc_documents,
+    cnicNumber: data.cnic_number,
+    licenseNumber: data.license_number,
+    forensicNotes: data.forensic_notes,
+  } as UserProfileData;
 };
 
 // Approbation / rejet admin : approval -> POST /admin/drivers/{id}/approval,

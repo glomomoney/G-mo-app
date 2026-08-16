@@ -35,9 +35,20 @@ export function useNotifications(role: UserRole, enabled: boolean) {
     };
   }, [role, enabled]);
 
-  const dismissPushBanner = () => setPushBannerNotif(null);
+  // Marque la notif comme vue, sinon le poll suivant (6s) la considère à
+  // nouveau "nouvelle" (lastSeen jamais mis à jour) et refait réapparaître
+  // la bannière juste après sa disparition.
+  const dismissPushBanner = () => {
+    if (pushBannerNotif) {
+      localStorage.setItem('wanda_last_seen_notif_id', pushBannerNotif.id);
+    }
+    setPushBannerNotif(null);
+  };
 
   const openDrawerFromBanner = () => {
+    if (pushBannerNotif) {
+      localStorage.setItem('wanda_last_seen_notif_id', pushBannerNotif.id);
+    }
     setPushBannerNotif(null);
     setIsNotificationDrawerOpen(true);
   };

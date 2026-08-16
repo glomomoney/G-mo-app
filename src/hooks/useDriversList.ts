@@ -20,6 +20,9 @@ export interface AdminDriverEntry {
   rejectionReason?: string;
   rating: number;
   status?: string;
+  cnicNumber?: string;
+  licenseNumber?: string;
+  forensicNotes?: string;
 }
 
 function loadCachedDrivers(): AdminDriverEntry[] {
@@ -48,7 +51,10 @@ function mapToAdminDriverEntry(driver: UserProfileData): AdminDriverEntry {
     kycStatus: driver.kycStatus,
     rejectionReason: driver.rejectionReason,
     rating: driver.rating ?? 5.0,
-    status: driver.status
+    status: driver.status,
+    cnicNumber: driver.cnicNumber,
+    licenseNumber: driver.licenseNumber,
+    forensicNotes: driver.forensicNotes
   };
 }
 
@@ -72,7 +78,7 @@ export function useDriversList() {
   useEffect(() => {
     const unsubscribe = subscribeToDrivers((backendDrivers) => {
       setDriversList(prev => {
-        const prevById = new Map(prev.map(d => [d.id, d]));
+        const prevById = new Map<string, AdminDriverEntry>(prev.map(d => [d.id, d]));
         return backendDrivers.map(bd => {
           const mapped = mapToAdminDriverEntry(bd);
           const local = prevById.get(mapped.id);

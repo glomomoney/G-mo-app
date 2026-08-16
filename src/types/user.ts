@@ -47,4 +47,7 @@ export interface UserProfileData {
   rating?: number;
   status?: string;
   kycDocuments?: Record<string, KycDocumentEntry>;
+  cnicNumber?: string;
+  licenseNumber?: string;
+  forensicNotes?: string;
 }

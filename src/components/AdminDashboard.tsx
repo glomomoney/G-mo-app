@@ -4,8 +4,9 @@ import {
   Users, 
   TrendingUp, 
   DollarSign, 
-  ShieldAlert, 
-  Settings, 
+  ShieldAlert,
+  AlertTriangle,
+  Settings,
   PlusCircle, 
   CheckCircle, 
   XCircle, 
@@ -55,21 +56,24 @@ import {
   LogOut
 } from 'lucide-react';
 import WandaLogo from './WandaLogo';
-import { PaymentMethod, AppNotification, NotificationScheduleConfig } from '../types';
+import { PaymentMethod, AppNotification, NotificationScheduleConfig, AdminRole } from '../types';
 import { apiRequest } from '../lib/api';
-import { 
-  saveSettingsToFirestore, 
-  subscribeToSettings, 
-  sendNotificationToFirestore, 
+import {
+  saveSettingsToFirestore,
+  subscribeToSettings,
+  sendNotificationToFirestore,
   subscribeToNotifications,
   saveNotificationScheduleToFirestore,
   subscribeToNotificationSchedule
 } from '../lib/firebaseService';
+import { fetchStaffList, createStaffMember, updateStaffMember, StaffMember } from '../services/admin.service';
+import { updateDriverAccountAsAdmin } from '../services/users.service';
 
 
 interface AdminDashboardProps {
   onClose: () => void;
   onLogout?: () => void;
+  adminRole: AdminRole;
   driversList: any[];
   onApproveDriver: (id: string, customMessage?: string) => void;
   onRejectDriver: (id: string, reason?: string) => void;
@@ -97,6 +101,7 @@ interface AdminDashboardProps {
 export default function AdminDashboard({
   onClose,
   onLogout,
+  adminRole,
   driversList,
   onApproveDriver,
   onRejectDriver,
@@ -106,8 +111,10 @@ export default function AdminDashboard({
   transactions,
   onApproveWithdrawal
 }: AdminDashboardProps) {
-  type AdminRole = 'super_admin' | 'accounting' | 'publicity' | 'forensic';
-  const [activeAdminRole, setActiveAdminRole] = useState<AdminRole>('super_admin');
+  // Le rôle affiché/appliqué est celui du compte réellement connecté — plus un
+  // sélecteur libre (qui permettait à n'importe quel staff de s'auto-élever
+  // à super_admin côté UI, même si le backend refusait ensuite les écritures).
+  const activeAdminRole = adminRole;
   const [tab, setTab] = useState<'kpi' | 'drivers' | 'transactions' | 'settings' | 'notifications' | 'roles'>('kpi');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeWeatherAlert, setActiveWeatherAlert] = useState<string>('Normal Skies');
@@ -146,17 +153,23 @@ export default function AdminDashboard({
     };
   }, []);
 
-  // Staff Users & Department Rules Directory
-  const [staffUsers, setStaffUsers] = useState<any[]>([
-    { id: 'st_1', name: 'Paul Biya', email: 'p.biya@wanda.cm', role: 'super_admin', departmentName: 'Direction Générale (Super Admin)', assignedBy: 'Système Root', createdAt: '2026-01-01', active: true },
-    { id: 'st_2', name: 'Martine Abena', email: 'm.abena@wanda.cm', role: 'accounting', departmentName: 'Comptabilité & Finances', assignedBy: 'Paul Biya (Super Admin)', createdAt: '2026-02-15', active: true },
-    { id: 'st_3', name: 'Francis Ngannou', email: 'f.ngannou@wanda.cm', role: 'forensic', departmentName: 'Analyse Forensic & Conformité KYC', assignedBy: 'Paul Biya (Super Admin)', createdAt: '2026-03-10', active: true },
-    { id: 'st_4', name: 'Samuel Eto\'o', email: 's.etoo@wanda.cm', role: 'publicity', departmentName: 'Publicité, Marketing & Broadcasts', assignedBy: 'Paul Biya (Super Admin)', createdAt: '2026-04-01', active: true },
-  ]);
+  // Staff Users & Department Rules Directory — GET/POST/PATCH /admin/staff
+  const [staffUsers, setStaffUsers] = useState<StaffMember[]>([]);
+  const [staffError, setStaffError] = useState<string | null>(null);
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffPassword, setNewStaffPassword] = useState('');
   const [newStaffRole, setNewStaffRole] = useState<AdminRole>('accounting');
+  const [isCreatingStaff, setIsCreatingStaff] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStaffList()
+      .then((list) => { if (!cancelled) setStaffUsers(list); })
+      .catch((err) => { if (!cancelled) console.warn('fetchStaffList error:', err?.message || err); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Driver KYC Inspection & Profile Drawer State
   const [selectedDriverForKyc, setSelectedDriverForKyc] = useState<any | null>(null);
@@ -172,6 +185,9 @@ export default function AdminDashboard({
   const [editCity, setEditCity] = useState('Douala');
   const [editCnicNumber, setEditCnicNumber] = useState('');
   const [editLicenseNumber, setEditLicenseNumber] = useState('');
+  const [editForensicNotes, setEditForensicNotes] = useState('');
+  const [isSavingAccountDetails, setIsSavingAccountDetails] = useState(false);
+  const [isSavingForensicNotes, setIsSavingForensicNotes] = useState(false);
 
   // Document Replacement State
   const [editingDocKey, setEditingDocKey] = useState<string | null>(null);
@@ -436,44 +452,10 @@ export default function AdminDashboard({
 
   // Helper to retrieve driver KYC documents
   const getDriverKYCDocuments = (driver: any) => {
-    if (driver.kycDocuments) return driver.kycDocuments;
-    return {
-      nationalIdFront: {
-        title: "Carte Nationale d'Identité (CNI) - Recto",
-        url: driver.cniFrontUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop",
-        updatedByAdmin: false,
-        updatedAt: "2026-08-04 11:20",
-        status: "uploaded"
-      },
-      nationalIdBack: {
-        title: "Carte Nationale d'Identité (CNI) - Verso",
-        url: driver.cniBackUrl || "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&auto=format&fit=crop",
-        updatedByAdmin: false,
-        updatedAt: "2026-08-04 11:21",
-        status: "uploaded"
-      },
-      driverLicense: {
-        title: "Permis de Conduire (Catégorie B)",
-        url: driver.licenseUrl || "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&auto=format&fit=crop",
-        updatedByAdmin: false,
-        updatedAt: "2026-08-04 11:22",
-        status: "uploaded"
-      },
-      vehicleInsurance: {
-        title: "Attestation d'Assurance Véhicule (NSIA / Chanas)",
-        url: driver.insuranceUrl || "https://images.unsplash.com/photo-1450133064473-71024230f91b?w=800&auto=format&fit=crop",
-        updatedByAdmin: false,
-        updatedAt: "2026-08-04 11:25",
-        status: "uploaded"
-      },
-      vehicleGreyCard: {
-        title: "Carte Grise / Certificat d'Immatriculation",
-        url: driver.greyCardUrl || "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop",
-        updatedByAdmin: false,
-        updatedAt: "2026-08-04 11:28",
-        status: "uploaded"
-      }
-    };
+    // Uniquement les documents réellement uploadés par le chauffeur — pas de
+    // photo de substitution : un document manquant doit rester visiblement
+    // "non fourni", jamais se faire passer pour un vrai document soumis.
+    return driver.kycDocuments || {};
   };
 
   const isTabAllowedForRole = (tabKey: string, role: AdminRole): boolean => {
@@ -492,36 +474,71 @@ export default function AdminDashboard({
     setEditVehiclePlate(driver.vehiclePlate || '');
     setEditVehicleType(driver.vehicleType || 'ecoride');
     setEditCity(driver.city || 'Douala');
-    setEditCnicNumber(driver.cnicNumber || '102938475612');
-    setEditLicenseNumber(driver.licenseNumber || 'CMR-DL-2024-8821');
+    setEditCnicNumber(driver.cnicNumber || '');
+    setEditLicenseNumber(driver.licenseNumber || '');
+    setEditForensicNotes(driver.forensicNotes || '');
     setKycSubTab('account');
   };
 
-  const handleSaveDriverAccountDetails = () => {
+  const handleSaveDriverAccountDetails = async () => {
     if (!selectedDriverForKyc) return;
-    const updatedDriver = {
-      ...selectedDriverForKyc,
-      name: editDriverName,
-      phone: editDriverPhone,
-      vehicleModel: editVehicleModel,
-      vehiclePlate: editVehiclePlate,
-      vehicleType: editVehicleType,
-      city: editCity,
-      cnicNumber: editCnicNumber,
-      licenseNumber: editLicenseNumber
-    };
-
-    setSelectedDriverForKyc(updatedDriver);
-
-    const newList = driversList.map(d => d.id === updatedDriver.id ? updatedDriver : d);
-    if (onUpdateDriversList) {
-      onUpdateDriversList(newList);
+    setIsSavingAccountDetails(true);
+    try {
+      const updated = await updateDriverAccountAsAdmin(selectedDriverForKyc.id, {
+        name: editDriverName,
+        phone: editDriverPhone,
+        vehicle_model: editVehicleModel,
+        vehicle_plate: editVehiclePlate,
+        vehicle_type: editVehicleType,
+        cnic_number: editCnicNumber,
+        license_number: editLicenseNumber,
+      });
+      const updatedDriver = {
+        ...selectedDriverForKyc,
+        name: updated.name,
+        phone: updated.phone,
+        vehicleModel: updated.vehicleModel,
+        vehiclePlate: updated.vehiclePlate,
+        vehicleType: updated.vehicleType,
+        city: editCity,
+        cnicNumber: updated.cnicNumber,
+        licenseNumber: updated.licenseNumber
+      };
+      setSelectedDriverForKyc(updatedDriver);
+      const newList = driversList.map(d => d.id === updatedDriver.id ? updatedDriver : d);
+      if (onUpdateDriversList) onUpdateDriversList(newList);
+      setKycSuccessToast("Compte chauffeur mis à jour avec succès !");
+      setTimeout(() => setKycSuccessToast(null), 3000);
+    } catch (err: any) {
+      setKycSuccessToast(`Erreur : ${err?.message || 'échec de la sauvegarde'}`);
+      setTimeout(() => setKycSuccessToast(null), 4000);
+    } finally {
+      setIsSavingAccountDetails(false);
     }
-    setKycSuccessToast("Compte chauffeur mis à jour avec succès !");
-    setTimeout(() => setKycSuccessToast(null), 3000);
   };
 
-  const handleReplaceDocument = (docKey: string, newUrl: string, note?: string) => {
+  const handleSaveForensicNotes = async () => {
+    if (!selectedDriverForKyc) return;
+    setIsSavingForensicNotes(true);
+    try {
+      const updated = await updateDriverAccountAsAdmin(selectedDriverForKyc.id, {
+        forensic_notes: editForensicNotes,
+      });
+      const updatedDriver = { ...selectedDriverForKyc, forensicNotes: updated.forensicNotes };
+      setSelectedDriverForKyc(updatedDriver);
+      const newList = driversList.map(d => d.id === updatedDriver.id ? updatedDriver : d);
+      if (onUpdateDriversList) onUpdateDriversList(newList);
+      setKycSuccessToast("Notes d'audit enregistrées !");
+      setTimeout(() => setKycSuccessToast(null), 3000);
+    } catch (err: any) {
+      setKycSuccessToast(`Erreur : ${err?.message || 'échec de la sauvegarde'}`);
+      setTimeout(() => setKycSuccessToast(null), 4000);
+    } finally {
+      setIsSavingForensicNotes(false);
+    }
+  };
+
+  const handleReplaceDocument = async (docKey: string, newUrl: string, note?: string) => {
     if (!selectedDriverForKyc) return;
     const currentDocs = getDriverKYCDocuments(selectedDriverForKyc);
     const targetDoc = currentDocs[docKey] || { title: docKey };
@@ -540,46 +557,60 @@ export default function AdminDashboard({
       [docKey]: updatedDoc
     };
 
-    const updatedDriver = {
-      ...selectedDriverForKyc,
-      kycDocuments: newKycDocs
-    };
-
-    setSelectedDriverForKyc(updatedDriver);
-
-    const newList = driversList.map(d => d.id === updatedDriver.id ? updatedDriver : d);
-    if (onUpdateDriversList) {
-      onUpdateDriversList(newList);
+    try {
+      const updated = await updateDriverAccountAsAdmin(selectedDriverForKyc.id, {
+        kyc_documents: newKycDocs,
+      });
+      const updatedDriver = { ...selectedDriverForKyc, kycDocuments: updated.kycDocuments };
+      setSelectedDriverForKyc(updatedDriver);
+      const newList = driversList.map(d => d.id === updatedDriver.id ? updatedDriver : d);
+      if (onUpdateDriversList) onUpdateDriversList(newList);
+      setDocReplacementFeedback(`Document "${targetDoc.title || docKey}" remplacé avec succès par l'administrateur !`);
+    } catch (err: any) {
+      setDocReplacementFeedback(`Erreur : ${err?.message || 'échec du remplacement'}`);
+    } finally {
+      setEditingDocKey(null);
+      setReplacementUrlInput('');
+      setTimeout(() => setDocReplacementFeedback(null), 4000);
     }
-
-    setDocReplacementFeedback(`Document "${targetDoc.title || docKey}" remplacé avec succès par l'administrateur !`);
-    setEditingDocKey(null);
-    setReplacementUrlInput('');
-    setTimeout(() => setDocReplacementFeedback(null), 4000);
   };
 
-  const handleAddStaffUser = () => {
-    if (!newStaffName || !newStaffEmail) return;
+  const handleAddStaffUser = async () => {
+    if (!newStaffName || !newStaffEmail || !newStaffPassword) return;
+    setStaffError(null);
+    setIsCreatingStaff(true);
+    try {
+      const created = await createStaffMember({
+        name: newStaffName,
+        email: newStaffEmail,
+        password: newStaffPassword,
+        role: newStaffRole,
+      });
+      setStaffUsers(prev => [...prev, created]);
+      setNewStaffName('');
+      setNewStaffEmail('');
+      setNewStaffPassword('');
+      setShowAddStaffModal(false);
+    } catch (err: any) {
+      setStaffError(err?.message || 'Échec de la création du compte');
+    } finally {
+      setIsCreatingStaff(false);
+    }
+  };
+
+  const handleUpdateStaffRole = async (staffId: string, newRole: AdminRole) => {
     const deptMap: Record<AdminRole, string> = {
       super_admin: 'Direction Générale (Super Admin)',
       accounting: 'Comptabilité & Finances',
       publicity: 'Publicité & Marketing',
       forensic: 'Analyse Forensic & Conformité KYC'
     };
-    const newStaff = {
-      id: 'st_' + Date.now(),
-      name: newStaffName,
-      email: newStaffEmail,
-      role: newStaffRole,
-      departmentName: deptMap[newStaffRole],
-      assignedBy: 'Paul Biya (Super Admin)',
-      createdAt: new Date().toISOString().split('T')[0],
-      active: true
-    };
-    setStaffUsers(prev => [...prev, newStaff]);
-    setNewStaffName('');
-    setNewStaffEmail('');
-    setShowAddStaffModal(false);
+    try {
+      const updated = await updateStaffMember(staffId, { role: newRole, departmentName: deptMap[newRole] });
+      setStaffUsers(prev => prev.map(u => u.id === staffId ? updated : u));
+    } catch (err: any) {
+      setStaffError(err?.message || 'Échec de la mise à jour du rôle');
+    }
   };
 
   return (
@@ -597,31 +628,18 @@ export default function AdminDashboard({
           </div>
         </div>
 
-        {/* Department Role Switcher & Server Status */}
+        {/* Department Role & Server Status */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Department Role Selector */}
+          {/* Real role of the connected admin account — read-only display */}
           <div className="bg-brand-card border border-brand-input rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs">
             <ShieldCheck size={14} className="text-brand-gold" />
-            <span className="text-[11px] font-bold text-brand-text-muted">Département Active :</span>
-            <select
-              value={activeAdminRole}
-              onChange={(e) => {
-                const newRole = e.target.value as AdminRole;
-                setActiveAdminRole(newRole);
-                if (!isTabAllowedForRole(tab, newRole)) {
-                  if (newRole === 'accounting') setTab('transactions');
-                  else if (newRole === 'publicity') setTab('notifications');
-                  else if (newRole === 'forensic') setTab('drivers');
-                  else setTab('kpi');
-                }
-              }}
-              className="bg-brand-midnight text-brand-gold font-extrabold border border-brand-gold/30 rounded-lg px-2 py-1 text-xs focus:outline-none cursor-pointer"
-            >
-              <option value="super_admin">👑 Super Admin (Direction Général)</option>
-              <option value="accounting">💰 Département Comptabilité</option>
-              <option value="publicity">📢 Département Publicité</option>
-              <option value="forensic">🔍 Département Forensic & Conformité</option>
-            </select>
+            <span className="text-[11px] font-bold text-brand-text-muted">Département :</span>
+            <span className="text-brand-gold font-extrabold text-xs">
+              {activeAdminRole === 'super_admin' ? '👑 Super Admin (Direction Générale)' :
+               activeAdminRole === 'accounting' ? '💰 Comptabilité' :
+               activeAdminRole === 'publicity' ? '📢 Publicité' :
+               '🔍 Forensic & Conformité'}
+            </span>
           </div>
 
           <div className="hidden lg:flex bg-brand-card/60 rounded-xl px-3 py-1.5 border border-brand-input items-center gap-2 text-xs">
@@ -1163,9 +1181,9 @@ export default function AdminDashboard({
                           <tr key={user.id} className="hover:bg-brand-midnight/40 transition">
                             <td className="py-3 px-3 font-extrabold text-white flex items-center gap-2">
                               <span className="w-8 h-8 rounded-full bg-brand-gold/15 text-brand-gold font-black flex items-center justify-center border border-brand-gold/30">
-                                {user.name.charAt(0)}
+                                {(user.name || user.email).charAt(0).toUpperCase()}
                               </span>
-                              <span>{user.name}</span>
+                              <span>{user.name || user.email}</span>
                             </td>
                             <td className="py-3 px-3 text-brand-text-muted font-mono">{user.email}</td>
                             <td className="py-3 px-3">
@@ -1187,16 +1205,7 @@ export default function AdminDashboard({
                             <td className="py-3 px-3 text-right">
                               <select
                                 value={user.role}
-                                onChange={(e) => {
-                                  const newRole = e.target.value as AdminRole;
-                                  const deptMap: Record<AdminRole, string> = {
-                                    super_admin: 'Direction Générale (Super Admin)',
-                                    accounting: 'Comptabilité & Finances',
-                                    publicity: 'Publicité & Marketing',
-                                    forensic: 'Analyse Forensic & Conformité KYC'
-                                  };
-                                  setStaffUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: newRole, departmentName: deptMap[newRole] } : u));
-                                }}
+                                onChange={(e) => handleUpdateStaffRole(user.id, e.target.value as AdminRole)}
                                 className="bg-brand-midnight text-brand-text font-bold border border-brand-input rounded-lg px-2 py-1 text-[11px] focus:outline-none cursor-pointer"
                               >
                                 <option value="super_admin">👑 Super Admin</option>
@@ -2758,11 +2767,12 @@ export default function AdminDashboard({
                     <div className="flex justify-end pt-2">
                       <button
                         type="button"
+                        disabled={isSavingAccountDetails}
                         onClick={handleSaveDriverAccountDetails}
-                        className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 shadow cursor-pointer transition active:scale-95"
+                        className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 shadow cursor-pointer transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Save size={15} />
-                        <span>Enregistrer les Modifications du Compte</span>
+                        <span>{isSavingAccountDetails ? 'Enregistrement...' : 'Enregistrer les Modifications du Compte'}</span>
                       </button>
                     </div>
                   </div>
@@ -2802,64 +2812,76 @@ export default function AdminDashboard({
                       return (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {docKeys.map(({ key, title }) => {
-                            const doc = docs[key] || { title, url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop' };
+                            const doc = docs[key];
+                            const isMissing = !doc;
 
                             return (
-                              <div key={key} className="bg-brand-card border border-brand-input rounded-2xl p-4 flex flex-col justify-between gap-3 space-y-1 hover:border-brand-gold/40 transition">
+                              <div key={key} className={`bg-brand-card border rounded-2xl p-4 flex flex-col justify-between gap-3 space-y-1 transition ${isMissing ? 'border-rose-500/30' : 'border-brand-input hover:border-brand-gold/40'}`}>
                                 <div>
                                   <div className="flex justify-between items-start gap-2 mb-2">
                                     <h5 className="text-xs font-extrabold text-white flex items-center gap-1.5">
                                       <FileText size={15} className="text-brand-gold shrink-0" />
-                                      <span>{doc.title || title}</span>
+                                      <span>{doc?.title || title}</span>
                                     </h5>
 
                                     <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                      isMissing ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' :
                                       doc.updatedByAdmin ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-brand-gold/15 text-brand-gold border border-brand-gold/25'
                                     }`}>
-                                      {doc.updatedByAdmin ? 'REMPLACÉ PAR ADMIN HD' : 'DOC ORIGINAL CHAUFFEUR'}
+                                      {isMissing ? 'NON FOURNI' : doc.updatedByAdmin ? 'REMPLACÉ PAR ADMIN HD' : 'DOC ORIGINAL CHAUFFEUR'}
                                     </span>
                                   </div>
 
                                   {/* Image preview box */}
-                                  <div className="relative rounded-xl overflow-hidden border border-brand-input h-40 group bg-brand-deep">
-                                    <img
-                                      src={doc.url}
-                                      alt={title}
-                                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                                      referrerPolicy="no-referrer"
-                                    />
+                                  <div className="relative rounded-xl overflow-hidden border border-brand-input h-40 group bg-brand-deep flex items-center justify-center">
+                                    {isMissing ? (
+                                      <div className="flex flex-col items-center gap-1.5 text-rose-400/80 px-3 text-center">
+                                        <AlertTriangle size={22} />
+                                        <span className="text-[10px] font-bold">Document pas encore téléversé par le chauffeur</span>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <img
+                                          src={doc.url}
+                                          alt={title}
+                                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                          referrerPolicy="no-referrer"
+                                        />
+                                        {/* Overlay actions */}
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3">
+                                          <button
+                                            type="button"
+                                            onClick={() => setZoomedImageUrl(doc.url)}
+                                            className="bg-brand-gold text-brand-midnight font-bold p-2.5 rounded-xl text-xs flex items-center gap-1.5 shadow hover:scale-105 transition cursor-pointer"
+                                          >
+                                            <Eye size={14} />
+                                            <span>Agrandir</span>
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
 
-                                    {/* Overlay actions */}
-                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3">
-                                      <button
-                                        type="button"
-                                        onClick={() => setZoomedImageUrl(doc.url)}
-                                        className="bg-brand-gold text-brand-midnight font-bold p-2.5 rounded-xl text-xs flex items-center gap-1.5 shadow hover:scale-105 transition cursor-pointer"
-                                      >
-                                        <Eye size={14} />
-                                        <span>Agrandir</span>
-                                      </button>
+                                  {!isMissing && (
+                                    <div className="flex justify-between items-center text-[10px] text-brand-text-muted mt-2 font-mono">
+                                      <span>Mise à jour : {doc.updatedAt || 'N/A'}</span>
+                                      {doc.updatedByAdmin && <span className="text-sky-400 font-bold">✓ Modifié au HQ Admin</span>}
                                     </div>
-                                  </div>
-
-                                  <div className="flex justify-between items-center text-[10px] text-brand-text-muted mt-2 font-mono">
-                                    <span>Mise à jour : {doc.updatedAt || '06/08/2026'}</span>
-                                    {doc.updatedByAdmin && <span className="text-sky-400 font-bold">✓ Modifié au HQ Admin</span>}
-                                  </div>
+                                  )}
                                 </div>
 
-                                {/* Replace Button */}
+                                {/* Replace / Upload Button */}
                                 <div className="pt-2 border-t border-brand-input/40 flex justify-end">
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setEditingDocKey(key);
-                                      setReplacementUrlInput(doc.url || '');
+                                      setReplacementUrlInput(doc?.url || '');
                                     }}
                                     className="bg-brand-deep hover:bg-brand-card text-brand-gold border border-brand-gold/40 font-bold text-xs px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
                                   >
                                     <UploadCloud size={14} />
-                                    <span>Remplacer / Téléverser HD</span>
+                                    <span>{isMissing ? 'Téléverser HD' : 'Remplacer / Téléverser HD'}</span>
                                   </button>
                                 </div>
                               </div>
@@ -2887,21 +2909,20 @@ export default function AdminDashboard({
                     <textarea
                       rows={5}
                       placeholder="Saisissez vos notes d'audit (ex: Document CNI verso remplacé par l'admin le 06/08/2026 suite à la réception d'un scan HD par WhatsApp. Permis de conduire vérifié conforme.)..."
-                      defaultValue={selectedDriverForKyc.forensicNotes || "Audit initial effectué. Pièces conformes."}
+                      value={editForensicNotes}
+                      onChange={(e) => setEditForensicNotes(e.target.value)}
                       className="w-full bg-brand-deep border border-brand-input rounded-2xl p-4 text-xs font-medium text-white focus:outline-none focus:border-brand-gold leading-relaxed"
                     ></textarea>
 
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        onClick={() => {
-                          setKycSuccessToast("Notes d'audit enregistrées dans le journal de conformité !");
-                          setTimeout(() => setKycSuccessToast(null), 3000);
-                        }}
-                        className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow cursor-pointer transition"
+                        disabled={isSavingForensicNotes}
+                        onClick={handleSaveForensicNotes}
+                        className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Save size={14} />
-                        <span>Enregistrer les Notes d'Audit</span>
+                        <span>{isSavingForensicNotes ? 'Enregistrement...' : "Enregistrer les Notes d'Audit"}</span>
                       </button>
                     </div>
                   </div>
@@ -3218,6 +3239,37 @@ export default function AdminDashboard({
                     <option value="super_admin">👑 Direction Générale (Super Admin)</option>
                   </select>
                 </div>
+
+                <div className="space-y-1">
+                  <label className="font-extrabold text-brand-text-muted uppercase">Mot de Passe Initial</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Mot de passe temporaire"
+                      value={newStaffPassword}
+                      onChange={(e) => setNewStaffPassword(e.target.value)}
+                      className="flex-1 bg-brand-deep border border-brand-input rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-brand-gold"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+                        let pwd = '';
+                        for (let i = 0; i < 16; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+                        setNewStaffPassword(pwd);
+                      }}
+                      className="bg-brand-input hover:bg-brand-card text-brand-text-muted hover:text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase cursor-pointer transition shrink-0"
+                    >
+                      Générer
+                    </button>
+                  </div>
+                </div>
+
+                {staffError && (
+                  <div className="bg-rose-950/40 border border-rose-500/40 text-rose-300 text-[11px] font-bold p-2.5 rounded-xl">
+                    {staffError}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -3230,10 +3282,11 @@ export default function AdminDashboard({
                 </button>
                 <button
                   type="button"
+                  disabled={isCreatingStaff || !newStaffName || !newStaffEmail || !newStaffPassword}
                   onClick={handleAddStaffUser}
-                  className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black px-5 py-2 rounded-xl text-xs shadow cursor-pointer transition"
+                  className="bg-brand-gold hover:bg-amber-400 text-brand-midnight font-black px-5 py-2 rounded-xl text-xs shadow cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Créer Compte Staff
+                  {isCreatingStaff ? 'Création...' : 'Créer Compte Staff'}
                 </button>
               </div>
             </motion.div>
